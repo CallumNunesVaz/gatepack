@@ -85,33 +85,86 @@ sudo, no package installs, no ports bound, no network.
 scripts/tests/run.sh
 ```
 
-## Yosys-dependent tests
+## Toolchain-dependent tests (`tests/toolchain/`)
 
-Yosys is **not installed** in this environment, and results are never faked.
-Script generation and the verdict are unit-tested; anything that needs a real
-`yosys`/`sby`/`iverilog` run is `pytest.skip(...)` with an explicit reason. When
-the M0 pinned container exists, the skipped golden entries and the `dfflibmap`/
-`abc` smoke test will run against it.
+**Superseded 2026-08-16.** This section used to say Yosys was not installed and
+everything needing it skipped. That floor is exactly how three defects reached
+`integration` with a full green suite:
 
-## GUI tests — the seam (do not build yet)
+- generated Verilog that Yosys rejected outright (`M0-FINDINGS.md` §1);
+- properties asserted over undriven wires, which prove nothing at all
+  (`M6-FINDINGS.md` §6);
+- an equivalence check that errored out before comparing anything, on every
+  design, always (`M0-FINDINGS.md` §6).
 
-§20 forbids starting the GUI before M12, so there is no Electron test layer
-today. The seam is defined now so it lands without a redesign when C10–C15
-exist:
+Every one passed unit tests, because unit tests drive a **fake runner**. A fake
+runner cannot reject your Verilog. The only cure is running the binaries.
 
-- **Playwright drives the built Electron app**, never a dev server. Tests load
-  `app/dist/` (the packaged bundle) exactly as a user would, mirroring
-  `reqmesh`'s `frontend/e2e/*.spec.ts` + `playwright.config.ts`.
-- The GUI is a view over CLI-produced artefacts (§14), so GUI tests assert that
-  the CLI contract above holds through the app: open a `design.yaml`, mutate it,
-  and confirm the renderer reflects the same `manifest.json`/`generated.v` the
-  CLI would emit. GUI tests *never* re-derive synthesis results; they verify the
-  view is faithful to the artefacts.
-- Selection/provenance (§15) is tested by asserting that a rendered gate
-  highlights the correct source YAML line — the `src` attributes pinned by the
-  unit and golden layers are the input to that assertion.
+The container is `Dockerfile.probe`, and it carries Yosys 0.23, ABC, Icarus,
+SymbiYosys, z3 **and pydantic** — that last one so the CLI itself runs inside
+it, not just the tools:
 
-When C10–C15 land: add `frontend/e2e/*.spec.ts`, `playwright.config.ts`, and a
-`test_gui` entry to the harness; add npm/Playwright as a **dev-only** dependency
-(justified in `docs/BUILD-NOTES.md` per the no-new-deps rule). Nothing in CI
-depends on the GUI (§§7, 14).
+```bash
+docker build -f Dockerfile.probe -t gatepack-toolchain:m6 .
+
+# the toolchain test layer
+docker run --rm -v "$PWD:/repo" -w /repo gatepack-toolchain:m6 \
+    python3 -m pytest tests/toolchain -q
+
+# the real thing, end to end
+docker run --rm -v "$PWD:/repo" -w /repo gatepack-toolchain:m6 \
+    python3 -m gatepack verify tests/golden/designs/xor2.yaml \
+      --library libraries/74aup.csv --build .gpout/xor2
+```
+
+Two rules for this layer, both learned the hard way:
+
+1. **A skip is a failure here.** A toolchain test that skips is
+   indistinguishable from one that does not exist, so the CI job fails if any
+   test in `tests/toolchain` skips. Skipping is correct on a developer laptop
+   without Docker; it is not correct in CI.
+2. **Fixtures are recorded, never invented.** `tests/fixtures/sby/*.recorded.log`
+   was captured from real sby runs. The previous parser was tested only against
+   hand-written fixtures that used the bare SVA label, while real sby brackets
+   the task *name* — every check silently degraded to `not_run` and the tests
+   stayed green. If you add a fixture, record it and label it as recorded.
+
+Write build output to `.gpout/` (gitignored) rather than `/tmp`.
+
+## GUI tests — built, and what they cover
+
+§20's "do not build yet" no longer applies: M12–M15 exist.
+
+```
+app/renderer/**/*.test.tsx    component tests (vitest + jsdom, fake bridge)
+app/main/**/*.test.ts         session manager, IPC, path scoping (vitest, node)
+app/tests/e2e/*.spec.ts       Playwright driving the real Electron main process
+```
+
+```bash
+cd app
+npx vitest run                 # both projects via vitest.workspace.ts
+npm run build:main             # e2e needs dist/main/index.cjs
+DISPLAY=:1 npm run test:e2e
+```
+
+Notes that will save time:
+
+- **`vitest.workspace.ts` is load-bearing.** `vitest.config.ts` takes
+  precedence over `vite.config.ts`, so without the workspace file `vitest run`
+  silently runs only the main-process project — 54 renderer tests vanished that
+  way during a merge while the command still reported green.
+- **The Playwright config is `.cjs` and lives in `app/`.** `app/package.json`
+  is `"type": "module"`, so a `.ts` config is loaded as ESM, where
+  `@playwright/test` exposes no named `defineConfig` and `__dirname` is
+  undefined. The specs live in `app/tests/e2e` rather than the repo-root
+  `tests/` because Node resolves `node_modules` by walking up from the
+  importing file, and nothing above the repo-root `tests/` has one.
+- **The e2e tests drive the bridge, not the markup.** They call
+  `page.evaluate(() => window.gatepack...)` rather than clicking, which keeps
+  them independent of renderer changes and lets both halves be developed in
+  parallel. The §5.2 posture test is the important one: it asserts from inside
+  the renderer that `window.require` and `process` are unavailable and that
+  `contextIsolation` and `sandbox` are genuinely on.
+- Renderer component tests run against an **injectable fake bridge**, never a
+  real process.
