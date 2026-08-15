@@ -21,7 +21,7 @@ Deliberate differences from full YAML:
 * tab indentation is rejected (as in real YAML).
 
 The parser records the 1-based line number of every node so the C1 emitter can
-attach ``(* src = "design.yaml:<line>:<path>" *)`` provenance attributes
+attach ``(* gp_src = "design.yaml:<line>:<path>" *)`` provenance attributes
 (§15.1).
 
 This module is deliberately self-contained; switching to PyYAML later is a

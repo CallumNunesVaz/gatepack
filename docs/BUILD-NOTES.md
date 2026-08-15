@@ -320,3 +320,264 @@ scripts/tests/run.sh    # 1/1 test scripts passed (12 assertions)
 - C5 packer, C6 emitters, and the §10.3 `out/manifest.json` from a full `build`
   (M9/M10). The `estimate` manifest is a §6-verdict manifest, not the M10
   build manifest.
+
+---
+
+# BUILD NOTES — M11a (CI, reproducibility, licence audit) + M11b (provenance map)
+
+## What was built
+
+M11b — the provenance map (§15.1), the high-value item:
+
+- `gatepack/provenance/capture.py` — parses Yosys `write_json` into a
+  single-bit `Netlist` of `Cell` objects (`parse_netlist_json`,
+  `read_netlist_json`) and recovers `src` attributes as `SourceRef`
+  (`capture_sources`). `SourceRef.parse` splits `"file:line:path"`.
+- `gatepack/provenance/match.py` — `match_netlinks(premap, mapped, ...)`
+  forward-matches pre-map cells to mapped cells by **functional cone
+  signature**: for every cell it evaluates the cone over its leaf signals
+  (primary inputs + sequential-cell outputs) into a truth table, then links
+  cells whose (support, truth-table) agree. Links are labelled by kind and
+  confidence — `one_to_one`/high, `merged`/medium (many pre-map -> one mapped),
+  `duplicated`/medium (one -> many), `many_to_many`/low (ambiguous), and
+  `sequential`/high (state elements matched by instance name). Cells whose cone
+  was restructured beyond recognition or exceeds `MAX_SUPPORT` (20) get no link
+  and are reported `unmatched_*` rather than faked. `MatchResult` reports the
+  §18 coverage percentage (`traceable_mapped / total_mapped`), and `as_dict()`
+  is the serialisable provenance map.
+- `gatepack/provenance/__init__.py` — public re-exports.
+- `tests/unit/test_provenance_capture.py` + `tests/unit/test_provenance_match.py`
+  (21 tests) — synthetic pre/post JSON pairs covering rename, absorption
+  (NOT+AND -> NAND2), merge, duplicate, delete, unmatched-mapped, sequential,
+  many-to-many/low, constant tie-off, and the `max_support` fallback.
+- `tests/unit/helpers.py` — added `netlist_json(...)`, a builder for synthetic
+  Yosys JSON.
+
+M11a — CI, reproducibility, licence audit:
+
+- `.github/workflows/ci.yml` — on push/PR: venv + `pip install -e . pytest`,
+  then pytest, the shell harness, `lib check`, the reproducibility check, and
+  the licence audit. **No Yosys, no GUI, no desktop dependency** (principle 7).
+- `scripts/repro_check.py` — builds the traffic-light golden twice in two
+  working directories with the same *relative* build path and compares artefact
+  hashes (`generated.v`, `properties.sv`, `cells.lib`, `yosys.ys`,
+  `manifest.json`), failing on mismatch.
+- `scripts/dependencies.json` + `scripts/licence_audit.py` — the declared
+  dependencies (the §4 table + `pydantic` from pyproject) audited against a
+  GPL-3.0 compatibility policy. EPL-2.0 (elkjs) is *conditional*: accepted only
+  with `"unmodified": true`. Unrecognised licences fail the audit.
+- `tests/unit/test_licence_audit.py` (5 tests) — the policy pinned via
+  subprocess, notably EPL-2.0 accepted only when unmodified and GPL-2.0-only
+  rejected.
+- `docs/REPRODUCIBILITY.md` — what is and is not byte-reproducible today.
+
+## Commands run and their real output
+
+```
+.venv/bin/pytest -q
+# 189 passed, 2 skipped in 0.52s      (was 163 passed, 2 skipped before this work)
+
+bash scripts/tests/run.sh
+# test_cli_e2e.sh: 12 passed, 0 failed
+# ==== summary: 1/1 test scripts passed ====
+
+.venv/bin/python scripts/licence_audit.py
+# ok   Yosys: 'ISC' (compatible) ...
+# ok   elkjs: 'EPL-2.0' (conditional) — weak copyleft at file scope; requires unmodified library use
+# licence audit: 11 dependency(s) GPL-3.0-compatible     (exit 0)
+
+.venv/bin/python scripts/repro_check.py
+# ok   generated.v: identical
+# ok   properties.sv: identical
+# ok   cells.lib: identical
+# ok   yosys.ys: identical
+# ok   manifest.json: identical
+# reproducibility check: 5 artefact(s) byte-identical   (exit 0)
+```
+
+## Guesses / decisions made
+
+1. **The Yosys `write_json` shape is assumed, not measured.** The parser assumes
+   the documented shape — `modules.<name>.ports/cells/netnames`, cell
+   `connections` as a list of bit indices (ints) or constant strings
+   (`"0"`/`"1"`/`"x"`/`"z"`), `port_directions` present, `netnames` mapping net
+   -> bit indices, and `src` as a plain string under `attributes`. This has
+   **never** been run against a real Yosys `premap.json`/`mapped.json`; the
+   synthetic-JSON tests are the current specification of the assumed shape.
+   Yosys is not installed here and nothing is faked.
+2. **Single-bit cells only.** Post-`techmap` `$_*` cells and the 74AUP single-gate
+   library are single-bit. Multi-bit cells would be treated as opaque leaf
+   boundaries rather than evaluated; no memory/vector support was written.
+3. **Sequential cells are matched by instance name.** The matcher assumes
+   `dfflibmap` preserves the `$_DFF_*` instance name and ABC leaves flops alone
+   (both documented Yosys behaviours, but unverified here). A rename breaks the
+   sequential link — reported honestly as unmatched, never guessed.
+4. **Mapped cell functions come from `parts.csv`'s `function` column**, over
+   pins `A`/`B`/`C` matching C2's pin naming. `match_netlists` takes
+   `library_functions` and `flop_types` as parameters precisely so the caller
+   (future C5/M10) supplies them; nothing imports `parts.py` inside the matcher.
+5. **Coverage = traceable/total mapped cells.** "Traceable" means the mapped
+   cell is linked to at least one pre-map cell carrying a `src`. A mapped cell
+   that is structurally matched but whose pre-map cell has no `src` counts as
+   matched but *not* traceable, so coverage can be lower than the match rate.
+6. **Confidence is a function of multiplicity**, not of a numeric score:
+   1:1/high, merged or duplicated/medium, many-to-many/low. There is no
+   "partial" match tier — a cone signature either agrees or it does not; the
+   partial/low case is expressed as `many_to_many`.
+7. **Licence policy normalisation strips parentheticals** (`"BSD-style (UC
+   Berkeley)"` -> `bsd-style`) and lowercases. The manifest is hand-maintained
+   alongside pyproject.toml (no tomllib dependency, so it stays 3.10-safe);
+   the two must be kept in sync by hand.
+8. **The repro check uses a relative build path** because `yosys.ys` embeds the
+   build directory path; building twice with the *same* relative path in
+   different directories holds that constant and still proves determinism.
+9. **CI pins Python 3.11** and installs `pytest` as a dev-only tool (not a
+   runtime dep — pyproject.toml is untouched). The workflow has never run on a
+   real GitHub runner.
+
+## Design issues I believe are wrong or under-specified
+
+- **§15.1's "assembly" (refdes/BOM) cannot be completed yet.** The full spine
+  `source <-> verilog line <-> pre-map cell <-> mapped cell <-> refdes <-> BOM
+  line` needs C5 (packer) and C6 (emitters) to supply the refdes/BOM half; M11b
+  can only deliver the `source <-> premap <-> mapped` prefix. I did not add a
+  `gatepack provenance` CLI (the §17 CLI list has no such command, and a CLI
+  would be premature without the C5/C6 half), so the module is a library with
+  no CLI surface.
+- **§18 "Provenance coverage" golden needs Yosys.** It is represented here by
+  the synthetic-JSON unit tests, not by a real golden run; the real number the
+  design asks for ("what coverage does structural matching achieve on the
+  goldens?") is exactly the M0 question that remains unanswered.
+- **Leaf alignment rests on flop-name stability** (guess 3), which is the one
+  thing that could silently deflate coverage on a real design. A structural
+  flop-matching fallback (match flops by their D-input cone signature) is the
+  obvious next step and was left out.
+
+## What has never been executed against a real tool
+
+- The provenance parser and matcher have never read real Yosys `write_json`
+  output; every JSON-shape assumption above is unverified.
+- The CI workflow has never run on GitHub Actions.
+- The mapped-netlist byte-reproducibility check (needs the pinned Yosys/ABC
+  container, M0) is not performed — `repro_check.py` covers only the
+  front-end/C2/C3-script/manifest artefacts.
+- The licence audit audits the *declared* manifest, not the transitive npm tree
+  of the (unbuilt) desktop app; netlistsvg's/React Flow's own dependency trees
+  are out of scope until the app exists.
+
+---
+
+# BUILD NOTES — provenance correction pass (docs/M0-FINDINGS.md)
+
+## What changed
+
+The M0 spike ran real Yosys 0.23 and measured two of M11b's assumptions wrong.
+`docs/M0-FINDINGS.md` supersedes the design wherever they conflict.  This pass
+corrects the provenance module against those measurements:
+
+1. **Sequential provenance is read off the cell, not reconstructed.** Measured:
+   `dfflibmap` *preserves* cell attributes (both flops kept their attribute into
+   `DFF_R`).  `match.py`'s docstring claiming "`dfflibmap` and `abc` replace
+   cells … and rename freely" was wrong for `dfflibmap`.  `_match_sequential`
+   now reads `gp_src` directly off the mapped flop (exact, kind `sequential`,
+   confidence `high`), and only falls back to name matching (kind
+   `sequential_by_name`, confidence `medium`) when the attribute is absent.
+
+2. **Combinational provenance rides on nets, not cells.** Measured: a
+   `wire`-declaration attribute attaches to the *net* (`netnames` entry) and
+   survives `abc` intact, whereas cell attributes are destroyed by `abc`.
+   `match_netlists` now uses net provenance as the *primary* combinational
+   signal — a mapped cell is associated with source via the `gp_src` of the net
+   its output drives (kind `net_attribute`).  Cone-signature matching is
+   demoted to the *secondary* signal, used only for cells whose nets were
+   themselves optimised away.  `capture.py` gained `capture_net_sources` /
+   `Netlist.net_sources` (parsed from `netnames` attributes) alongside the
+   existing cell-attribute capture.
+
+3. **The attribute namespace is `gp_src`, never `src`.** Yosys populates `src`
+   itself with the Verilog file/line and its value wins, so reading `src` reads
+   Yosys's data.  `gatepack/frontend/verilog.py` now emits `(* gp_src = … *)`,
+   and `capture.py` reads `PROVENANCE_ATTR = "gp_src"`.
+
+4. **Coverage is reported per carrier.** `MatchResult` no longer exposes a single
+   blended `coverage` percentage; it reports `coverage_by_carrier` and
+   `carrier_counts` over five buckets — `net_attribute`, `cell_attribute`,
+   `cone_signature`, `sequential_name`, `unmatched` — each as a percentage of
+   total mapped cells.  A blended number hid exactly the trustworthiness gap the
+   project needs to see.
+
+Also fixed (measured, not part of the two headline corrections but required by
+the net-carrier story): **an attribute before a continuous `assign` is a syntax
+error** in Yosys 0.23 (`docs/M0-FINDINGS.md` §1).  C1 now attaches the output
+`gp_src` to the output *port declaration* and leaves the `assign` bare.
+
+## Files touched
+
+- `gatepack/frontend/verilog.py` — `src` → `gp_src`; output attribute moved to
+  the port declaration.
+- `gatepack/frontend/yaml_subset.py` — docstring only.
+- `gatepack/provenance/capture.py` — `PROVENANCE_ATTR`, `Cell.gp_src`,
+  `Netlist.net_sources`, `capture_net_sources`, `_parse_netnames`.
+- `gatepack/provenance/match.py` — sequential attribute-first + name fallback,
+  net-attribute primary, cone-signature secondary, per-carrier coverage.
+- `gatepack/provenance/__init__.py` — export `PROVENANCE_ATTR`, `CARRIERS`,
+  `capture_net_sources`.
+- `tests/unit/{helpers,test_provenance_capture,test_provenance_match,
+  test_verilog}.py`, `tests/golden/test_golden_designs.py`,
+  `scripts/tests/test_cli_e2e.sh` — `src` → `gp_src`; net-carrier and
+  per-carrier-coverage tests added.
+
+## Commands run and real output
+
+```
+.venv/bin/pytest -q
+# 195 passed, 2 skipped in 0.52s   (was 189 passed, 2 skipped before this pass)
+
+bash scripts/tests/run.sh
+# test_cli_e2e.sh: 12 passed, 0 failed
+# ==== summary: 1/1 test scripts passed ====
+```
+
+## Guesses / decisions made
+
+1. **Five coverage carriers, not the four named in the request.** The correction
+   lists "net attribute, cell attribute (sequential), cone-signature match,
+   unmatched"; I added a fifth, `sequential_name`, for the sequential name
+   fallback.  A name match is neither a cell attribute nor a cone signature, and
+   folding it into either would mis-state its trustworthiness, so it is reported
+   separately (and is 0 in the normal case where `dfflibmap` preserves the
+   attribute).
+2. **"Associate via the nets it connects to" = the cell's output net.** A gate's
+   output net is the construct it *produces*; its input nets name where those
+   inputs came from.  Attributing a gate to an input net's source would be
+   wrong, so `_match_net_attributes` keys off the output net only.  (Primary
+   outputs and named intermediate wires are the nets C1 actually annotates.)
+3. **`Netlist.net_sources` is a `Mapping` defaulting to `{}`.** Frozen dataclass,
+   `field(default_factory=dict)`; treated read-only.  Cosmetic.
+4. **Cone-signature source now comes from the pre-map cell's output net.** In
+   reality a combinational pre-map cell carries no `gp_src` cell attribute (the
+   attribute is on the wire declaration → net), so `_cell_sources` prefers the
+   cell attribute (flops) and falls back to the output net's `gp_src`
+   (combinational).  The old behaviour — reading `src` off the pre-map *cell* —
+   was an assumption the measurement disproved for combinational logic.
+5. **The synthetic tests now put combinational `gp_src` on nets**, matching the
+   measurement; the old tests put `src` on combinational *cells*, which was
+   exactly the wrong model.
+
+## Remains unverified against a real toolchain
+
+- The parser/matcher still reads synthetic JSON only.  The *shape* assumptions
+  (netnames `attributes`, `gp_src` as a string, `port_directions` present) are
+  unchanged and still unverified against real `premap.json`/`mapped.json`.
+- **Output-port attribute → netname survival is unverified.** M0 measured
+  `gp_src` survival on internal `wire` declarations, not on an `output wire`
+  port.  Moving the output attribute to the port declaration is the correct
+  fix for the `assign` syntax error, but whether Yosys propagates a
+  port-declaration attribute into `netnames` (and thus to the net-attribute
+  carrier) has not been confirmed against a real run.
+- The net-attribute primary path and the sequential cell-attribute path have
+  not been exercised on a real `dfflegalize; dfflibmap; abc; clean` run; the
+  per-carrier numbers the §18 golden wants are still synthetic.
+- `dfflibmap` preserving the *instance name* (the basis of the
+  `sequential_by_name` fallback) is stated by M0 for attributes but the name
+  stability itself is unverified here.

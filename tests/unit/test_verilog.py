@@ -20,8 +20,8 @@ def test_module_declaration_and_ports():
 def test_src_attributes_present_on_constructs():
     result = compile_design_text(sync_design())
     v = result.verilog
-    assert '(* src = "design.yaml:1:name" *)' in v
-    assert '(* src = "design.yaml:' in v
+    assert '(* gp_src = "design.yaml:1:name" *)' in v
+    assert '(* gp_src = "design.yaml:' in v
     assert "transitions[0]" in v
     assert "output_logic" not in v  # no outputs in the minimal design
 
@@ -59,6 +59,21 @@ def test_output_logic_emits_state_compare():
     )
     v = compile_design_text(yaml).verilog
     assert "assign green = state_B;" in v
+
+
+def test_output_provenance_is_on_port_not_assign():
+    # gp_src must be on the output net (port declaration), never before the
+    # continuous assign — Yosys 0.23 rejects an attribute before `assign`.
+    yaml = sync_design(
+        outputs=["green"],
+        output_logic={"green": "state == B"},
+    )
+    v = compile_design_text(yaml).verilog
+    assert "(* gp_src" in v
+    assert "output wire green" in v
+    assert "assign green = state_B;" in v
+    # the attribute is attached to the port declaration, not to the assign
+    assert "*)\n  assign green" not in v
 
 
 def test_binary_encoding_emits_vector_and_localparams():

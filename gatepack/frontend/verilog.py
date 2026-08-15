@@ -1,15 +1,22 @@
 """Behavioural Verilog + properties emission (C1, §12 C1, §15.1).
 
-Every construct carries a ``(* src = "design.yaml:<line>:<path>" *)`` attribute —
-the provenance spine of §15.1.  Attributes are load-bearing, not decoration: C3
-captures them from ``premap.json`` before ``dfflibmap``/``abc`` strip them
-([R4-14]).
+Every construct carries a ``(* gp_src = "design.yaml:<line>:<path>" *)``
+attribute — the provenance spine of §15.1.  The attribute namespace is ``gp_src``,
+never ``src``: Yosys populates ``src`` itself with the Verilog file/line that
+created a cell and that value wins (docs/M0-FINDINGS.md §2).
+
+Attributes are placed on ``wire``/``reg`` declarations, never on a continuous
+``assign`` — Yosys 0.23 rejects an attribute before ``assign``
+(docs/M0-FINDINGS.md §1).  An attribute on a ``wire`` declaration attaches to the
+*net*, which survives ``abc`` where cell attributes do not; an attribute on a
+``reg`` declaration reaches the flop cell, which survives ``dfflibmap``
+(docs/M0-FINDINGS.md §3).
 
 Encoding:
 
 * ``one_hot`` (default) — one register bit per state named ``state_<NAME>``; the
   next-state term for each transition is a named wire ``t_<index>`` carrying the
-  transition's own ``src`` attribute, so provenance survives into the netlist.
+  transition's own ``gp_src`` attribute, so provenance survives into the netlist.
 * ``binary`` / ``gray`` — a ``state`` vector with ``STATE_<NAME>`` localparams and
   a ``case`` next-state block.
 """
@@ -24,7 +31,7 @@ from gatepack.frontend.schema import Reset
 def _attr(compiled: CompiledDesign, path: str) -> str:
     line = compiled.provenance.get(path)
     display = str(line) if line is not None else "?"
-    return f'(* src = "{compiled.source_name}:{display}:{path}" *)'
+    return f'(* gp_src = "{compiled.source_name}:{display}:{path}" *)'
 
 
 def _reset_active_low(reset: Reset) -> bool:
@@ -49,7 +56,10 @@ def emit_verilog(compiled: CompiledDesign) -> str:
     lines.append(f"module {design.name} (")
     ports = [f"input wire {clock_name}", f"input wire {reset_name}"]
     ports += [f"input wire {name}" for name in compiled.input_names]
-    ports += [f"output wire {name}" for name in compiled.output_names]
+    ports += [
+        f"{_attr(compiled, f'output_logic.{name}')}\n  output wire {name}"
+        for name in compiled.output_names
+    ]
     lines.append(",\n".join(f"  {p}" for p in ports))
     lines.append(");")
     lines.append("")
@@ -129,7 +139,6 @@ def emit_verilog(compiled: CompiledDesign) -> str:
     state_map = _state_map(compiled)
     for name in compiled.output_names:
         ast = compiled.output_asts[name]
-        lines.append(f"  {_attr(compiled, f'output_logic.{name}')}")
         lines.append(
             f"  assign {name} = {expr_mod.to_verilog(ast, var_map, state_map)};"
         )

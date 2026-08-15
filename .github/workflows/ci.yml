@@ -1,0 +1,45 @@
+# CI — gatepack core (§14, principle 7).
+#
+# Nothing in this workflow depends on the desktop application.  It exercises
+# the pure-Python core (pytest), the shell harness, the library citation check,
+# the §5.5 reproducibility check, and the §4 licence audit.  Yosys/ABC/sby/
+# Icarus are intentionally *not* installed here: anything needing them skips
+# with an explicit reason (see docs/TESTING.md), so this workflow is the
+# "no GUI, no external toolchain" floor.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e . pytest
+
+      - name: Unit, golden and contract tests
+        run: .venv/bin/pytest -q
+
+      - name: Shell harness
+        run: bash scripts/tests/run.sh
+
+      - name: Library citation check
+        run: .venv/bin/python -m gatepack.cli lib check libraries/74aup.csv
+
+      - name: Reproducibility check
+        run: .venv/bin/python scripts/repro_check.py
+
+      - name: Licence audit
+        run: .venv/bin/python scripts/licence_audit.py

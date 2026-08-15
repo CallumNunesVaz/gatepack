@@ -24,7 +24,7 @@ def test_traffic_light_compiles_one_hot():
     assert c.encoding == "one_hot"
     assert c.state_order == ["RED", "GREEN", "AMBER"]
     assert "reg state_RED;" in result.verilog
-    assert '(* src = "traffic_light.yaml:' in result.verilog
+    assert '(* gp_src = "traffic_light.yaml:' in result.verilog
     # every transition carries its own src attribute
     for i in range(5):
         assert f"transitions[{i}]" in result.verilog
