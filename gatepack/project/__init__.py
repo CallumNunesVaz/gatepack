@@ -70,6 +70,10 @@ class ProjectError(ValueError):
 class DesignDocument:
     data: dict[str, Any]
     provenance: Mapping[str, int]
+    #: The verbatim ``design.yaml`` text, when the document was read from a file
+    #: or recovered from a ``.gpk``. ``None`` for a project constructed in
+    #: memory, which then falls back to canonical serialisation (§10.4).
+    source: str | None = None
 
 
 @dataclass(frozen=True)
@@ -122,6 +126,7 @@ def _load_exploded(directory: Path) -> Project:
     design = DesignDocument(
         data=yaml_mod.to_python(node),
         provenance=yaml_mod.provenance(node),
+        source=text,
     )
     return Project(
         design=design,
@@ -169,6 +174,28 @@ def _coerce_cell(cell: str) -> Any:
         return cell
 
 
+def _design_source_from_stream(text: str) -> str | None:
+    """Recover the verbatim ``design.yaml`` text carried by a ``.gpk`` stream.
+
+    Only a ``.gpk`` produced by :func:`bundle` (or a re-bundle of one) embeds
+    its source verbatim; for a hand-written file the design body is still
+    recovered as-is, so re-bundling it is byte-faithful to *that* body.
+    """
+    for body in serialize.split_documents(text):
+        if _document_kind(body) == "design":
+            return serialize.design_source(body)
+    return None
+
+
+def _document_kind(body: str) -> str | None:
+    """The ``kind`` header value of a raw document body, or ``None``."""
+    for line in body.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("kind:"):
+            return stripped[len("kind:"):].strip()
+    return None
+
+
 def parse_gpk(text: str, source_name: str = "<gpk>") -> Project:
     """Parse ``.gpk`` text into a :class:`Project`."""
     try:
@@ -178,6 +205,8 @@ def parse_gpk(text: str, source_name: str = "<gpk>") -> Project:
     if not nodes:
         raise ProjectError(source_name, "no documents", line=1)
 
+    design_source = _design_source_from_stream(text)
+
     design: DesignDocument | None = None
     truth_table: TruthTableDocument | None = None
     library: LibraryDocument | None = None
@@ -186,7 +215,7 @@ def parse_gpk(text: str, source_name: str = "<gpk>") -> Project:
         if kind == "design":
             if design is not None:
                 raise ProjectError(source_name, "duplicate 'design' document", index, line)
-            design = DesignDocument(data=data, provenance=provenance)
+            design = DesignDocument(data=data, provenance=provenance, source=design_source)
         elif kind == "truth_table":
             if truth_table is not None:
                 raise ProjectError(source_name, "duplicate 'truth_table' document", index, line)
@@ -325,7 +354,7 @@ def _build_library(
 
 def gpk_text(project: Project) -> str:
     """Return the canonical ``.gpk`` text for ``project``."""
-    documents = [serialize.document_dict(project.design.data, "design")]
+    documents: list[dict[str, Any]] = []
     if project.truth_table is not None:
         documents.append(
             serialize.document_dict(
@@ -347,11 +376,20 @@ def gpk_text(project: Project) -> str:
                 "library",
             )
         )
-    return serialize.dumps_documents(documents)
+    if project.design.source is not None:
+        return serialize.dumps_documents_with_design_source(project.design.source, documents)
+    return serialize.dumps_documents([serialize.document_dict(project.design.data, "design"), *documents])
 
 
 def design_text(project: Project) -> str:
-    """Return the canonical exploded ``design.yaml`` text for ``project``."""
+    """Return the exploded ``design.yaml`` text for ``project``.
+
+    The verbatim source is preferred when the document was read from a file
+    (§10.4 faithful source); canonical serialisation is the fallback for a
+    project constructed in memory.
+    """
+    if project.design.source is not None:
+        return project.design.source
     return serialize.dumps_mapping(project.design.data)
 
 

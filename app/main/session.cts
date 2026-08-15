@@ -58,6 +58,10 @@ export interface ProgressEvent {
 export interface SessionDeps {
   location: CoreLocation | null;
   registry: CancelRegistry;
+  /** Root of the bundled examples directory (contains `<name>/design.yaml`). */
+  examplesRoot: string | null;
+  /** Called after a successful non-showcase open, to persist the session. */
+  onProjectOpened?: (info: ProjectInfo) => void;
   onProjectChanged: (info: ProjectInfo) => void;
   onFileChanged: (paths: string[]) => void;
   onProgress: (p: ProgressEvent) => void;
@@ -74,7 +78,12 @@ interface ProjectState {
   gpkPath: string | null;
   dirty: boolean;
   git: GitStatus | null;
+  /** True for a bundled example opened read-only-ish into a scratch copy (§18.1). */
+  showcase: boolean;
 }
+
+/** The bundled example opened on first launch (§18.1). */
+export const SHOWCASE_NAME = 'pelican';
 
 const WATCH_DEBOUNCE_MS = 250;
 const IGNORED_SEGMENTS = new Set([
@@ -137,6 +146,11 @@ export class SessionManager {
     return this.project ? this.info(this.project) : null;
   }
 
+  /** True when the open project is a bundled showcase copy (§18.1). */
+  isShowcase(): boolean {
+    return this.project !== null && this.project.showcase;
+  }
+
   private info(project: ProjectState): ProjectInfo {
     return {
       path: project.form === 'gpk' ? project.openedPath : project.root,
@@ -177,7 +191,7 @@ export class SessionManager {
           `project directory has no design.yaml: ${abs}`,
         );
       }
-      state = { form: 'directory', openedPath: abs, root: abs, gpkPath: null, dirty: false, git: null };
+      state = { form: 'directory', openedPath: abs, root: abs, gpkPath: null, dirty: false, git: null, showcase: false };
     } else if (isGpk(abs)) {
       if (this.deps.location === null) {
         return errorEnvelope('openProject', 'GP9001', 'gatepack executable not found (needed to explode .gpk)');
@@ -188,7 +202,7 @@ export class SessionManager {
       } catch (err) {
         return errorEnvelope('openProject', 'GP4102', `cannot explode ${abs}`, err);
       }
-      state = { form: 'gpk', openedPath: abs, root: exploded, gpkPath: abs, dirty: false, git: null };
+      state = { form: 'gpk', openedPath: abs, root: exploded, gpkPath: abs, dirty: false, git: null, showcase: false };
     } else {
       return errorEnvelope('openProject', 'GP4103', `not a directory or .gpk file: ${abs}`);
     }
@@ -197,7 +211,64 @@ export class SessionManager {
     this.project = state;
     this.startWatching();
     this.deps.onProjectChanged(this.info(state));
+    this.deps.onProjectOpened?.(this.info(state));
     return okEnvelope('openProject', this.info(state));
+  }
+
+  /**
+   * Open a bundled example into a scratch working copy (§18.1).
+   *
+   * The bundled copy is never modified in place: it is copied to a fresh temp
+   * directory first, so a user exploring it cannot destroy the shipped copy.
+   * `showcase` marks the §18.1 showcase (read-only-ish — Save prompts for a
+   * location rather than writing over the bundled copy).
+   */
+  async openBundledExample(name: string): Promise<Envelope<ProjectInfo>> {
+    const root = this.copyExampleToScratch(name);
+    if (root === null) {
+      return errorEnvelope(
+        'openProject',
+        'GP4111',
+        `bundled example ${name} is not available in this installation`,
+      );
+    }
+
+    this.closeProject();
+
+    const state: ProjectState = {
+      form: 'directory',
+      openedPath: root,
+      root,
+      gpkPath: null,
+      dirty: false,
+      git: null,
+      showcase: name === SHOWCASE_NAME,
+    };
+    state.git = await this.readGitFor(state);
+    this.project = state;
+    this.startWatching();
+    this.deps.onProjectChanged(this.info(state));
+    return okEnvelope('openProject', this.info(state));
+  }
+
+  /** Copy a bundled example directory into a scratch working directory. */
+  private copyExampleToScratch(name: string): string | null {
+    const examplesRoot = this.deps.examplesRoot;
+    if (examplesRoot === null) return null;
+    const src = path.join(examplesRoot, name);
+    if (!fs.existsSync(path.join(src, 'design.yaml'))) return null;
+    try {
+      const dst = fs.mkdtempSync(path.join(os.tmpdir(), 'gatepack-example-'));
+      for (const entry of fs.readdirSync(src)) {
+        const from = path.join(src, entry);
+        if (fs.statSync(from).isFile()) {
+          fs.copyFileSync(from, path.join(dst, entry));
+        }
+      }
+      return dst;
+    } catch {
+      return null;
+    }
   }
 
   private async explode(gpkPath: string): Promise<string> {
@@ -222,8 +293,13 @@ export class SessionManager {
 
   closeProject(): void {
     this.stopWatching();
-    if (this.project !== null && this.project.form === 'gpk' && this.project.gpkPath !== null) {
-      fs.promises.rm(this.project.root, { recursive: true, force: true }).catch(() => {});
+    if (this.project !== null) {
+      const { form, gpkPath, showcase, root } = this.project;
+      // Both a `.gpk` and a showcase are exploded/copied into a temp working
+      // directory that should not outlive the session.
+      if ((form === 'gpk' && gpkPath !== null) || showcase) {
+        fs.promises.rm(root, { recursive: true, force: true }).catch(() => {});
+      }
     }
     this.project = null;
   }
@@ -232,6 +308,17 @@ export class SessionManager {
 
   async saveProject(): Promise<Envelope<ProjectInfo>> {
     const project = this.requireProject();
+    // §18.1(4): the showcase is read-only-ish. "Save" on it must prompt for a
+    // new location rather than write over the bundled copy; the copy lives in
+    // a scratch dir, so the bundled copy is safe, but saving should still not
+    // pretend to succeed against the scratch copy.
+    if (project.showcase) {
+      return errorEnvelope(
+        'saveProject',
+        'GP4109',
+        'the showcase is read-only; use Save As… to keep your changes',
+      );
+    }
     if (project.form === 'gpk') {
       if (this.deps.location === null) {
         return errorEnvelope('saveProject', 'GP9001', 'gatepack executable not found (needed to bundle .gpk)');

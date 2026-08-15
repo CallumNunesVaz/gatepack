@@ -48,6 +48,83 @@ def dumps_mapping(mapping: Mapping[str, Any]) -> str:
     return "\n".join(_block_mapping(mapping, 0, top=False)) + "\n"
 
 
+def dumps_documents_with_design_source(
+    design_source: str, documents: Sequence[Mapping[str, Any]]
+) -> str:
+    """Emit a ``.gpk`` stream whose first document carries ``design_source`` verbatim.
+
+    ``design_source`` is the exact ``design.yaml`` text; it is emitted after the
+    ``gatepack``/``kind`` header so comments and key order survive (§10.4
+    "contained in a single file **as source**").  ``documents`` are the
+    remaining (truth table / library) tagged mappings, in order.
+    """
+    chunks: list[str] = ["%YAML 1.2", "---", design_document(design_source)]
+    for doc in documents:
+        chunks.append("---")
+        chunks.append("\n".join(_block_mapping(doc, 0, top=True)))
+    return "\n".join(chunks) + "\n"
+
+
+def design_document(design_source: str) -> str:
+    """Render a design document: ``gatepack``/``kind`` header + verbatim source.
+
+    A single trailing newline is normalised away here and restored by the stream
+    joiner in :func:`dumps_documents_with_design_source`, so the emitted source
+    matches the original text byte-for-byte when it ended in a newline.
+    """
+    body = design_source
+    if body.endswith("\n"):
+        body = body[:-1]
+    return f"gatepack: 1\nkind: design\n{body}"
+
+
+def split_documents(text: str) -> list[str]:
+    """Split raw ``.gpk`` text into document bodies (separators/directives removed).
+
+    Line endings and comments are preserved, so the design document's verbatim
+    source can be recovered by :func:`design_source`.  A document whose only
+    content is blank/comment lines is dropped, mirroring
+    :func:`gatepack.frontend.yaml_subset.parse_documents` so the two lists stay
+    aligned one-to-one.
+    """
+    documents: list[str] = []
+    current: list[str] = []
+
+    def flush() -> None:
+        if any(_has_content(line) for line in current):
+            documents.append("".join(current))
+        current.clear()
+
+    for line in text.splitlines(keepends=True):
+        stripped = line.strip()
+        if stripped in ("---", "..."):
+            flush()
+            continue
+        if stripped.startswith("%"):
+            continue
+        current.append(line)
+    flush()
+    return documents
+
+
+def design_source(body: str) -> str:
+    """Recover the verbatim ``design.yaml`` text from a raw design document body.
+
+    The body is ``gatepack: 1`` / ``kind: design`` followed by the original
+    text; everything after the ``kind`` header line is returned unchanged.
+    """
+    out: list[str] = []
+    seen_kind = False
+    for line in body.splitlines(keepends=True):
+        stripped = line.strip()
+        if not seen_kind:
+            if stripped.startswith("kind:"):
+                seen_kind = True
+            continue
+        out.append(line)
+    return "".join(out)
+
+
 def document_dict(data: Mapping[str, Any], kind: str) -> dict:
     """Return a tagged document mapping (``gatepack`` first, then ``kind``)."""
     doc = {"gatepack": 1, "kind": kind}
@@ -57,6 +134,12 @@ def document_dict(data: Mapping[str, Any], kind: str) -> dict:
 
 def _is_scalar(value: Any) -> bool:
     return value is None or isinstance(value, (bool, int, float, str))
+
+
+def _has_content(line: str) -> bool:
+    """True when a raw document line is not blank and not purely a comment."""
+    stripped = line.strip()
+    return stripped != "" and not stripped.startswith("#")
 
 
 def _all_scalars(value: Any) -> bool:
