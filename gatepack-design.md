@@ -1440,6 +1440,13 @@ gatepack/
     cli.py
   app/                        Electron application
     main/ preload/ renderer/ resources/bin/
+    shared/api.ts             IPC contract - core emits it, main validates it,
+                              renderer consumes it and nothing else
+    tests/e2e/                Playwright, driving the real main process.
+                              Lives under app/ rather than the repo-root
+                              tests/ below, because Node resolves node_modules
+                              by walking up from the importing file and
+                              nothing above the repo-root tests/ has one.
   libraries/
     74aup.csv
     74aup.refs.md             datasheet citations
@@ -1447,8 +1454,8 @@ gatepack/
     golden/
     sync_interlock/
     async_handshake/
-  tests/
-    unit/ golden/ mutation/ e2e/
+  tests/                      core tests (Python)
+    unit/ golden/ mutation/ contract/ toolchain/
   docs/
 ```
 

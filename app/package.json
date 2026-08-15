@@ -1,7 +1,7 @@
 {
   "name": "gatepack-app",
   "version": "0.1.0",
-  "description": "gatepack desktop application — a view over CLI-produced artefacts (§5)",
+  "description": "gatepack desktop application \u2014 a view over CLI-produced artefacts (\u00a75)",
   "license": "GPL-3.0-only",
   "private": true,
   "type": "module",
@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test --config playwright.config.cjs",
     "start": "electron ."
   },
   "dependencies": {

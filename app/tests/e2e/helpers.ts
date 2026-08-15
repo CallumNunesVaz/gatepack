@@ -9,8 +9,13 @@ import { _electron, type ElectronApplication, type Page } from '@playwright/test
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-export const APP_DIR = path.resolve(__dirname, '..', '..', 'app');
+// `__dirname` is unavailable here: app/package.json is `"type": "module"`, so
+// Playwright loads these specs as ESM. Derive the directory from the module
+// URL instead of assuming a CommonJS wrapper.
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+export const APP_DIR = path.resolve(HERE, '..', '..');
 
 const COMPILE_ENVELOPE = JSON.stringify({
   ok: true,

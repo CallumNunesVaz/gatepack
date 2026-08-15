@@ -15,5 +15,8 @@
     "rootDir": ".",
     "types": ["node"]
   },
-  "include": ["main", "preload", "shared"]
+  "include": ["main", "preload", "shared"],
+  // tests are run by vitest from source; shipping compiled test
+  // files inside the packaged app is dead weight and noise.
+  "exclude": ["**/*.test.ts", "**/*.test.cts"]
 }
