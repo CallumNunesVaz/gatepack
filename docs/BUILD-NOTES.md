@@ -496,3 +496,125 @@ the class of "undefined after power-on" bug the check exists to catch.
 - The C5 "M- and S-cells are never written to Liberty" invariant is still
   enforced by `select_for_liberty`; a regression test exists via
   `test_m_and_s_tier_excluded`.
+
+---
+
+# BUILD NOTES — §10.4 single-file project format (`gatepack/project/`)
+
+## What was built
+
+The §10.4 single-file project format: a whole project — design, truth table and
+optionally its cell library — in one plain multi-document YAML file (`.gpk`),
+with lossless, byte-deterministic conversion to/from the exploded
+`design.yaml` + `truth_table.csv` + `parts.csv` directory.
+
+Files added/changed:
+
+- `gatepack/frontend/yaml_subset.py` — `parse_documents(text)` (multi-document
+  `---`/`...` support, `%YAML` directive skip, absolute line numbers per node).
+  `parse()` is unchanged. Duplicate-key rejection within a mapping is unchanged.
+- `gatepack/project/serialize.py` — a hand-written deterministic YAML emitter
+  (the inverse of `yaml_subset`): `gatepack`/`kind` first, then sorted keys;
+  sequences preserve order; scalars quoted only when a plain form would not
+  round-trip.
+- `gatepack/project/__init__.py` — the `Project`/`DesignDocument`/
+  `TruthTableDocument`/`LibraryDocument` model, `load_project` (directory or
+  `.gpk`), `bundle`, `explode`, `gpk_text`, `design_text`, `truth_table_text`,
+  `library_text`, `explode_to_dir`, and `library_divergence`/`library_sha256`.
+- `gatepack/parts.py` — canonical CSV serialisation: `part_to_row`, `part_to_dict`,
+  `dict_to_row`, `rows_to_csv`, `parts_to_csv`.
+- `gatepack/frontend/frontend.py` — `compile_design_file` accepts a `.gpk`
+  (extracts the embedded design document and compiles it with provenance pointing
+  at the `.gpk`'s own absolute line numbers). This makes `compile`, `estimate`
+  and `verify` all accept `.gpk` for the design path.
+- `gatepack/cli.py` — `gatepack project bundle <dir> -o <file>.gpk` and
+  `gatepack project explode <file>.gpk -o <dir>`; `lib check <x>.gpk` reports an
+  embedded library and its divergence from the on-disk source.
+- Tests: `tests/unit/test_project.py` (new), multi-doc cases in
+  `tests/unit/test_yaml_subset.py`, contract additions in
+  `tests/contract/test_cli_contract.py`, round-trip goldens in
+  `tests/golden/test_golden_designs.py`, and `scripts/tests/test_project.sh`.
+
+## Test command and result
+
+```
+.venv/bin/pytest -q
+# 257 passed, 2 skipped in 0.54s
+bash scripts/tests/run.sh
+# 3/3 test scripts passed (test_cli_e2e.sh: 12, test_verify.sh: 10, test_project.sh: 14)
+```
+
+The two skips are the pre-existing sby/Yosys ones (§7.3/§21.4, never faked).
+
+## Round-trip guarantees (the thing that matters most)
+
+The two §10.4 round-trip properties are pinned by goldens over `traffic_light`,
+`xor2` and `decoder_3to8`:
+
+- `bundle(explode(y)) == y` — `gpk_text(parse_gpk(bundle(dir))) == bundle(dir)`,
+  byte-for-byte, including after writing to disk and re-reading.
+- `explode(bundle(x)) == x` — re-bundling the exploded directory yields the
+  identical `.gpk`.
+
+This holds because the emitter and parser are mutual inverses on the canonical
+subset (int/float/bool/str/None, sorted keys, quoted-only-when-needed scalars)
+and the library `sha256` is computed over the *canonical* `parts.csv` (so it is
+stable under explode→re-bundle, not over the hand-quoted input bytes).
+
+## Cases where round-tripping is NOT byte-exact
+
+This is the honest list; every one is a *canonicalisation*, not a silent churn,
+and each is idempotent (the second save is byte-identical to the first):
+
+1. **First bundle reformats `design.yaml`.** Comments are dropped and keys are
+   re-sorted. `bundle` parses the raw file and emits the canonical form once;
+   every subsequent save is stable. This is inherent to "text is canonical, the
+   serializer is deterministic" — the §10.4 requirement is stability, not
+   comment preservation.
+2. **`parts.csv` loses hand-added quotes.** The repository `74aup.csv` quotes
+   `"TI;Nexperia;Diodes"` and `"TI"`; the canonical writer (Python `csv`,
+   `QUOTE_MINIMAL`) does not, so the exploded `parts.csv` differs from the input
+   bytes. The embedded `sha256` is therefore over the canonical form (see above),
+   so divergence detection compares canonical-to-canonical and is unaffected.
+3. **Truth-table cells are canonicalised to `int` when numeric.** A hand-written
+   `.gpk` with `rows: [["0", "0"]]` (quoted) explodes as `0,0` and re-bundles as
+   `rows: [[0, 0]]`. The canonical form types `0`/`1` as integers (per the §10.4
+   example).
+4. **Extra CSV columns are dropped** from an embedded library, because
+   `load_parts` reads only `REQUIRED_COLUMNS`.
+
+## Guesses / decisions made
+
+1. **"Sorted keys" = alphabetical, with `gatepack`/`kind` forced first.** The
+   §10.4 example shows `source`, `sha256`, `parts` in that (non-alphabetical)
+   order; I emit alphabetical (`parts`, `sha256`, `source`) for determinism, per
+   the §C6 "sorted output" convention already used for `manifest.json`.
+2. **Library `sha256` is over the canonical `parts.csv`, not the raw bytes.** See
+   "round-trip guarantees" above; this is what makes divergence detection
+   compare like-for-like and keeps explode→re-bundle stable.
+3. **`source` is the exploded filename (basename).** `lib check <x>.gpk` resolves
+   it relative to the `.gpk`'s directory. Divergence (mismatch) is an error
+   (exit 1); a source that is simply not on disk is a note (exit 0).
+4. **Bundle does not validate the design schema.** It only requires valid YAML
+   (a mapping). Semantic validation remains C1's job at compile time, so you can
+   bundle a design that does not yet compile.
+5. **`estimate`/`verify` still require `--library`.** A `.gpk` is accepted for
+   the *design* argument (via `compile_design_file`), but the embedded library is
+   not silently substituted for an explicit `--library`. Wiring the embedded
+   library into the build path is a follow-up, not done here.
+6. **`truth_table.csv` schema is my invention** (header row = column names, then
+   data rows; cells typed as `int` when they parse). The design document never
+   defines it (already noted in the M2/M3 notes), so I picked the §10.4 example's
+   shape.
+7. **`gatepack`/`kind` are reserved keys** inside the design document (they are
+   also forbidden by the `Design` schema's `extra="forbid"`), so `explode` strips
+   them and `bundle` re-adds them without collision.
+8. **`explode` overwrites existing files** in the target directory; it does not
+   remove stale files or refuse to clobber.
+
+## Unfinished / not in this increment
+
+- The truth-table *front-end* (C1 still compiles only `design.yaml`; the
+  `truth_table` document round-trips but is not synthesised).
+- Using an embedded library in `estimate`/`verify` when `--library` is omitted.
+- A C9 `.gpk` file association (M12, as the design schedules it).

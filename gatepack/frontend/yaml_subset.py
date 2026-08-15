@@ -78,6 +78,37 @@ def parse(text: str) -> Node:
     return node
 
 
+def parse_documents(text: str) -> list[Node]:
+    """Parse a multi-document YAML stream (``---`` separated) into one node per
+    document.
+
+    Each returned node carries *absolute* 1-based line numbers within ``text``,
+    so provenance and error messages point at the right place in the file
+    rather than at a position relative to a document body.  ``%YAML``/``%TAG``
+    directives and ``---``/``...`` separators are skipped, and documents that
+    contain only blank/comment lines are dropped.
+    """
+    lines = _preprocess(text)
+    documents: list[Node] = []
+    current: list[tuple[int, str]] = []
+
+    def flush() -> None:
+        if any(content.strip() for _lineno, content in current):
+            documents.append(_Parser(current).parse_block_node(0))
+        current.clear()
+
+    for lineno, content in lines:
+        stripped = content.strip()
+        if stripped == "---" or stripped == "...":
+            flush()
+            continue
+        if stripped.startswith("%"):
+            continue
+        current.append((lineno, content))
+    flush()
+    return documents
+
+
 def to_python(node: Node) -> Any:
     """Convert a :class:`Node` tree to plain Python (dict/list/scalar)."""
     if isinstance(node, Scalar):

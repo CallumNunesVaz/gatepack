@@ -16,6 +16,7 @@ Every validation error names the offending cell.
 from __future__ import annotations
 
 import csv
+import io
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -286,3 +287,106 @@ def load_parts(path: str | Path) -> list[Part]:
         if missing:
             raise PartError("<header>", f"missing columns: {missing}")
         return [Part.from_row(row) for row in reader]
+
+
+# ---------------------------------------------------------------------------
+# Canonical CSV serialisation (§10.4: byte-deterministic round-tripping)
+# ---------------------------------------------------------------------------
+
+
+def part_to_row(part: Part) -> list[str]:
+    """Return ``part`` as a CSV row in ``REQUIRED_COLUMNS`` order."""
+    return [
+        part.cell,
+        part.tier,
+        part.family,
+        part.part_suffix,
+        ";".join(f"{e.part_number}:{e.mfr}" for e in part.equivalents),
+        part.function or "",
+        str(part.inputs),
+        str(part.gates_per_pkg),
+        part.package,
+        ";".join(part.mfrs),
+        _fmt_float(part.vcc_min),
+        _fmt_float(part.vcc_max),
+        _fmt_float(part.area),
+        _fmt_optional_float(part.tpd_ns),
+        _fmt_optional_float(part.iq_ua),
+    ]
+
+
+def part_to_dict(part: Part) -> dict:
+    """Return ``part`` as a canonical mapping (for the ``.gpk`` library document).
+
+    ``equivalents`` and ``mfrs`` are kept as their ``;``-joined CSV form, and
+    empty optional fields are ``None`` so the YAML is compact and round-trips.
+    """
+    return {
+        "cell": part.cell,
+        "tier": part.tier,
+        "family": part.family,
+        "part_suffix": part.part_suffix,
+        "equivalents": ";".join(f"{e.part_number}:{e.mfr}" for e in part.equivalents) or None,
+        "function": part.function,
+        "inputs": part.inputs,
+        "gates_per_pkg": part.gates_per_pkg,
+        "package": part.package,
+        "mfrs": ";".join(part.mfrs) or None,
+        "vcc_min": part.vcc_min,
+        "vcc_max": part.vcc_max,
+        "area": part.area,
+        "tpd_ns": part.tpd_ns,
+        "iq_ua": part.iq_ua,
+    }
+
+
+def dict_to_row(d: Mapping[str, object]) -> list[str]:
+    """Return a canonical mapping (from a ``.gpk`` library document) as a CSV row."""
+    return [
+        str(d["cell"]),
+        str(d["tier"]),
+        str(d["family"]),
+        str(d["part_suffix"]),
+        _str_or_empty(d.get("equivalents")),
+        _str_or_empty(d.get("function")),
+        str(d["inputs"]),
+        str(d["gates_per_pkg"]),
+        str(d["package"]),
+        _str_or_empty(d.get("mfrs")),
+        _fmt_float(d["vcc_min"]),
+        _fmt_float(d["vcc_max"]),
+        _fmt_float(d["area"]),
+        _fmt_optional_float(d.get("tpd_ns")),
+        _fmt_optional_float(d.get("iq_ua")),
+    ]
+
+
+def rows_to_csv(rows: Sequence[Sequence[str]]) -> str:
+    """Canonical ``parts.csv`` text: header + ``rows``, minimal quoting."""
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    writer.writerow(REQUIRED_COLUMNS)
+    for row in rows:
+        writer.writerow(list(row))
+    return buf.getvalue()
+
+
+def parts_to_csv(parts: Sequence[Part]) -> str:
+    """Canonical ``parts.csv`` text for ``parts``."""
+    return rows_to_csv([part_to_row(p) for p in parts])
+
+
+def _fmt_float(v: object) -> str:
+    if isinstance(v, bool):
+        v = 1.0 if v else 0.0
+    return repr(float(v))
+
+
+def _fmt_optional_float(v: object) -> str:
+    if v is None or v == "":
+        return ""
+    return _fmt_float(v)
+
+
+def _str_or_empty(v: object) -> str:
+    return "" if v is None else str(v)

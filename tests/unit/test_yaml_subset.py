@@ -115,3 +115,40 @@ def test_quoted_and_plain_key_collide():
     # `name` and `"name"` are the same key; the second must be rejected.
     with pytest.raises(ys.ParseError, match="duplicate mapping key 'name'"):
         ys.parse('name: a\n"name": b\n')
+
+
+def test_parse_documents_splits_on_separators():
+    text = "---\na: 1\n---\nb: 2\n"
+    docs = ys.parse_documents(text)
+    assert [ys.to_python(d) for d in docs] == [{"a": 1}, {"b": 2}]
+
+
+def test_parse_documents_tracks_absolute_line_numbers():
+    # line numbers are absolute within the whole stream, not per-document
+    text = "%YAML 1.2\n---\na: 1\nb: 2\n---\nc: 3\n"
+    docs = ys.parse_documents(text)
+    assert ys.to_python(docs[1]) == {"c": 3}
+    assert docs[1].items[0][1].line == 6
+
+
+def test_parse_documents_skips_empty_and_directives():
+    text = "%YAML 1.2\n---\n---\na: 1\n---\n...\n"
+    docs = ys.parse_documents(text)
+    assert [ys.to_python(d) for d in docs] == [{"a": 1}]
+
+
+def test_parse_documents_single_document_without_separator():
+    docs = ys.parse_documents("a: 1\nb: 2\n")
+    assert [ys.to_python(d) for d in docs] == [{"a": 1, "b": 2}]
+
+
+def test_parse_documents_duplicate_key_across_documents():
+    # a duplicate key is rejected within one document, not across documents
+    text = "---\na: 1\n---\na: 2\n"
+    docs = ys.parse_documents(text)
+    assert [ys.to_python(d) for d in docs] == [{"a": 1}, {"a": 2}]
+
+
+def test_parse_documents_rejects_duplicate_within_document():
+    with pytest.raises(ys.ParseError, match="duplicate mapping key 'a'"):
+        ys.parse_documents("---\na: 1\na: 2\n")

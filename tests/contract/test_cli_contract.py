@@ -186,3 +186,70 @@ def test_verify_manifest_is_deterministic_and_has_no_timestamp(tmp_path):
     for check in m1["verification"]["checks"]:
         if check["status"] == "not run":
             assert "not installed" in check["detail"] or "required" in check["detail"]
+
+
+def _project_dir(tmp_path: Path) -> Path:
+    (tmp_path / "design.yaml").write_text(_valid_design(tmp_path).read_text())
+    return tmp_path
+
+
+def test_project_bundle_and_explode_round_trip(tmp_path):
+    src = _project_dir(tmp_path)
+    gpk = tmp_path / "x.gpk"
+    assert main(["project", "bundle", str(src), "-o", str(gpk)]) == EXIT_OK
+    assert gpk.exists()
+    # plain multi-document YAML, not an archive (§10.4)
+    text = gpk.read_text()
+    assert text.startswith("%YAML 1.2\n")
+    assert "gatepack: 1" in text
+    assert "kind: design" in text
+    assert "name: t" in text
+
+    out = tmp_path / "out"
+    assert main(["project", "explode", str(gpk), "-o", str(out)]) == EXIT_OK
+    assert (out / "design.yaml").exists()
+
+    # round-trip is byte-deterministic: re-bundling the exploded form yields the
+    # identical .gpk (§10.4)
+    assert main(["project", "bundle", str(out), "-o", str(tmp_path / "x2.gpk")]) == EXIT_OK
+    assert (tmp_path / "x2.gpk").read_text() == text
+
+
+def test_compile_accepts_gpk(tmp_path):
+    src = _project_dir(tmp_path)
+    gpk = tmp_path / "x.gpk"
+    assert main(["project", "bundle", str(src), "-o", str(gpk)]) == EXIT_OK
+    out = tmp_path / "build"
+    assert main(["compile", str(gpk), "-o", str(out)]) == EXIT_OK
+    assert (out / "generated.v").exists()
+    assert (out / "properties.sv").exists()
+
+
+def test_project_bundle_missing_design_exits_error(tmp_path):
+    assert main(["project", "bundle", str(tmp_path), "-o", str(tmp_path / "x.gpk")]) == EXIT_ERROR
+
+
+def test_project_explode_missing_gatepack_exits_error(tmp_path):
+    bad = tmp_path / "bad.gpk"
+    bad.write_text("%YAML 1.2\n---\nkind: design\nname: t\n")
+    assert main(["project", "explode", str(bad), "-o", str(tmp_path / "out")]) == EXIT_ERROR
+
+
+def test_lib_check_gpk_reports_embedded_library(tmp_path):
+    src = _project_dir(tmp_path)
+    (tmp_path / "parts.csv").write_text(LIBRARY_CSV.read_text())
+    gpk = tmp_path / "x.gpk"
+    assert main(["project", "bundle", str(src), "-o", str(gpk)]) == EXIT_OK
+    assert main(["lib", "check", str(gpk)]) == EXIT_OK
+
+
+def test_lib_check_gpk_reports_library_divergence(tmp_path):
+    src = _project_dir(tmp_path)
+    parts = tmp_path / "parts.csv"
+    parts.write_text(LIBRARY_CSV.read_text())
+    gpk = tmp_path / "x.gpk"
+    assert main(["project", "bundle", str(src), "-o", str(gpk)]) == EXIT_OK
+
+    # diverge the on-disk library: the embedded sha256 no longer matches
+    parts.write_text(parts.read_text().replace("1G04", "1G99"))
+    assert main(["lib", "check", str(gpk)]) == EXIT_ERROR

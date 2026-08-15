@@ -24,6 +24,13 @@ from gatepack.frontend import AsyncRefused, CompileError, compile_design_file
 from gatepack.liberty.generator import generate, sanitize_library_name
 from gatepack.liberty.validate import LibertyError
 from gatepack.parts import DropReason, Exclusion, load_parts
+from gatepack.project import (
+    ProjectError,
+    bundle,
+    explode_to_dir,
+    library_divergence,
+    load_project,
+)
 from gatepack.verify.base import CheckStatus
 from gatepack.verify.run import run_verify
 
@@ -87,7 +94,7 @@ def _build_parser() -> argparse.ArgumentParser:
     compile_p = sub.add_parser(
         "compile", help="C1 front-end: design.yaml -> behavioural Verilog + properties"
     )
-    compile_p.add_argument("design", help="path to design.yaml")
+    compile_p.add_argument("design", help="path to design.yaml or .gpk")
     compile_p.add_argument(
         "-o", "--output", default="build", help="output directory (default: %(default)s)"
     )
@@ -95,7 +102,7 @@ def _build_parser() -> argparse.ArgumentParser:
     estimate = sub.add_parser(
         "estimate", help="run the front-end + synthesis and emit the §6 viability verdict"
     )
-    estimate.add_argument("design", help="path to design.yaml")
+    estimate.add_argument("design", help="path to design.yaml or .gpk")
     estimate.add_argument("--library", required=True, help="path to parts.csv")
     estimate.add_argument(
         "--build", default="build", help="build directory (default: %(default)s)"
@@ -104,11 +111,28 @@ def _build_parser() -> argparse.ArgumentParser:
     verify = sub.add_parser(
         "verify", help="C4: equivalence + exhaustive simulation + mutation (§12)"
     )
-    verify.add_argument("design", help="path to design.yaml")
+    verify.add_argument("design", help="path to design.yaml or .gpk")
     verify.add_argument("--library", required=True, help="path to parts.csv")
     verify.add_argument(
         "--build", default="build", help="build directory (default: %(default)s)"
     )
+
+    project = sub.add_parser(
+        "project", help="single-file project format (§10.4)"
+    )
+    project_sub = project.add_subparsers(dest="project_command", required=True)
+
+    bundle_p = project_sub.add_parser(
+        "bundle", help="exploded directory -> single-file .gpk"
+    )
+    bundle_p.add_argument("source", help="project directory (design.yaml + optional csv)")
+    bundle_p.add_argument("-o", "--output", required=True, help="output .gpk path")
+
+    explode_p = project_sub.add_parser(
+        "explode", help="single-file .gpk -> exploded directory"
+    )
+    explode_p.add_argument("gpk", help="path to a .gpk file")
+    explode_p.add_argument("-o", "--output", required=True, help="output directory")
 
     return parser
 
@@ -127,12 +151,19 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_estimate(args)
     if args.command == "verify":
         return _cmd_verify(args)
+    if args.command == "project":
+        if args.project_command == "bundle":
+            return _cmd_project_bundle(args)
+        if args.project_command == "explode":
+            return _cmd_project_explode(args)
     parser.error(f"unknown command {args.command!r}")
     return EXIT_USAGE
 
 
 def _cmd_lib_check(args: argparse.Namespace) -> int:
     csv_path = Path(args.csv)
+    if csv_path.suffix == ".gpk":
+        return _cmd_lib_check_gpk(csv_path)
     try:
         parts = load_parts(csv_path)
     except parts_mod.PartError as exc:
@@ -302,6 +333,76 @@ def _cmd_verify(args: argparse.Namespace) -> int:
     if report.has_failure:
         return EXIT_ERROR
     return EXIT_ERROR  # not-run is not a pass (§14: never claim an unrun proof)
+
+
+def _cmd_lib_check_gpk(gpk_path: Path) -> int:
+    # §10.4: an embedded library records a sha256 so divergence from an on-disk
+    # library is detectable rather than silent.  `lib check <x>.gpk` reports it.
+    try:
+        project = load_project(gpk_path)
+    except ProjectError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    library = project.library
+    if library is None:
+        print(f"{gpk_path}: no embedded library document")
+        return EXIT_OK
+
+    print(
+        f"embedded library: source={library.source}, sha256={library.sha256}, "
+        f"{len(library.parts)} part(s)"
+    )
+    status, detail = library_divergence(project, gpk_path.parent)
+    if status == "none":
+        return EXIT_OK
+    if status == "match":
+        print(f"library: {detail}")
+        return EXIT_OK
+    if status == "missing":
+        print(f"note: {detail}", file=sys.stderr)
+        return EXIT_OK
+    print(f"error: {detail}", file=sys.stderr)
+    return EXIT_ERROR
+
+
+def _cmd_project_bundle(args: argparse.Namespace) -> int:
+    source = Path(args.source)
+    try:
+        project = load_project(source)
+        text = bundle(source)
+    except (ProjectError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    out = Path(args.output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text)
+
+    documents = ["design"]
+    if project.truth_table is not None:
+        documents.append("truth_table")
+    if project.library is not None:
+        documents.append("library")
+    print(f"bundled {source} -> {out} ({', '.join(documents)})")
+    return EXIT_OK
+
+
+def _cmd_project_explode(args: argparse.Namespace) -> int:
+    gpk_path = Path(args.gpk)
+    try:
+        text = gpk_path.read_text()
+    except OSError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        written = explode_to_dir(text, args.output)
+    except ProjectError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    for path in written:
+        print(f"wrote {path}")
+    return EXIT_OK
 
 
 if __name__ == "__main__":

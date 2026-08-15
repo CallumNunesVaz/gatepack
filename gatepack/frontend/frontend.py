@@ -33,6 +33,20 @@ class CompileResult:
 
 def compile_design_file(path: str | Path) -> CompileResult:
     path = Path(path)
+    if path.suffix == ".gpk":
+        # Single-file project (§10.4): extract the embedded design document and
+        # compile it with provenance pointing at the .gpk's own line numbers.
+        from gatepack.project import ProjectError, load_project
+
+        try:
+            project = load_project(path)
+        except ProjectError as exc:
+            raise CompileError(str(exc)) from exc
+        return compile_design(
+            project.design.data,
+            source_name=path.name,
+            provenance=project.design.provenance,
+        )
     text = path.read_text()
     return compile_design_text(text, source_name=path.name)
 
