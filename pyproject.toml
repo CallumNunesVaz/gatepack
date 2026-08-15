@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gatepack"
+version = "0.1.0"
+description = "Compile truth tables and FSMs into discrete-logic BOMs and schematic netlists"
+requires-python = ">=3.10"
+license = "GPL-3.0-or-later"
+dependencies = [
+    "pydantic>=2",
+]
+
+[project.scripts]
+gatepack = "gatepack.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["gatepack*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
