@@ -79,6 +79,21 @@ def test_one_hot_initial_state_is_set_via_feedback():
     assert "state_A <= 1'b1;" not in v
 
 
+def test_output_provenance_is_on_port_not_assign():
+    # gp_src must be on the output net (port declaration), never before the
+    # continuous assign — Yosys 0.23 rejects an attribute before `assign`.
+    yaml = sync_design(
+        outputs=["green"],
+        output_logic={"green": "state == B"},
+    )
+    v = compile_design_text(yaml).verilog
+    assert "(* gp_src" in v
+    assert "output wire green" in v
+    assert "assign green = state_B;" in v
+    # the attribute is attached to the port declaration, not to the assign
+    assert "*)\n  assign green" not in v
+
+
 def test_binary_encoding_emits_vector_and_localparams():
     yaml = sync_design(
         states=["A", "B", "C", "D"],

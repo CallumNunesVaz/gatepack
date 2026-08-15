@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "comment": "Declared dependencies of gatepack, audited by scripts/licence_audit.py against a GPL-3.0-or-later compatibility policy (§4). Entries mirror the §4 licensing table plus the Python runtime dependency (pyproject.toml). Keep this in sync with pyproject.toml by hand.",
+  "dependencies": [
+    {
+      "name": "Yosys",
+      "licence": "ISC",
+      "integration": "bundled binary, child process",
+      "unmodified": true,
+      "note": "synthesis / formal engine"
+    },
+    {
+      "name": "ABC",
+      "licence": "BSD-style (UC Berkeley)",
+      "integration": "via Yosys",
+      "unmodified": true,
+      "note": "technology mapping"
+    },
+    {
+      "name": "SymbiYosys / sby",
+      "licence": "ISC",
+      "integration": "bundled binary, child process",
+      "unmodified": true,
+      "note": "properties + equivalence fallback"
+    },
+    {
+      "name": "Espresso (maintained fork)",
+      "licence": "BSD-style (UC Berkeley)",
+      "integration": "bundled binary",
+      "unmodified": true,
+      "note": "two-level minimisation (async v0.2)"
+    },
+    {
+      "name": "Icarus Verilog",
+      "licence": "GPL-2.0+",
+      "integration": "child process",
+      "unmodified": true,
+      "note": "exhaustive simulation (§C4.3)"
+    },
+    {
+      "name": "netlistsvg",
+      "licence": "MIT",
+      "integration": "npm dependency",
+      "unmodified": true,
+      "note": "schematic rendering (C12)"
+    },
+    {
+      "name": "elkjs",
+      "licence": "EPL-2.0",
+      "integration": "transitive via netlistsvg",
+      "unmodified": true,
+      "note": "weak-copyleft at file scope, consumed unmodified as a library (§4)"
+    },
+    {
+      "name": "React Flow",
+      "licence": "MIT",
+      "integration": "npm (core only)",
+      "unmodified": true,
+      "note": "FSM graph (C10); verify no Pro features used"
+    },
+    {
+      "name": "Electron",
+      "licence": "MIT",
+      "integration": "application shell",
+      "unmodified": true,
+      "note": "desktop shell"
+    },
+    {
+      "name": "KiCad",
+      "licence": "GPL-3.0+",
+      "integration": "file interchange only",
+      "unmodified": true,
+      "note": ".net netlist import"
+    },
+    {
+      "name": "pydantic",
+      "licence": "MIT",
+      "integration": "Python runtime dependency",
+      "unmodified": true,
+      "note": "the only runtime dependency (pyproject.toml)"
+    }
+  ]
+}
