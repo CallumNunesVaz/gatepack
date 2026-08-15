@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "comment": "Declared dependencies of gatepack, audited by scripts/licence_audit.py against a GPL-3.0-or-later compatibility policy (§4). Entries mirror the §4 licensing table plus the Python runtime dependency (pyproject.toml). Keep this in sync with pyproject.toml by hand.",
+  "comment": "Declared dependencies of gatepack, audited by scripts/licence_audit.py against a GPL-3.0-or-later compatibility policy (\u00a74). Entries mirror the \u00a74 licensing table plus the Python runtime dependency (pyproject.toml). Keep this in sync with pyproject.toml by hand.",
   "dependencies": [
     {
       "name": "Yosys",
@@ -35,7 +35,7 @@
       "licence": "GPL-2.0+",
       "integration": "child process",
       "unmodified": true,
-      "note": "exhaustive simulation (§C4.3)"
+      "note": "exhaustive simulation (\u00a7C4.3)"
     },
     {
       "name": "netlistsvg",
@@ -49,7 +49,7 @@
       "licence": "EPL-2.0",
       "integration": "transitive via netlistsvg",
       "unmodified": true,
-      "note": "weak-copyleft at file scope, consumed unmodified as a library (§4)"
+      "note": "weak-copyleft at file scope, consumed unmodified as a library (\u00a74)"
     },
     {
       "name": "React Flow",
@@ -78,6 +78,41 @@
       "integration": "Python runtime dependency",
       "unmodified": true,
       "note": "the only runtime dependency (pyproject.toml)"
+    },
+    {
+      "name": "react",
+      "licence": "MIT",
+      "integration": "renderer framework (C10-C15)",
+      "unmodified": true,
+      "note": "permissive; licence read from the installed package.json, not assumed"
+    },
+    {
+      "name": "react-dom",
+      "licence": "MIT",
+      "integration": "renderer DOM bindings",
+      "unmodified": true,
+      "note": "permissive; licence read from the installed package.json, not assumed"
+    },
+    {
+      "name": "monaco-editor",
+      "licence": "MIT",
+      "integration": "C10 spec editor",
+      "unmodified": true,
+      "note": "permissive; licence read from the installed package.json, not assumed"
+    },
+    {
+      "name": "@monaco-editor/react",
+      "licence": "MIT",
+      "integration": "C10 spec editor React bindings",
+      "unmodified": true,
+      "note": "permissive; licence read from the installed package.json, not assumed"
+    },
+    {
+      "name": "zod",
+      "licence": "MIT",
+      "integration": "\u00a75.2 IPC payload validation in the main process",
+      "unmodified": true,
+      "note": "permissive; licence read from the installed package.json, not assumed"
     }
   ]
 }
