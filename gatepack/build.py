@@ -253,10 +253,10 @@ def run_build(
     if mapped_json is not None:
         netlist = load_mapped_json(mapped_json)
     else:
-        netlist = _synthesize(compiled, parts, out)
+        netlist, reason = _synthesize(compiled, parts, out)
         if netlist is None:
             raise RuntimeError(
-                "synthesis unavailable: provide --mapped <mapped.json> or "
+                f"synthesis unavailable ({reason}): provide --mapped <mapped.json> or "
                 "install yosys (never faked here)"
             )
 
@@ -277,8 +277,13 @@ def run_build(
     return result, paths
 
 
-def _synthesize(compiled, parts, out: Path) -> MappedNetlist | None:
-    """Run Yosys if available and return the mapped netlist, else ``None``."""
+def _synthesize(compiled, parts, out: Path) -> tuple[MappedNetlist | None, str | None]:
+    """Run Yosys and return ``(netlist, None)``, or ``(None, reason)``.
+
+    The reason matters: "synthesis unavailable" previously covered a missing
+    Yosys, a Yosys crash and a path bug alike, so a real failure was reported
+    as a missing tool and sent the reader looking in the wrong place.
+    """
     import shutil
     import subprocess
 
@@ -288,7 +293,7 @@ def _synthesize(compiled, parts, out: Path) -> MappedNetlist | None:
     from gatepack.synth.synchronous import SynchronousBackend
 
     if not shutil.which("yosys"):
-        return None
+        return None, "yosys is not on PATH"
 
     vcc = compiled.design.constraints.vcc
     liberty = generate_liberty(parts, library_name="gatepack", project_vcc=vcc)
@@ -311,16 +316,28 @@ def _synthesize(compiled, parts, out: Path) -> MappedNetlist | None:
     )
     (out / "yosys.ys").write_text(script)
     try:
+        # No `cwd=`: the script embeds paths relative to the *invocation*
+        # directory (which is also what keeps `yosys.ys` byte-reproducible
+        # across build locations, see scripts/repro_check.py). Running Yosys
+        # from `out.parent` made every nested `--out` path resolve one level
+        # too deep, so `--out build` worked and `--out x/y` failed - reported
+        # as "synthesis unavailable", which blamed a missing tool for a path
+        # bug while Yosys was installed and working.
         proc = subprocess.run(
             ["yosys", "-p", script],
-            cwd=str(out.parent or "."),
             capture_output=True,
             text=True,
             timeout=600,
         )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if proc.returncode != 0 or not mapped.exists():
-        return None
-    return load_mapped_json(mapped)
+    except OSError as exc:
+        return None, f"could not run yosys: {exc}"
+    except subprocess.TimeoutExpired:
+        return None, "yosys timed out after 600s"
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "").strip().splitlines()
+        tail = detail[-1] if detail else "no output"
+        return None, f"yosys exited {proc.returncode}: {tail}"
+    if not mapped.exists():
+        return None, f"yosys exited 0 but wrote no netlist at {mapped}"
+    return load_mapped_json(mapped), None
 
