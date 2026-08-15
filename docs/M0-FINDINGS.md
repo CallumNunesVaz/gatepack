@@ -236,16 +236,41 @@ either way, and it is the conclusion [R4-11] was asking for:
 > **Area is the lever that steers ABC. Timing arcs, in the Liberty form C2
 > currently emits, are not.**
 
-**Consequence for C2, and it is not a small one.** Every cell in the generated
-Liberty currently has `area : 1.0`, so ABC is minimising raw gate count while
-treating a `74AUP1G00` and a `74AUP1G86` as equally expensive. They are not —
-they differ in price, availability, and second-source status, which is the
-entire subject of §10.1. The packer then optimises `pack_cost` *after* the
-mapper has already committed to a gate mix chosen on a cost model that does not
-match it.
+### Consequence for C2 — smaller than it first appears
 
-Making `area` carry a real per-part cost is therefore the highest-leverage
-change available to C3's output quality, and it needs no new Yosys capability —
-only the number. It should be derived from the same `parts.csv` data
-`pack_cost` uses, so the two optimisers stop disagreeing. Deferring the effort
-into timing arcs would have bought nothing.
+My first reading of this was that the uniform `area : 1.0` in the generated
+Liberty meant ABC was minimising raw gate count against a cost model that did
+not match the packer's. **Checking `libraries/74aup.csv` shows that is wrong,
+and the reason is worth stating because it is the premise of the whole
+approach:**
+
+```
+every G-cell and F-cell:  gates_per_pkg 1, package SOT-353, area 1.0
+CNT4 (M-cell):            area 8.0, SO-16
+SUPERVISOR (S-cell):      area 2.0, SOT-23
+```
+
+Each combinational cell ABC can map really is one gate in one SOT-353. They
+*are* equally expensive, so `area : 1.0` is correct, and minimising gate count
+**is** minimising package count. The differentiated areas that matter are
+already present on the M- and S-cells, which ABC never maps anyway. There is no
+disagreement between the mapper and `pack_cost` to fix.
+
+What survives of the point is much narrower. The parts are not quite
+interchangeable on one axis §10.1 does care about — **second sourcing**:
+
+```
+INV, NAND2   3 manufacturers
+most others  2
+DFF_S        1          (the §6 single-source problem, unrelated to mapping)
+```
+
+So a modest refinement is available: bias `area` slightly by sourcing risk, so
+that where two mappings tie on gate count ABC prefers the triple-sourced part.
+That is a tie-breaker worth perhaps a few percent on a real BOM, not a
+correction of a broken cost model. It should be weighed against the cost of
+making `area` mean two things at once, and it is **not** urgent.
+
+The genuinely useful conclusion from this experiment stays the one in the block
+quote above: effort spent emitting Liberty timing arcs would have bought
+nothing, and that question is now closed.
