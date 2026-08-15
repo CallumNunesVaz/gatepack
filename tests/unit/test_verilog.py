@@ -137,9 +137,27 @@ def test_properties_file_emits_assertions():
     )
     yaml += 'properties:\n  - {name: p1, kind: invariant, expr: "!(o & x)"}\n'
     props = compile_design_text(yaml).properties
-    assert "assert property" in props
+    # M6-FINDINGS §1: immediate assertions in a clocked always block. SVA
+    # concurrent assertions (`assert property (@(posedge clk) ...)`) are a
+    # syntax error on open-source Yosys, so emitting them would mean the
+    # prover could never read our properties at all.
+    assert "assert property" not in props
+    assert "gp_assert_0: assert (" in props
     assert "p1" in props
-    assert "disable iff (!rst_n)" in props
+    # `disable iff (!rst_n)` has no equivalent here; it becomes a guard.
+    assert "disable iff" not in props
+    assert "if (rst_n)" in props
+    # M6-FINDINGS §2: the reset assumption, without which true invariants
+    # fail at step 1 from states the circuit can never reach.
+    assert "assume ((!rst_n));" in props or "assume (!rst_n);" in props
+    assert "gp_past_valid" in props
+    # §11 vacuity guard: every asserted property carries an antecedent cover.
+    assert "gp_cover_0: cover (" in props
+    # a formal harness, not a testbench — no clock generator, no delays.
+    # Checked against code lines only: the header comment says the words.
+    code = [ln for ln in props.splitlines() if not ln.strip().startswith("//")]
+    assert not any(ln.strip().startswith("initial") for ln in code)
+    assert not any("#" in ln for ln in code)
 
 
 def test_johnson_suggestion_surfaced_in_result():
