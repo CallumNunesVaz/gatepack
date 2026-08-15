@@ -1,0 +1,16 @@
+name: xor2
+timing_model: synchronous
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+reset: {signal: rst_n, active: low, source: SUPERVISOR}
+encoding: one_hot
+inputs:
+  - {name: a, sync: false}
+  - {name: b, sync: false}
+outputs:
+  - {name: y}
+states: [S0]
+initial: S0
+transitions:
+  - {from: S0, to: S0, when: "1"}
+output_logic:
+  y: "a ^ b"

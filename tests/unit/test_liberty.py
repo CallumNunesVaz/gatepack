@@ -10,7 +10,7 @@ from gatepack.liberty import generate
 from gatepack.liberty import boolean
 from gatepack.parts import Part, load_parts
 
-LIBRARY_CSV = Path(__file__).parent.parent / "libraries" / "74aup.csv"
+LIBRARY_CSV = Path(__file__).resolve().parents[2] / "libraries" / "74aup.csv"
 
 
 @pytest.mark.parametrize(

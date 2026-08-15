@@ -1,0 +1,14 @@
+name: async_handshake
+timing_model: asynchronous
+reset: {signal: rst_n, active: low}
+inputs:
+  - {name: req, sync: false}
+  - {name: ack, sync: false}
+states: [IDLE, BUSY]
+initial: IDLE
+transitions:
+  - {from: IDLE, to: BUSY, when: "req"}
+  - {from: BUSY, to: IDLE, when: "!ack"}
+output_logic: {}
+fundamental_mode:
+  mutually_exclusive: [[req, ack]]

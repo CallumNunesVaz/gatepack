@@ -1,0 +1,12 @@
+name: non_exhaustive
+timing_model: synchronous
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+reset: {signal: rst_n, active: low}
+inputs:
+  - {name: x, sync: false}
+states: [A, B]
+initial: A
+transitions:
+  - {from: A, to: B, when: "x"}
+  - {from: B, to: A, when: "1"}
+output_logic: {}

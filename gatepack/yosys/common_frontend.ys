@@ -1,0 +1,11 @@
+# --- common front end: shared verbatim with C4's golden_prep (§C4) ---
+read_verilog -sv __GENERATED_V__
+hierarchy -check -top __TOP__
+proc; flatten; opt
+                              # [R4-5] NO bare `fsm` — see below
+select -assert-none t:$mem t:$memrd t:$memwr    # [R4-13] assert, don't hope
+techmap; opt
+setundef -zero                # [R4-12] BEFORE the split, so both sides match
+select -assert-none t:$_DLATCH_* t:$_SR_*       # §9.2 latch ban
+write_json __PREMAP_JSON__  # [R4-14] provenance capture point (§15.1)
+# --- end common front end ---

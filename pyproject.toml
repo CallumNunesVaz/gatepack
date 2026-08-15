@@ -18,6 +18,9 @@ gatepack = "gatepack.cli:main"
 [tool.setuptools.packages.find]
 include = ["gatepack*"]
 
+[tool.setuptools.package-data]
+"gatepack.yosys" = ["*.ys"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

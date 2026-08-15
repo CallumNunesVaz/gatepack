@@ -8,7 +8,7 @@ from pathlib import Path
 
 from gatepack.cli import main
 
-REPO = Path(__file__).parent.parent
+REPO = Path(__file__).resolve().parents[2]
 LIBRARY_CSV = REPO / "libraries" / "74aup.csv"
 
 _HEADER = (

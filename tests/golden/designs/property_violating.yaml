@@ -1,0 +1,21 @@
+name: property_violating
+timing_model: synchronous
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+reset: {signal: rst_n, active: low}
+inputs:
+  - {name: x, sync: false}
+outputs:
+  - {name: enable}
+  - {name: fault}
+states: [A, B]
+initial: A
+transitions:
+  - {from: A, to: B, when: "x"}
+  - {from: A, to: A, when: "!x"}
+  - {from: B, to: A, when: "!x"}
+  - {from: B, to: B, when: "x"}
+output_logic:
+  enable: "state == B"
+  fault: "state == B"
+properties:
+  - {name: never_enable_and_fault, kind: invariant, expr: "!(enable & fault)"}

@@ -19,9 +19,17 @@ from pathlib import Path
 
 from gatepack import __version__, parts as parts_mod
 from gatepack import refs as refs_mod
+from gatepack.estimate import VccIncompatibleError, run_estimate
+from gatepack.frontend import AsyncRefused, CompileError, compile_design_file
 from gatepack.liberty.generator import generate, sanitize_library_name
 from gatepack.liberty.validate import LibertyError
 from gatepack.parts import DropReason, Exclusion, load_parts
+
+# Exit-code contract (§C6, pinned in tests/contract):
+EXIT_OK = 0
+EXIT_ERROR = 1
+EXIT_USAGE = 2
+EXIT_ASYNC_REFUSED = 3
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -74,6 +82,23 @@ def _build_parser() -> argparse.ArgumentParser:
         help="library name (default: derived from the CSV filename)",
     )
 
+    compile_p = sub.add_parser(
+        "compile", help="C1 front-end: design.yaml -> behavioural Verilog + properties"
+    )
+    compile_p.add_argument("design", help="path to design.yaml")
+    compile_p.add_argument(
+        "-o", "--output", default="build", help="output directory (default: %(default)s)"
+    )
+
+    estimate = sub.add_parser(
+        "estimate", help="run the front-end + synthesis and emit the §6 viability verdict"
+    )
+    estimate.add_argument("design", help="path to design.yaml")
+    estimate.add_argument("--library", required=True, help="path to parts.csv")
+    estimate.add_argument(
+        "--build", default="build", help="build directory (default: %(default)s)"
+    )
+
     return parser
 
 
@@ -85,8 +110,12 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_lib_check(args)
         if args.lib_command == "gen":
             return _cmd_lib_gen(args)
+    if args.command == "compile":
+        return _cmd_compile(args)
+    if args.command == "estimate":
+        return _cmd_estimate(args)
     parser.error(f"unknown command {args.command!r}")
-    return 2
+    return EXIT_USAGE
 
 
 def _cmd_lib_check(args: argparse.Namespace) -> int:
@@ -175,6 +204,62 @@ def _print_exclusions(excluded: list[Exclusion]) -> None:
     )
     if summary:
         print(f"  summary: {summary}")
+
+
+def _cmd_compile(args: argparse.Namespace) -> int:
+    try:
+        result = compile_design_file(args.design)
+    except AsyncRefused as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return EXIT_ASYNC_REFUSED
+    except (CompileError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=True)
+    generated = out / "generated.v"
+    properties = out / "properties.sv"
+    generated.write_text(result.verilog)
+    properties.write_text(result.properties)
+
+    compiled = result.compiled
+    print(
+        f"compiled {compiled.design.name!r}: {compiled.design.timing_model}, "
+        f"{compiled.encoding} encoding, {len(compiled.state_order)} state(s)"
+    )
+    print(f"wrote {generated}")
+    print(f"wrote {properties}")
+    if compiled.johnson_suggestion:
+        print(f"note: {compiled.johnson_suggestion}", file=sys.stderr)
+    return EXIT_OK
+
+
+def _cmd_estimate(args: argparse.Namespace) -> int:
+    try:
+        result = run_estimate(args.design, args.library, args.build)
+    except AsyncRefused as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return EXIT_ASYNC_REFUSED
+    except (CompileError, parts_mod.PartError, LibertyError, VccIncompatibleError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    verdict = result.verdict
+    design = result.compiled.design
+    print(
+        f"design: {design.name} ({design.timing_model}, {design.encoding}, "
+        f"vcc {design.constraints.vcc:g} V)"
+    )
+    print(f"verdict: {verdict.overall.upper()}")
+    for name, metric in verdict.metrics.items():
+        value = "unknown" if metric.value is None else f"{metric.value:g}"
+        print(f"  {name + ':':22} {value:>10}  ({metric.status})")
+    print(f"message: {verdict.message}")
+    print(f"manifest: {result.paths['manifest']}")
+    if result.compiled.johnson_suggestion:
+        print(f"note: {result.compiled.johnson_suggestion}", file=sys.stderr)
+    return EXIT_OK
 
 
 if __name__ == "__main__":

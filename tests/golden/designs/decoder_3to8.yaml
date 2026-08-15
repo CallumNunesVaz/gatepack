@@ -1,0 +1,31 @@
+name: decoder_3to8
+timing_model: synchronous
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+reset: {signal: rst_n, active: low, source: SUPERVISOR}
+encoding: one_hot
+inputs:
+  - {name: s0, sync: false}
+  - {name: s1, sync: false}
+  - {name: s2, sync: false}
+outputs:
+  - {name: y0}
+  - {name: y1}
+  - {name: y2}
+  - {name: y3}
+  - {name: y4}
+  - {name: y5}
+  - {name: y6}
+  - {name: y7}
+states: [S0]
+initial: S0
+transitions:
+  - {from: S0, to: S0, when: "1"}
+output_logic:
+  y0: "!s0 & !s1 & !s2"
+  y1: "s0 & !s1 & !s2"
+  y2: "!s0 & s1 & !s2"
+  y3: "s0 & s1 & !s2"
+  y4: "!s0 & !s1 & s2"
+  y5: "s0 & !s1 & s2"
+  y6: "!s0 & s1 & s2"
+  y7: "s0 & s1 & s2"

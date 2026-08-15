@@ -1,0 +1,38 @@
+name: traffic_light
+timing_model: synchronous
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+reset:
+  signal: rst_n
+  active: low
+  async_assert: true
+  sync_deassert: true
+  source: SUPERVISOR
+encoding: one_hot
+inputs:
+  - {name: go, sync: true}
+  - {name: emergency, sync: true}
+outputs:
+  - {name: red}
+  - {name: green}
+  - {name: amber}
+expressions: {}
+states: [RED, GREEN, AMBER]
+initial: RED
+transitions:
+  - {from: RED,    to: GREEN, when: "go & !emergency"}
+  - {from: RED,    to: RED,   when: "!go | emergency"}
+  - {from: GREEN,  to: AMBER, when: "go | emergency"}
+  - {from: GREEN,  to: GREEN, when: "!go & !emergency"}
+  - {from: AMBER,  to: RED,   when: "1"}
+output_logic:
+  red: "state == RED"
+  green: "state == GREEN"
+  amber: "state == AMBER"
+properties:
+  - {name: one_light_only, kind: mutex, expr: "!(red & green) & !(green & amber) & !(red & amber)"}
+safe_state:
+  red: 1
+  green: 0
+  amber: 0
+constraints:
+  vcc: 3.3
