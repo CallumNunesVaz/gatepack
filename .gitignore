@@ -24,3 +24,7 @@ app/resources/bin/
 # symlink and one of these got committed once, which pointed it at itself
 .venv
 node_modules
+
+# scratch build output for real-toolchain runs (kept inside the repo:
+# anything under /tmp is outside the sandbox and is auto-rejected)
+.gpout/
