@@ -1298,6 +1298,10 @@ implies a connection it does not deliver.
 
 ### C9 — Session manager (main process)
 
+On launch with no prior session, C9 opens the **bundled showcase project**
+(§18.1) rather than an empty window, copied into a scratch working directory so
+the shipped copy cannot be modified in place.
+
 Project open/close scoped to **a directory or a single `.gpk` file** (§10.4),
 file watching with debounce, git status, child-process lifecycle, incremental
 build orchestration and cancellation, schema-validated IPC.
@@ -1490,6 +1494,43 @@ gatepack gui
 
 The must-fail entries matter as much as the rest. A malformed Liberty file that
 parses cleanly yields an implausibly low gate count, which reads as success.
+
+### 18.1 The showcase project — what opens on first launch
+
+The application opens a **bundled showcase project** when it starts with no
+prior session, rather than an empty window. An empty editor is the worst first
+impression a tool like this can make: nothing in the six panes has anything to
+show, and the one thing that distinguishes gatepack — a verified path from a
+specification to a bill of materials — is invisible until the user has written a
+valid specification unaided.
+
+Requirements on the showcase:
+
+1. **It is a real, famous circuit**, not a toy. Recognition does the
+   explaining: a user who already knows the circuit can judge whether gatepack
+   got it right, which is the fastest possible route to trusting the output.
+2. **It exercises most of the tool in one project** — states and transitions,
+   output logic, a synchronised input, at least one declared property that
+   genuinely proves, and a `constraints` block that is met. Every pane must
+   have something real to render, including the verification panel showing a
+   *passing* proof and the BOM showing packed parts with refdes.
+3. **It is synthetic and unencumbered** (§1.3) and ships as a single `.gpk`
+   (§10.4), which doubles as the format's own worked example.
+4. **It is opened read-only-ish**: edits are allowed, but "Save" prompts for a
+   new location rather than modifying the bundled copy, so the showcase cannot
+   be silently destroyed by a user exploring it.
+5. **It is a golden.** The showcase is built and verified in CI like any other
+   reference design. A broken showcase is a broken first launch, and it is the
+   one design every user sees.
+
+A second, deliberately failing example is **not** shipped as the default view,
+but the examples menu carries one: seeing a property fail with a counterexample
+trace is how a user learns the verification panel means something. The default
+must be a project where everything passes, or the four-state check display has
+nothing to distinguish itself against.
+
+`gatepack` also gains an `examples` command so the CLI can list and extract the
+bundled projects; the GUI must not be the only way to reach them.
 
 ---
 
