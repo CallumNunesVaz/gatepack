@@ -126,3 +126,42 @@ tests together.
 
 `yosys-smtbmc` and `yosys-witness` already ship with the Debian `yosys`
 package, so sby is the only missing piece.
+
+## 6. Hierarchical references silently become free wires — properties checked nothing
+
+The worst finding here, and it was invisible until the properties were run
+against a real prover.
+
+C1 emitted its property bodies against `dut.<signal>` — a hierarchical
+reference into the instantiated design. Yosys 0.23 does not resolve these:
+
+```
+h.sv:9: Warning: Identifier `\dut.red' is implicitly declared.
+Warning: Wire h.\dut.red is used but has no driver.
+```
+
+It **creates a new, undriven wire of that name** and carries on with a warning.
+The assertion is then evaluated over free variables that have no connection to
+the design at all. The prover dutifully finds an assignment that violates the
+property and reports a failure — or, for a different property, a pass — and in
+neither case has it said anything whatsoever about the circuit.
+
+This was diagnosed by isolation, and the isolation is worth repeating because
+the symptom pointed the wrong way. The traffic-light mutex property failed with
+a trace showing all three lights high while reset was asserted, which looks
+exactly like a broken reset. It was not: a probe asserting on the *local* wires
+of the same harness passed, and the identical probe rewritten to use `dut.red`
+produced the warnings above. The design was never at fault.
+
+**Consequence:** the fix is not a syntax change. Assertions must be emitted
+where the signals they reference actually exist — inside the design module,
+under an `` `ifdef GP_FORMAL `` guard — with the harness reduced to what can
+legitimately live at the port boundary: the reset assumption and the
+instantiation. `bind` would be the idiomatic alternative and is not available
+in Yosys 0.23.
+
+**And a check that must exist:** any run whose log contains
+`is used but has no driver` or `implicitly declared` for a signal named in a
+property must be treated as a hard failure, never a result. A property over an
+undriven wire is the purest form of the vacuous pass this project is built to
+prevent — worse than no property, because it reports a status.
