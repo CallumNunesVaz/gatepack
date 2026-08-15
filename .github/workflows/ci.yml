@@ -80,6 +80,11 @@ jobs:
                          --library libraries/74aup.csv --build .gpout/$d"
           done
 
+      - name: Reproducibility, including the mapped netlist
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo gatepack-toolchain:m6 \
+            python3 scripts/repro_check.py
+
       - name: Showcase builds end to end
         run: |
           docker run --rm -v "$PWD:/repo" -w /repo gatepack-toolchain:m6 \

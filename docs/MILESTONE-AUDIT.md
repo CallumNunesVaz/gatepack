@@ -19,7 +19,7 @@ tool closes, the only evidence that counts is that tool closing.
 | M8 | CNT4 + SUPERVISOR + tie-off; shared behavioural models | **met** |
 | M9 | `pack_cost`; spare avoidance; deterministic; override works | **met** |
 | M10 | KiCad import clean; SCOAP delta; stuck-at classification | **NOT MET** |
-| M11a | Two clean builds hash-identical | **partial** |
+| M11a | Two clean builds hash-identical | **met** (2026-08-16) |
 | M11b | Provenance coverage measured and reported on every golden | **NOT MET** |
 | M12 | Project opens; core invoked; §5.2 posture verified | **met** |
 
@@ -66,16 +66,29 @@ unmet. Delegated as `deepseek/analysis`.
 That needs a human with KiCad in front of them, and should be recorded as an
 unverified claim until someone does it.
 
-## M11a — partial, and honestly scoped
+## M11a — met, after being extended
 
-`scripts/repro_check.py` passes: 5 artefacts byte-identical across two clean
-builds. But it covers the **C1 outputs only** (`generated.v`, `properties.sv`,
-`cells.lib`, `yosys.ys`, `manifest.json`). The mapped netlist and the BOM are
-not in the comparison, and the script says so in its own docstring. The
-criterion says "two clean builds", which should include the netlist.
+It was partial: `scripts/repro_check.py` compared the **C1 outputs only** and
+said so in its own docstring, so the netlist and BOM — the things a "build"
+actually is — were outside the comparison.
 
-Now tractable: the CI `toolchain` job has a container with a pinned Yosys, so
-the check can be extended to `mapped.json` and `bom.csv`.
+The reason it could not have covered them is worth recording: it drove
+`gatepack estimate`, and **`estimate` invokes Yosys but never persists the
+netlist**. The check looked for `mapped.json` after an estimate and could never
+have found it, whatever was installed.
+
+It now runs a full `build` as a second phase and compares the netlist too.
+Measured in the toolchain container:
+
+```
+10 artefact(s) byte-identical, including the mapped netlist and BOM
+(mapped.json, bom.csv, netlist.net, netlist.unpacked.net, refdes.json)
+```
+
+So Yosys 0.23's output is deterministic here, which was assumed and is now
+measured. Without Yosys the script still runs but reports explicitly that the
+criterion is **not** fully exercised, so a partial run cannot be mistaken for a
+full one. Wired into the CI `toolchain` job.
 
 ## M11b — not met
 
