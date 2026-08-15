@@ -146,3 +146,43 @@ test('path traversal outside the project root is refused', async () => {
   expect(env.ok).toBe(false);
   expect(env.error.code).toBe('GP4108');
 });
+
+test('first launch with a clean session opens the showcase', async () => {
+  // launchApp() gives every test a clean session dir, so the first launch opens
+  // the bundled showcase (§18.1). The renderer's one-shot readSpec() — what it
+  // calls on mount — must see the real project, not an empty editor.
+  app = await launchApp();
+
+  const spec = await app.page.evaluate(() => (window as any).gatepack.readSpec());
+  expect(spec.ok).toBe(true);
+  expect(spec.data.text).toContain('name: pelican');
+  // Comments are half of what the showcase teaches; they must survive the copy.
+  expect(spec.data.text).toContain('Pelican crossing controller');
+  // The spec is served from a scratch working copy, never the bundled copy.
+  expect(spec.data.path).toContain('gatepack-example-');
+  expect(spec.data.path).not.toContain(path.join('examples', 'pelican'));
+
+  // §18.1(4): the showcase is read-only-ish — Save prompts for Save As.
+  const saved = await app.page.evaluate(() => (window as any).gatepack.saveProject());
+  expect(saved.ok).toBe(false);
+  expect(saved.error.code).toBe('GP4109');
+});
+
+test('a previously opened project is reopened on the next launch', async () => {
+  const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gatepack-session-'));
+  const projectDir = makeProjectDir('name: myproj\n');
+
+  // First launch: open a project, which records it as the last-opened project.
+  app = await launchApp({ GATEPACK_SESSION_DIR: sessionDir });
+  const opened = await open(app.page, projectDir);
+  expect(opened.ok).toBe(true);
+  await closeApp(app);
+  app = null;
+
+  // Second launch with the same session dir must reopen that project, not the
+  // showcase.
+  app = await launchApp({ GATEPACK_SESSION_DIR: sessionDir });
+  const spec = await app.page.evaluate(() => (window as any).gatepack.readSpec());
+  expect(spec.ok).toBe(true);
+  expect(spec.data.text).toContain('name: myproj');
+});

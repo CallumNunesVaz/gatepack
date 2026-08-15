@@ -18,9 +18,11 @@ import { pathToFileURL } from 'node:url';
 
 import type { ProjectInfo } from '../shared/api';
 import { CancelRegistry } from './cancel.cjs';
-import { locateCore } from './core.cjs';
+import { locateCore, runRaw, type CoreLocation } from './core.cjs';
+import { findExamplesRoot, parseExamplesList } from './examples.cjs';
 import { registerIpc } from './ipc.cjs';
-import { SessionManager } from './session.cjs';
+import { SessionManager, SHOWCASE_NAME } from './session.cjs';
+import { readStoredSession, writeStoredSession } from './session-store.cjs';
 
 const FALLBACK_HTML = `<!DOCTYPE html>
 <html>
@@ -149,21 +151,42 @@ function saveAsDialog(): void {
     .catch(() => {});
 }
 
-function buildMenu(): void {
-  const template: MenuItemConstructorOptions[] = [
+async function buildMenu(location: CoreLocation | null): Promise<void> {
+  const examplesSubmenu = await fetchExamplesSubmenu(location);
+
+  const fileMenu: MenuItemConstructorOptions[] = [
+    { label: 'Open Project…', accelerator: 'CmdOrCtrl+O', click: () => openViaDialog('any') },
+    { label: 'Open .gpk…', accelerator: 'CmdOrCtrl+Shift+O', click: () => openViaDialog('gpk') },
+    { type: 'separator' },
     {
-      label: 'File',
-      submenu: [
-        { label: 'Open Project…', accelerator: 'CmdOrCtrl+O', click: () => openViaDialog('any') },
-        { label: 'Open .gpk…', accelerator: 'CmdOrCtrl+Shift+O', click: () => openViaDialog('gpk') },
-        { type: 'separator' },
-        { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => void sessionManager?.saveProject() },
-        { label: 'Save As…', accelerator: 'CmdOrCtrl+Shift+S', click: () => saveAsDialog() },
-        { label: 'Close Project', click: () => sessionManager?.closeProject() },
-        { type: 'separator' },
-        { label: 'Quit', accelerator: 'CmdOrCtrl+Q', click: () => app.quit() },
-      ],
+      label: 'Open Showcase',
+      click: () => void sessionManager?.openBundledExample(SHOWCASE_NAME),
     },
+    {
+      label: 'Examples',
+      submenu: examplesSubmenu,
+    },
+    { type: 'separator' },
+    {
+      label: 'Save',
+      accelerator: 'CmdOrCtrl+S',
+      click: () => {
+        // §18.1(4): saving the showcase prompts for a new location.
+        if (sessionManager?.isShowcase()) {
+          saveAsDialog();
+          return;
+        }
+        void sessionManager?.saveProject();
+      },
+    },
+    { label: 'Save As…', accelerator: 'CmdOrCtrl+Shift+S', click: () => saveAsDialog() },
+    { label: 'Close Project', click: () => sessionManager?.closeProject() },
+    { type: 'separator' },
+    { label: 'Quit', accelerator: 'CmdOrCtrl+Q', click: () => app.quit() },
+  ];
+
+  const template: MenuItemConstructorOptions[] = [
+    { label: 'File', submenu: fileMenu },
     {
       label: 'Edit',
       submenu: [
@@ -180,17 +203,63 @@ function buildMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-function bootstrap(): void {
+/**
+ * The Examples submenu, populated from `gatepack examples list` (§18.1). The
+ * list is fetched via the core rather than re-derived from the filesystem, so
+ * discovery and ordering stay the core's responsibility. When the core is
+ * missing the submenu is simply empty.
+ */
+async function fetchExamplesSubmenu(
+  location: CoreLocation | null,
+): Promise<MenuItemConstructorOptions[]> {
+  if (location === null) return [];
+  try {
+    const res = await runRaw(location, ['examples', 'list']);
+    if (res.code !== 0) return [];
+    return parseExamplesList(res.stdout).map((entry) => ({
+      label: entry.isShowcase ? `${entry.name} (showcase)` : entry.name,
+      click: () => void sessionManager?.openBundledExample(entry.name),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function sessionDirFromEnv(): string | null {
+  const dir = process.env.GATEPACK_SESSION_DIR;
+  return dir && dir.length > 0 ? dir : null;
+}
+
+/**
+ * Open the initial project: the last-opened project when one is stored, falling
+ * back to the bundled showcase (§18.1) when there is no prior session (or the
+ * stored path no longer opens).
+ */
+async function openInitialProject(sessionDir: string): Promise<void> {
+  const stored = readStoredSession(sessionDir);
+  if (stored.lastProjectPath !== null) {
+    const env = await sessionManager?.openProjectPath(stored.lastProjectPath);
+    if (env && env.ok) return;
+  }
+  await sessionManager?.openBundledExample(SHOWCASE_NAME);
+}
+
+async function bootstrap(): Promise<void> {
   applySecurityPosture();
 
   const appRoot = app.getAppPath();
   const projectRoot = path.dirname(appRoot);
   const location = locateCore({ appRoot, projectRoot, env: process.env });
   const registry = new CancelRegistry();
+  const sessionDir = sessionDirFromEnv() ?? app.getPath('userData');
+  const examplesRoot = findExamplesRoot(appRoot, projectRoot);
 
   sessionManager = new SessionManager({
     location,
     registry,
+    examplesRoot,
+    onProjectOpened: (info: ProjectInfo) =>
+      writeStoredSession(sessionDir, { lastProjectPath: info.path }),
     onProjectChanged: (info: ProjectInfo) => broadcast('gatepack:projectChanged', info),
     onFileChanged: (paths: string[]) => broadcast('gatepack:fileChanged', paths),
     onProgress: (p) => broadcast('gatepack:progress', p),
@@ -198,14 +267,26 @@ function bootstrap(): void {
 
   registerIpc({ session: sessionManager, registry });
 
-  buildMenu();
+  await buildMenu(location);
 
   mainWindow = createWindow();
-  void mainWindow.loadURL(rendererUrl());
+
+  // Open the initial project before the renderer loads, so the renderer's first
+  // readSpec() sees a real project (the showcase, or the last-opened one)
+  // rather than an empty editor (§18.1).
+  await openInitialProject(sessionDir);
+
+  await mainWindow.loadURL(rendererUrl());
+
+  // The onProjectChanged fired above happened before the page could listen; re-
+  // broadcast so a renderer that subscribes after load still sees the project.
+  if (sessionManager?.current) {
+    broadcast('gatepack:projectChanged', sessionManager.current);
+  }
 }
 
 app.whenReady().then(() => {
-  bootstrap();
+  void bootstrap();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

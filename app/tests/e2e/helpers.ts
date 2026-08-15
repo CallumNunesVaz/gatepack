@@ -95,6 +95,9 @@ export async function launchApp(
     env: {
       ...process.env,
       GATEPACK_CORE: getFakeCore(),
+      // Hermetic per-launch session: no prior session, so the showcase opens on
+      // first launch (§18.1) and tests never leak a last-opened project.
+      GATEPACK_SESSION_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'gatepack-session-')),
       ...extraEnv,
     },
   });

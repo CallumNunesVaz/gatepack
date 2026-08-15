@@ -2,36 +2,102 @@
 ---
 gatepack: 1
 kind: design
-clock: {freq_hz: 1, signal: clk, source: OSC}
-constraints: {vcc: 3.3}
-encoding: one_hot
-expressions: {}
-initial: STOP
-inputs:
-  - {name: request, sync: true}
-  - {name: hold, sync: true}
+# ---------------------------------------------------------------------------
+# Pelican crossing controller — the showcase project (§18.1).
+#
+# A pedestrian-operated crossing: traffic runs green until someone presses the
+# request button, then the lights step down to red, the walk signal runs, and
+# traffic is released again. It is the circuit almost everyone has stood in
+# front of, which is the point: you can judge whether gatepack got it right
+# without reading the specification first.
+#
+# It is also a deliberate tour of the tool. Every pane of the application has
+# something real to show from this one file:
+#
+#   spec editor        five states and seven guarded transitions
+#   truth table        four outputs driven by state, exhaustively checkable
+#   schematic          ~20 mapped gates from a real Yosys run
+#   packing / BOM      74AUP single-gate packages with refdes assigned
+#   analysis           flop count, static current by tier, against constraints
+#   verification       a mutex property that genuinely proves
+#
+# Synthetic, written for this project (§1.3). Nothing here is derived from any
+# real installation, and the timings are nominal rather than to any standard.
+# ---------------------------------------------------------------------------
 name: pelican
-output_logic: {traffic_amber: "state == WARN", traffic_green: "state == GO", traffic_red: "state == STOP | state == CROSS | state == CLEAR", walk: "state == CROSS"}
+timing_model: synchronous
+
+# A slow clock: a crossing changes on human timescales, and it keeps the
+# static-current figure honest for a battery-backed controller.
+clock: {signal: clk, freq_hz: 1, source: OSC}
+
+reset:
+  signal: rst_n
+  active: low
+  async_assert: true
+  sync_deassert: true
+  source: SUPERVISOR
+
+encoding: one_hot
+
+inputs:
+  # The button is pressed by a person, so it is asynchronous to the clock and
+  # must be synchronised (§9.3) or it can violate setup time and put the state
+  # register into a metastable state. gatepack emits the two-flop synchroniser.
+  - {name: request, sync: true}
+  # A maintenance override, also asynchronous.
+  - {name: hold, sync: true}
+
 outputs:
   - {name: traffic_red}
   - {name: traffic_amber}
   - {name: traffic_green}
   - {name: walk}
-properties:
-  - {expr: "!(walk & traffic_green) & !(walk & traffic_amber)", kind: mutex, name: never_walk_with_traffic}
-  - {expr: "!(traffic_red & traffic_green) & !(traffic_green & traffic_amber) & !(traffic_red & traffic_amber)", kind: mutex, name: one_traffic_aspect}
-reset: {active: low, async_assert: true, signal: rst_n, source: SUPERVISOR, sync_deassert: true}
-safe_state: {traffic_amber: 0, traffic_green: 0, traffic_red: 1, walk: 0}
+
+expressions: {}
+
 states: [GO, WARN, STOP, CROSS, CLEAR]
-timing_model: synchronous
+initial: STOP
+
 transitions:
-  - {from: GO, to: WARN, when: "request & !hold"}
-  - {from: GO, to: GO, when: "!request | hold"}
-  - {from: WARN, to: STOP, when: "1"}
-  - {from: STOP, to: CROSS, when: "!hold"}
-  - {from: STOP, to: STOP, when: hold}
+  # Traffic flows until a pedestrian asks to cross.
+  - {from: GO,    to: WARN,  when: "request & !hold"}
+  - {from: GO,    to: GO,    when: "!request | hold"}
+  # Amber, then all-red before the walk signal - never straight to CROSS.
+  - {from: WARN,  to: STOP,  when: "1"}
+  - {from: STOP,  to: CROSS, when: "!hold"}
+  - {from: STOP,  to: STOP,  when: "hold"}
+  # The walk phase, then a clearance phase before traffic is released.
   - {from: CROSS, to: CLEAR, when: "1"}
-  - {from: CLEAR, to: GO, when: "1"}
+  - {from: CLEAR, to: GO,    when: "1"}
+
+output_logic:
+  # Traffic sees red for the whole crossing sequence, including the clearance
+  # phase - releasing traffic the instant the walk signal ends is the classic
+  # way to hurt someone still in the road.
+  traffic_red: "state == STOP | state == CROSS | state == CLEAR"
+  traffic_amber: "state == WARN"
+  traffic_green: "state == GO"
+  walk: "state == CROSS"
+
+properties:
+  # The safety property. If this cannot be proved, the design is not fit to
+  # build, and the verification panel says so in a way a green tick cannot.
+  - {name: never_walk_with_traffic, kind: mutex, expr: "!(walk & traffic_green) & !(walk & traffic_amber)"}
+  # Traffic lights are mutually exclusive - the same obligation a real signal
+  # head has, and the one a wiring error would break.
+  - {name: one_traffic_aspect, kind: mutex, expr: "!(traffic_red & traffic_green) & !(traffic_green & traffic_amber) & !(traffic_red & traffic_amber)"}
+
+# Where the machine must sit if reset is asserted: traffic stopped, nobody
+# invited into the road.
+safe_state:
+  traffic_red: 1
+  traffic_amber: 0
+  traffic_green: 0
+  walk: 0
+
+constraints:
+  vcc: 3.3
 ---
 gatepack: 1
 kind: library

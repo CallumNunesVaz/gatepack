@@ -56,10 +56,26 @@ def test_showcase_gpk_is_present_and_round_trips_semantically():
     project = explode(GPK.read_text())
     assert project.design.data["name"] == "pelican"
     assert project.library is not None, "the .gpk must carry its parts library"
-    # Semantic round trip only. Comments and key order are NOT preserved -
-    # see the §10.4 limitation recorded in gatepack-design.md. When that is
-    # fixed, tighten this into a byte-for-byte comparison of design.yaml.
     assert bundle(SHOWCASE) == GPK.read_text()
+
+
+def test_showcase_gpk_preserves_comments_and_key_order():
+    # §10.4 faithful source: the .gpk carries the design.yaml text verbatim —
+    # comments and key order intact — so a user opening the .gpk sees what the
+    # exploded directory teaches. If a future edit trims the comments, this
+    # notices.
+    text = GPK.read_text()
+    assert "Pelican crossing controller" in text, "the showcase's own comments must survive bundling"
+    assert "never straight to CROSS" in text
+
+
+def test_showcase_gpk_round_trips_design_byte_for_byte(tmp_path):
+    # §10.4: explode(bundle(x)) reproduces design.yaml exactly, comments and
+    # key order intact. This is the tight form of the round-trip guarantee.
+    from gatepack.project import explode_to_dir
+
+    explode_to_dir(bundle(SHOWCASE), tmp_path)
+    assert (tmp_path / "design.yaml").read_text() == (SHOWCASE / "design.yaml").read_text()
 
 
 @pytest.mark.parametrize("field", ["walk", "traffic_red", "traffic_green"])

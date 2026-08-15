@@ -223,3 +223,49 @@ def test_load_project_accepts_directory_and_gpk(tmp_path):
 def test_bundle_rejects_directory_without_design(tmp_path):
     with pytest.raises(ProjectError, match="no design.yaml"):
         bundle(tmp_path)
+
+
+def test_verbatim_source_preserved_byte_for_byte(tmp_path):
+    # §10.4 faithful source: comments and the author's key order must survive a
+    # bundle -> explode round trip. The canonical emitter would strip the
+    # comment and sort the keys; the verbatim path must not.
+    design = (
+        "# a comment that must survive\n"
+        "name: t\n"
+        "timing_model: synchronous\n"
+        "notes: 'keep me'\n"
+    )
+    src = _project_dir(tmp_path / "verbatim", design)
+    text = bundle(src)
+    assert "# a comment that must survive" in text
+    assert text.index("name: t\n") < text.index("timing_model: synchronous\n")
+    out = tmp_path / "out"
+    explode_to_dir(text, out)
+    assert (out / "design.yaml").read_text() == design
+
+
+def test_in_memory_project_falls_back_to_canonical(tmp_path):
+    # A DesignDocument constructed in memory carries no source, so gpk_text
+    # serialises canonically (sorted keys), never inventing a source.
+    from gatepack.project import DesignDocument, Project
+
+    project = Project(
+        design=DesignDocument(data={"zebra": 1, "apple": 2}, provenance={})
+    )
+    text = gpk_text(project)
+    assert "gatepack: 1" in text
+    assert "kind: design" in text
+    assert text.index("apple: 2") < text.index("zebra: 1")
+
+
+def test_legacy_canonical_gpk_is_readable_and_rebundles_faithfully(tmp_path):
+    # A .gpk produced before the faithful-source fix (canonical design body, no
+    # comments) must still explode; re-bundling reproduces that body verbatim.
+    from gatepack.project import DesignDocument, Project
+
+    data = yaml_mod.to_python(yaml_mod.parse(DESIGN))
+    legacy = serialize.dumps_documents([serialize.document_dict(data, "design")])
+    project = explode(legacy)
+    assert project.design.data["name"] == "t"
+    assert project.design.source is not None
+    assert gpk_text(project) == legacy
