@@ -17,7 +17,7 @@ tool closes, the only evidence that counts is that tool closing.
 | M5 | Equivalence closes on all goldens; exhaustive sim; mutation | **NOT MET** |
 | M6 | sby discharges invariants/reachability/liveness; covers guard vacuity | **partial** |
 | M8 | CNT4 + SUPERVISOR + tie-off; shared behavioural models | **met** |
-| M9 | `pack_cost`; spare avoidance; deterministic; override works | **met** |
+| M9 | `pack_cost`; spare avoidance; deterministic; override works | **met, but inert** |
 | M10 | KiCad import clean; SCOAP delta; stuck-at classification | **NOT MET** |
 | M11a | Two clean builds hash-identical | **met** (2026-08-16) |
 | M11b | Provenance coverage measured and reported on every golden | **NOT MET** |
@@ -53,6 +53,31 @@ mutex body is satisfied by the all-zero state — so reaching the cover proves
 much less than it appears to. Liveness is still emitted as a comment rather
 than a bounded check. Delegated as `deepseek/props`.
 
+## M9 — met, but structurally inert with the shipped library
+
+The packer works and is deterministic. It also cannot ever save anything,
+because **every part in `libraries/74aup.csv` is one gate per package**:
+
+```
+gates_per_pkg distribution: {1: 16}
+multi-gate parts: NONE
+```
+
+So `packed == unpacked == 23` on the showcase and always will be, `pack_cost`
+equals the package count by construction, and the per-package rationale table
+is 23 rows each saying "holds 1 gate(s)". "Spare avoidance" has never been
+exercised because a spare gate cannot exist: a single-gate package has no
+second slot to leave empty.
+
+This is a **library gap, not a packer bug**. Real dual- and triple-gate 74AUP
+parts exist (`74AUP2G00`, `74AUP2G08`, `74AUP3G04` …) in SOT-363/SOT-363-6 and
+similar. Until at least one is added with its datasheet citation, C5 is dead
+weight in every build and its exit criterion is unfalsifiable.
+
+Two honest options, and the choice should be deliberate rather than drift:
+add multi-gate parts and let the packer earn its place, or state in §12 C5 that
+packing is inert for v0.1.0's library and defer it.
+
 ## M10 — not met
 
 `gatepack/analysis/` contains `clock.py`, `power.py` and `cpld.py`. There is no
@@ -65,6 +90,18 @@ unmet. Delegated as `deepseek/analysis`.
 "KiCad import clean" has never been tested by importing anything into KiCad.
 That needs a human with KiCad in front of them, and should be recorded as an
 unverified claim until someone does it.
+
+**The report's "worst path" is unreadable**, which is a user-facing symptom of
+the same provenance gap as M11b. From the showcase build:
+
+```
+worst path: $abc$148$auto$blifparse.cc:386:parse_blif$149 ->
+            $abc$148$auto$blifparse.cc:386:parse_blif$150 -> ...
+```
+
+Those are ABC's internal node names. The reader wants refdes (`U6 -> U19 ->
+U2`) or source signals. The data to do it exists — `refdes.json` maps cells to
+designators — so this is a rendering fix, not new analysis.
 
 ## M11a — met, after being extended
 
