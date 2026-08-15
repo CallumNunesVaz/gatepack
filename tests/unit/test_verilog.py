@@ -150,7 +150,7 @@ def test_properties_file_emits_assertions():
     # M6-FINDINGS §2: the reset assumption, without which true invariants
     # fail at step 1 from states the circuit can never reach.
     assert "assume ((!rst_n));" in props or "assume (!rst_n);" in props
-    assert "gp_past_valid" in props
+    assert "gp_settled" in props
     # §11 vacuity guard: every asserted property carries an antecedent cover.
     assert "gp_cover_0: cover (" in props
     # a formal harness, not a testbench — no clock generator, no delays.

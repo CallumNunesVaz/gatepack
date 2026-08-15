@@ -96,9 +96,11 @@ def test_properties_file_is_accepted_by_yosys(tmp_path: Path) -> None:
     (tmp_path / "generated.v").write_text(result.verilog)
     (tmp_path / "properties.sv").write_text(result.properties)
 
+    # properties.sv is `include`d into the design module under GP_FORMAL, so
+    # only generated.v is read and the top is the design itself.
     proc = _run_yosys(
         tmp_path,
-        "read_verilog -sv -formal generated.v properties.sv\n"
+        "read_verilog -sv -formal -DGP_FORMAL generated.v\n"
         "prep -top property_violating\n",
     )
     assert proc.returncode == 0, (
@@ -107,3 +109,14 @@ def test_properties_file_is_accepted_by_yosys(tmp_path: Path) -> None:
         "concurrent assertions, which open-source Yosys cannot parse — see "
         f"docs/M6-FINDINGS.md §1.\n{proc.stderr or proc.stdout}"
     )
+
+    # M6-FINDINGS §6: a property over an undriven wire is the purest vacuous
+    # pass there is. Yosys only *warns* about it, so the warning must be
+    # treated as a hard failure here or the check silently means nothing.
+    log = proc.stdout + proc.stderr
+    for marker in ("implicitly declared", "used but has no driver"):
+        assert marker not in log, (
+            f"a property references a signal Yosys could not resolve ({marker!r}); "
+            "the assertion would be checked against a free variable connected to "
+            f"nothing - see docs/M6-FINDINGS.md §6.\n{log}"
+        )
