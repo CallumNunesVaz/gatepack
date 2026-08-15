@@ -11,6 +11,7 @@ from gatepack.verify.asynchronous import AsynchronousVerify
 from gatepack.verify.base import (
     CheckResult,
     CheckStatus,
+    Counterexample,
     MutationOutcome,
     SubprocessRunner,
     ToolResult,
@@ -24,6 +25,7 @@ __all__ = [
     "AsynchronousVerify",
     "CheckResult",
     "CheckStatus",
+    "Counterexample",
     "MutationOutcome",
     "SubprocessRunner",
     "SynchronousVerify",

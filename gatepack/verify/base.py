@@ -17,7 +17,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Protocol, Sequence
+from typing import Mapping, Protocol, Sequence
 
 from gatepack.toolchain import ToolResult, ToolchainRunner
 
@@ -56,11 +56,27 @@ class VerifyConfig:
 
 
 @dataclass(frozen=True)
+class Counterexample:
+    """A failing trace, selectable into the FSM graph and schematic (§15.2).
+
+    ``steps`` holds one dict per cycle mapping signal name to ``'0'``/``'1'``/
+    ``'x'``.  ``pointers`` holds the §15.1 provenance tokens for the spec
+    constructs implicated in the trace.
+    """
+
+    steps: tuple[Mapping[str, str], ...]
+    pointers: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class CheckResult:
     name: str
     status: CheckStatus
     detail: str = ""
     bound: int | None = None  # set only when status is BOUNDED_PASS
+    kind: str = ""  # equivalence|simulation|mutation|property|hazard (api.ts)
+    duration_ms: int = 0
+    counterexample: Counterexample | None = None
 
 
 @dataclass

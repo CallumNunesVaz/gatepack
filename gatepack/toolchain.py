@@ -42,6 +42,11 @@ def vvp_command(vvp_path: str) -> list[str]:
     return ["vvp", vvp_path]
 
 
+def sby_command(sby_file: str) -> list[str]:
+    """The exact SymbiYosys command line for a ``.sby`` file (M6, §11)."""
+    return ["sby", "-f", sby_file]
+
+
 class ToolchainRunner:
     """Subprocess-backed runner; inject a fake in tests to avoid the binary."""
 
@@ -71,6 +76,7 @@ __all__ = [
     "ToolResult",
     "ToolchainRunner",
     "iverilog_command",
+    "sby_command",
     "vvp_command",
     "yosys_command",
 ]

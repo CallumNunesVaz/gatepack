@@ -46,6 +46,18 @@ def test_decoder_3to8_combinational():
     assert "wire y7_int = ((s0 & s1) & s2);" in v
 
 
+def test_golden_outputs_are_cpld_portable():
+    # §24.1: the correct result on every golden is an EMPTY blocker list.  A
+    # lint that can never fire is worthless, so the negative cases live in
+    # tests/unit/test_cpld.py.
+    from gatepack.analysis.cpld import lint_verilog
+
+    for name in ("traffic_light", "xor2", "decoder_3to8"):
+        result = compile_design_file(DESIGNS / f"{name}.yaml")
+        blockers = lint_verilog(result.verilog)
+        assert blockers == [], (name, blockers)
+
+
 def test_no_attribute_immediately_precedes_assign():
     # M0-FINDINGS §1: an attribute before a continuous assign is a syntax error
     # in Yosys 0.23.  Every provenance attribute must sit on a wire/reg

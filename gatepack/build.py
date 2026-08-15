@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from gatepack.analysis.clock import timing_analysis
+from gatepack.analysis.cpld import lint_cpld
 from gatepack.analysis.power import (
     DynamicCurrent,
     StaticCurrent,
@@ -22,6 +23,7 @@ from gatepack.analysis.power import (
     spare_leakage_ua,
     static_current_by_tier,
 )
+from gatepack.diagnostic import Diagnostic
 from gatepack.emit.bom import collect_bom, emit_bom
 from gatepack.emit.kicad import emit_netlist
 from gatepack.emit.refdes import (
@@ -30,6 +32,7 @@ from gatepack.emit.refdes import (
     refdes_delta,
     refdes_map,
 )
+from gatepack.frontend.model import CompiledDesign
 from gatepack.netlist import MappedNetlist, resolve_parts, stable_cell_names
 from gatepack.pack.packer import (
     DEFAULT_SPARE_LEAKAGE_WEIGHT,
@@ -65,6 +68,14 @@ class BuildResult:
     dynamic_current: DynamicCurrent | None
     timing: TimingReport
     packages: list = field(default_factory=list)
+    # Extra context carried for the ``--json`` payload and the report: the
+    # resolved package/refdes list, the compiled design, the behavioural Verilog
+    # text, the resolved netlist, and the §24.1 CPLD blocker lint result.
+    assigned: list = field(default_factory=list)
+    compiled: CompiledDesign | None = None
+    verilog: str | None = None
+    netlist: MappedNetlist | None = None
+    cpld_blockers: list[Diagnostic] = field(default_factory=list)
 
 
 def assemble(
@@ -72,6 +83,7 @@ def assemble(
     parts: Sequence[Part],
     config: AssembleConfig | None = None,
     previous_refdes: Mapping[str, str] | None = None,
+    verilog_text: str | None = None,
 ) -> BuildResult:
     """Run C5 -> C6 -> C7 -> C8 on a resolved mapped netlist."""
     cfg = config or AssembleConfig()
@@ -113,6 +125,7 @@ def assemble(
         else None
     )
     timing = timing_analysis(netlist)
+    cpld_blockers = lint_cpld(verilog_text or "", netlist)
 
     report = emit_report(
         ReportInputs(
@@ -128,6 +141,7 @@ def assemble(
             refdes_delta=delta,
             packages=[(ref, g.rationale) for ref, g in assigned],
             notes=_build_notes(cfg, dropped),
+            cpld_blockers=cpld_blockers,
         )
     )
 
@@ -144,6 +158,8 @@ def assemble(
         dynamic_current=dynamic,
         timing=timing,
         packages=list(packed.packed),
+        assigned=list(assigned),
+        cpld_blockers=cpld_blockers,
     )
 
 
@@ -253,7 +269,10 @@ def run_build(
         vcc=vcc,
     )
     previous = load_previous_refdes(out)
-    result = assemble(netlist, parts, config, previous)
+    result = assemble(netlist, parts, config, previous, verilog_text=compiled_result.verilog)
+    result.compiled = compiled
+    result.verilog = compiled_result.verilog
+    result.netlist = netlist
     paths = write_build(out, result, previous)
     return result, paths
 
