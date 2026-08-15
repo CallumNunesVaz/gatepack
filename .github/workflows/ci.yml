@@ -3,9 +3,16 @@
 # Nothing in this workflow depends on the desktop application.  It exercises
 # the pure-Python core (pytest), the shell harness, the library citation check,
 # the §5.5 reproducibility check, and the §4 licence audit.  Yosys/ABC/sby/
-# Icarus are intentionally *not* installed here: anything needing them skips
-# with an explicit reason (see docs/TESTING.md), so this workflow is the
+# Icarus are intentionally *not* installed in the `test` job: anything needing
+# them skips with an explicit reason (see docs/TESTING.md), so that job is the
 # "no GUI, no external toolchain" floor.
+#
+# The `toolchain` job below is the ceiling, and it exists because the floor has
+# repeatedly reported green over machinery that had never touched a real tool:
+# generated Verilog that Yosys rejected outright, properties asserted over
+# undriven wires, and an equivalence check that errored out before comparing
+# anything — each with a full suite passing. Unit tests with fake runners
+# cannot catch that class of defect. Only running the binaries can.
 
 name: CI
 
@@ -43,3 +50,38 @@ jobs:
 
       - name: Licence audit
         run: .venv/bin/python scripts/licence_audit.py
+
+  toolchain:
+    # Runs the real thing: Yosys 0.23, Icarus, sby and z3, with the CLI itself
+    # executing inside the image. This job is allowed to be slow; it is not
+    # allowed to be skipped.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the measurement toolchain image
+        run: docker build -f Dockerfile.probe -t gatepack-toolchain:m6 .
+
+      - name: Toolchain-dependent tests (must not skip)
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo gatepack-toolchain:m6 \
+            bash -c 'python3 -m pytest tests/toolchain -q -rs'
+          # A skip here means the image did not provide what the test needed,
+          # which is indistinguishable from the test not existing. Fail loudly.
+          docker run --rm -v "$PWD:/repo" -w /repo gatepack-toolchain:m6 \
+            bash -c 'python3 -m pytest tests/toolchain -q 2>&1 | grep -q "skipped" && exit 1 || exit 0'
+
+      - name: Verify the goldens against real binaries
+        run: |
+          mkdir -p .gpout
+          for d in xor2 decoder_3to8 traffic_light; do
+            docker run --rm -v "$PWD:/repo" -w /repo gatepack-toolchain:m6 \
+              bash -c "python3 -m gatepack verify tests/golden/designs/$d.yaml \
+                         --library libraries/74aup.csv --build .gpout/$d"
+          done
+
+      - name: Showcase builds end to end
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo gatepack-toolchain:m6 \
+            bash -c 'python3 -m gatepack build examples/pelican/design.yaml \
+                       --library libraries/74aup.csv --out .gpout/pelican-out'
