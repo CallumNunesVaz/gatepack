@@ -297,6 +297,16 @@ def _state_map(compiled: CompiledDesign) -> dict[str, str]:
     return {s: f"(state == STATE_{s})" for s in compiled.state_order}
 
 
+def property_assert_label(index: int) -> str:
+    """The SVA label for a property's assertion (used by the M6 sby driver)."""
+    return f"gp_assert_{index}"
+
+
+def property_cover_label(index: int) -> str:
+    """The SVA label for a property's antecedent cover (vacuity guard, §11)."""
+    return f"gp_cover_{index}"
+
+
 def emit_properties(compiled: CompiledDesign) -> str:
     """Emit ``properties.sv`` (§11) — compiled at M2, discharged by sby at M6."""
     design = compiled.design
@@ -336,34 +346,58 @@ def emit_properties(compiled: CompiledDesign) -> str:
     lines.append("")
 
     disable = f"!{reset_name}" if active_low else reset_name
+    reset_asserted = disable  # true while the (active-low/high) reset is asserted
+    not_reset = reset_name if active_low else f"!{reset_name}"
 
-    for prop in design.properties:
-        lines.append(f"  // {prop.kind}: {prop.name}")
+    # M6-FINDINGS §2: a formal engine starts from a completely unconstrained
+    # state, so a true invariant fails spuriously at step 1 unless the proof is
+    # given the reset that real hardware would get.  C1 emits that wrapper here.
+    lines.append("  // M6-FINDINGS §2: constrain the unconstrained initial state with")
+    lines.append("  // the reset real hardware would get; without this a true invariant")
+    lines.append("  // fails spuriously at step 1.")
+    lines.append("  reg f_past_valid = 1'b0;")
+    lines.append(f"  always @(posedge {clock_name}) f_past_valid <= 1'b1;")
+    lines.append(
+        f"  always @(posedge {clock_name}) if (!f_past_valid) assume ({reset_asserted});"
+    )
+    lines.append("")
+    # M6-FINDINGS §1: open-source Yosys does not parse SVA concurrent assertions
+    # (`assert property (@(posedge ...))`); the working form is an immediate
+    # assertion inside a clocked `always`, with `disable iff` folded into the
+    # `f_past_valid && <not-reset>` guard.
+    lines.append("  // M6-FINDINGS §1: immediate assertions inside a clocked always;")
+    lines.append("  // `disable iff` becomes the guard below (Yosys has no SVA).")
+    lines.append(f"  always @(posedge {clock_name}) begin")
+    lines.append(f"    if (f_past_valid && {not_reset}) begin")
+
+    for index, prop in enumerate(design.properties):
+        lines.append(f"      // {prop.kind}: {prop.name}")
+        cover_label = property_cover_label(index)
+        assert_label = property_assert_label(index)
         if prop.kind == "invariant":
             body = _property_body(compiled, prop.expr or "1")
-            lines.append(f"  cover property (@(posedge {clock_name}) {body});")
-            lines.append(
-                f"  assert property (@(posedge {clock_name}) disable iff ({disable}) {body});"
-            )
+            lines.append(f"      {cover_label}: cover ({body});")
+            lines.append(f"      {assert_label}: assert ({body});")
         elif prop.kind == "mutex":
             body = _property_body(compiled, prop.expr or "1")
-            lines.append(f"  cover property (@(posedge {clock_name}) {body});")
-            lines.append(
-                f"  assert property (@(posedge {clock_name}) disable iff ({disable}) {body});"
-            )
+            lines.append(f"      {cover_label}: cover ({body});")
+            lines.append(f"      {assert_label}: assert ({body});")
         elif prop.kind == "reachability":
             target = _property_body(compiled, _state_eq(prop.to or ""))
             lines.append(
-                f"  // cover (BMC target): can {prop.to} be reached from {prop.from_}? "
-                f"(from-state assumption: {prop.from_})"
+                f"      // cover target: can {prop.to} be reached from {prop.from_}?"
             )
-            lines.append(f"  cover property (@(posedge {clock_name}) {target});")
+            lines.append(f"      {cover_label}: cover ({target});")
         else:  # liveness
-            lines.append(
-                f"  // liveness '{prop.expr}' is bounded; the bound is chosen at M6 "
-                f"(§21.5). Not emitted as unbounded SVA."
-            )
-        lines.append("")
+            # §11: liveness is bounded; the bound is chosen at M6 (§21.5).  It is
+            # not emitted as unbounded SVA; M6 treats it as a bounded reachability
+            # cover of the liveness condition.
+            body = _property_body(compiled, prop.expr or "1")
+            lines.append(f"      // liveness '{prop.expr}' is bounded (M6, §21.5)")
+            lines.append(f"      {cover_label}: cover ({body});")
+    lines.append("    end")
+    lines.append("  end")
+    lines.append("")
 
     lines.append("endmodule")
     lines.append("")

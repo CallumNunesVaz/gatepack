@@ -47,7 +47,9 @@ class SynchronousVerify(VerificationStrategy):
 
     def _equivalence(self, config: VerifyConfig, runner: ToolRunner, state_count: int) -> CheckResult:
         if not runner.available("yosys"):
-            return CheckResult("equivalence", CheckStatus.NOT_RUN, "yosys not installed")
+            return CheckResult(
+                "equivalence", CheckStatus.NOT_RUN, "yosys not installed", kind="equivalence"
+            )
         # Primary run: the measured M0 recipe (equiv_simple + equiv_induct, bare).
         script = equiv_mod.build_equivalence_script(config)
         result = runner.run(yosys_command(script), cwd=config.cwd)
@@ -56,9 +58,12 @@ class SynchronousVerify(VerificationStrategy):
                 "equivalence",
                 CheckStatus.FAILED,
                 (result.stderr or result.stdout or "yosys failed").strip(),
+                kind="equivalence",
             )
         outcome = equiv_mod.parse_equiv_status(result.stdout)
-        return CheckResult("equivalence", outcome.status, outcome.detail, outcome.bound)
+        return CheckResult(
+            "equivalence", outcome.status, outcome.detail, outcome.bound, kind="equivalence"
+        )
 
     # -- exhaustive simulation ------------------------------------------------
 
@@ -67,9 +72,16 @@ class SynchronousVerify(VerificationStrategy):
             len(compiled.input_names), len(compiled.state_order), config.exhaustive_cap
         )
         if decision.status is CheckStatus.NOT_APPLICABLE:
-            return CheckResult("exhaustive simulation", decision.status, decision.detail)
+            return CheckResult(
+                "exhaustive simulation", decision.status, decision.detail, kind="simulation"
+            )
         if not runner.available("iverilog"):
-            return CheckResult("exhaustive simulation", CheckStatus.NOT_RUN, "iverilog not installed")
+            return CheckResult(
+                "exhaustive simulation",
+                CheckStatus.NOT_RUN,
+                "iverilog not installed",
+                kind="simulation",
+            )
 
         tb = sim_mod.build_testbench(compiled, config)
         Path(config.testbench_v).parent.mkdir(parents=True, exist_ok=True)
@@ -81,10 +93,13 @@ class SynchronousVerify(VerificationStrategy):
                 "exhaustive simulation",
                 CheckStatus.FAILED,
                 (compile_result.stderr or "iverilog compile failed").strip(),
+                kind="simulation",
             )
         run_result = runner.run(sim_mod.build_run_command(vvp), cwd=config.cwd)
         outcome = sim_mod.parse_run(run_result.stdout)
-        return CheckResult("exhaustive simulation", outcome.status, outcome.detail)
+        return CheckResult(
+            "exhaustive simulation", outcome.status, outcome.detail, kind="simulation"
+        )
 
     # -- mutation -------------------------------------------------------------
 
@@ -100,7 +115,12 @@ class SynchronousVerify(VerificationStrategy):
 
         if not (runner.available("yosys") and runner.available("iverilog")):
             return (
-                CheckResult("mutation", CheckStatus.NOT_RUN, "yosys + iverilog required"),
+                CheckResult(
+                    "mutation",
+                    CheckStatus.NOT_RUN,
+                    "yosys + iverilog required",
+                    kind="mutation",
+                ),
                 [],
             )
 
@@ -151,4 +171,4 @@ class SynchronousVerify(VerificationStrategy):
             if all_detected
             else "one or more mutations NOT detected (vacuous pass — R2/R18)"
         )
-        return CheckResult("mutation", status, detail), outcomes
+        return CheckResult("mutation", status, detail, kind="mutation"), outcomes

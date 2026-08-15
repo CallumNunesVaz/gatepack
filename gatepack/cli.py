@@ -18,7 +18,19 @@ import sys
 from pathlib import Path
 
 from gatepack import __version__, parts as parts_mod
+from gatepack import api
 from gatepack import refs as refs_mod
+from gatepack.diagnostic import (
+    GP_ASYNC_REFUSED,
+    GP_COMPILE,
+    GP_INTERNAL,
+    GP_IO,
+    GP_LIBRARY,
+    GP_SYNTH_UNAVAILABLE,
+    GP_VCC,
+    Diagnostic,
+    error,
+)
 from gatepack.estimate import VccIncompatibleError, one_hot_init_cost, run_estimate
 from gatepack.frontend import AsyncRefused, CompileError, compile_design_file
 from gatepack.liberty.generator import generate, sanitize_library_name
@@ -39,6 +51,34 @@ EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_USAGE = 2
 EXIT_ASYNC_REFUSED = 3
+
+
+def _json_ok(command: str, payload: dict) -> None:
+    """Emit the ``ok: true`` envelope — one JSON object to stdout, nothing else."""
+    sys.stdout.write(api.dump(api.envelope_ok(command, payload)))
+
+
+def _json_err(command: str, diag: Diagnostic) -> None:
+    """Emit the ``ok: false`` envelope; the human message still goes to stderr."""
+    sys.stdout.write(api.dump(api.envelope_err(command, diag)))
+    print(f"{diag.severity}: {diag.message}", file=sys.stderr)
+
+
+def _command_error(exc: BaseException) -> Diagnostic:
+    """Map a caught exception to a stable machine-readable diagnostic."""
+    if isinstance(exc, AsyncRefused):
+        return error(GP_ASYNC_REFUSED, str(exc))
+    if isinstance(exc, CompileError):
+        return error(GP_COMPILE, str(exc))
+    if isinstance(exc, VccIncompatibleError):
+        return error(GP_VCC, str(exc))
+    if isinstance(exc, (parts_mod.PartError, LibertyError)):
+        return error(GP_LIBRARY, str(exc))
+    if isinstance(exc, OSError):
+        return error(GP_IO, str(exc))
+    if isinstance(exc, RuntimeError):
+        return error(GP_SYNTH_UNAVAILABLE, str(exc))
+    return error(GP_INTERNAL, str(exc))
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -98,6 +138,9 @@ def _build_parser() -> argparse.ArgumentParser:
     compile_p.add_argument(
         "-o", "--output", default="build", help="output directory (default: %(default)s)"
     )
+    compile_p.add_argument(
+        "--json", action="store_true", help="emit one machine-readable JSON object to stdout"
+    )
 
     estimate = sub.add_parser(
         "estimate", help="run the front-end + synthesis and emit the §6 viability verdict"
@@ -107,6 +150,9 @@ def _build_parser() -> argparse.ArgumentParser:
     estimate.add_argument(
         "--build", default="build", help="build directory (default: %(default)s)"
     )
+    estimate.add_argument(
+        "--json", action="store_true", help="emit one machine-readable JSON object to stdout"
+    )
 
     verify = sub.add_parser(
         "verify", help="C4: equivalence + exhaustive simulation + mutation (§12)"
@@ -115,6 +161,14 @@ def _build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--library", required=True, help="path to parts.csv")
     verify.add_argument(
         "--build", default="build", help="build directory (default: %(default)s)"
+    )
+    verify.add_argument(
+        "--properties-only",
+        action="store_true",
+        help="run only the §11 property checks (sby), not synthesis/equivalence/sim",
+    )
+    verify.add_argument(
+        "--json", action="store_true", help="emit one machine-readable JSON object to stdout"
     )
 
     build = sub.add_parser(
@@ -131,6 +185,9 @@ def _build_parser() -> argparse.ArgumentParser:
         type=float,
         default=None,
         help="§9.7 spare leakage weight (default: %(default)s)",
+    )
+    build.add_argument(
+        "--json", action="store_true", help="emit one machine-readable JSON object to stdout"
     )
     project = sub.add_parser(
         "project", help="single-file project format (§10.4)"
@@ -271,10 +328,16 @@ def _cmd_compile(args: argparse.Namespace) -> int:
     try:
         result = compile_design_file(args.design)
     except AsyncRefused as exc:
-        print(f"refused: {exc}", file=sys.stderr)
+        if args.json:
+            _json_err("compile", _command_error(exc))
+        else:
+            print(f"refused: {exc}", file=sys.stderr)
         return EXIT_ASYNC_REFUSED
     except (CompileError, OSError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        if args.json:
+            _json_err("compile", _command_error(exc))
+        else:
+            print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
 
     out = Path(args.output)
@@ -283,6 +346,13 @@ def _cmd_compile(args: argparse.Namespace) -> int:
     properties = out / "properties.sv"
     generated.write_text(result.verilog)
     properties.write_text(result.properties)
+
+    if args.json:
+        _json_ok(
+            "compile",
+            api.compile_payload(result.compiled, str(generated), str(properties)),
+        )
+        return EXIT_OK
 
     compiled = result.compiled
     print(
@@ -300,11 +370,22 @@ def _cmd_estimate(args: argparse.Namespace) -> int:
     try:
         result = run_estimate(args.design, args.library, args.build)
     except AsyncRefused as exc:
-        print(f"refused: {exc}", file=sys.stderr)
+        if args.json:
+            _json_err("estimate", _command_error(exc))
+        else:
+            print(f"refused: {exc}", file=sys.stderr)
         return EXIT_ASYNC_REFUSED
     except (CompileError, parts_mod.PartError, LibertyError, VccIncompatibleError, OSError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        if args.json:
+            _json_err("estimate", _command_error(exc))
+        else:
+            print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
+
+    if args.json:
+        cell_counts = api.mapped_cell_counts(Path(args.build) / "mapped.json")
+        _json_ok("estimate", api.estimate_payload(result, cell_counts))
+        return EXIT_OK
 
     verdict = result.verdict
     design = result.compiled.design
@@ -333,13 +414,28 @@ def _cmd_estimate(args: argparse.Namespace) -> int:
 
 def _cmd_verify(args: argparse.Namespace) -> int:
     try:
-        result = run_verify(args.design, args.library, args.build)
+        result = run_verify(
+            args.design,
+            args.library,
+            args.build,
+            properties_only=args.properties_only,
+        )
     except AsyncRefused as exc:
-        print(f"refused: {exc}", file=sys.stderr)
+        if args.json:
+            _json_err("verify", _command_error(exc))
+        else:
+            print(f"refused: {exc}", file=sys.stderr)
         return EXIT_ASYNC_REFUSED
     except (CompileError, parts_mod.PartError, LibertyError, OSError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        if args.json:
+            _json_err("verify", _command_error(exc))
+        else:
+            print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
+
+    if args.json:
+        _json_ok("verify", api.verify_payload(result.report))
+        return EXIT_OK if result.report.ok else EXIT_ERROR
 
     report = result.report
     print(f"verification: {report.checks and result.manifest['verification']['overall']}")
@@ -370,7 +466,10 @@ def _cmd_build(args: argparse.Namespace) -> int:
             spare_leakage_weight=args.spare_weight,
         )
     except RuntimeError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        if args.json:
+            _json_err("build", _command_error(exc))
+        else:
+            print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
     except (
         AsyncRefused,
@@ -380,8 +479,16 @@ def _cmd_build(args: argparse.Namespace) -> int:
         VccIncompatibleError,
         OSError,
     ) as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        if args.json:
+            _json_err("build", _command_error(exc))
+        else:
+            print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
+
+    if args.json:
+        mapped_json_path = args.mapped if args.mapped else str(Path(args.out) / "mapped.json")
+        _json_ok("build", api.build_payload(result, paths, mapped_json_path))
+        return EXIT_OK
 
     s = result.packed_stats
     print(f"packed: {s.package_count} package(s), {s.spare_count} spare gate(s), "

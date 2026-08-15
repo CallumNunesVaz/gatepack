@@ -15,6 +15,13 @@ from gatepack.analysis.clock import (
     flop_count,
     timing_analysis,
 )
+from gatepack.analysis.cpld import (
+    blockers_summary,
+    cpld_alternative_flow,
+    lint_cpld,
+    lint_netlist,
+    lint_verilog,
+)
 from gatepack.analysis.power import (
     DynamicCurrent,
     StaticCurrent,
@@ -27,11 +34,16 @@ __all__ = [
     "DynamicCurrent",
     "StaticCurrent",
     "TimingReport",
+    "blockers_summary",
     "clock_fanout",
     "combinational_depth",
+    "cpld_alternative_flow",
     "cumulative_tpd_ns",
     "dynamic_current_ua",
     "flop_count",
+    "lint_cpld",
+    "lint_netlist",
+    "lint_verilog",
     "spare_leakage_ua",
     "static_current_by_tier",
     "timing_analysis",

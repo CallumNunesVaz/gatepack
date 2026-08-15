@@ -12,7 +12,9 @@ from dataclasses import dataclass, field
 from typing import Sequence
 
 from gatepack.analysis.clock import TimingReport
+from gatepack.analysis.cpld import blockers_summary, cpld_alternative_flow
 from gatepack.analysis.power import DynamicCurrent, StaticCurrent
+from gatepack.diagnostic import Diagnostic
 from gatepack.emit.bom import BomRow
 from gatepack.emit.refdes import RefdesDelta
 from gatepack.pack.packer import PackingStats
@@ -32,6 +34,7 @@ class ReportInputs:
     refdes_delta: RefdesDelta | None = None
     packages: Sequence[tuple[str, str]] = field(default_factory=list)  # (refdes, rationale)
     notes: Sequence[str] = field(default_factory=list)
+    cpld_blockers: Sequence[Diagnostic] = field(default_factory=list)
 
 
 def _fmt(value: float) -> str:
@@ -136,6 +139,17 @@ def emit_report(inp: ReportInputs) -> str:
             for pkg_id, old, new in d.renumbered:
                 lines.append(f"  - {pkg_id}: {old} -> {new}")
         lines.append("")
+
+    lines.append("## CPLD fallback (§24.1)")
+    lines.append("")
+    lines.append(f"- blockers: {blockers_summary(inp.cpld_blockers)}")
+    lines.append(f"- alternative flow: {cpld_alternative_flow()}")
+    if inp.cpld_blockers:
+        lines.append("")
+        for b in inp.cpld_blockers:
+            loc = f" ({b.path}:{b.line})" if b.line is not None else ""
+            lines.append(f"- `{b.code}` {b.message}{loc}")
+    lines.append("")
 
     if inp.notes:
         lines.append("## Notes")

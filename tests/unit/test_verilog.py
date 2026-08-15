@@ -137,9 +137,15 @@ def test_properties_file_emits_assertions():
     )
     yaml += 'properties:\n  - {name: p1, kind: invariant, expr: "!(o & x)"}\n'
     props = compile_design_text(yaml).properties
-    assert "assert property" in props
+    # M6-FINDINGS §1: open-source Yosys has no SVA; C1 emits immediate
+    # assertions inside a clocked always, not `assert property (@(posedge ...))`.
+    assert "assert (" in props
+    assert "gp_assert_0" in props
     assert "p1" in props
-    assert "disable iff (!rst_n)" in props
+    # the reset wrapper (M6-FINDINGS §2) is present
+    assert "f_past_valid" in props
+    assert "assume" in props
+    assert "assert property" not in props
 
 
 def test_johnson_suggestion_surfaced_in_result():

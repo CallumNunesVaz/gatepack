@@ -36,6 +36,7 @@ from gatepack.verify.base import (
     VerificationReport,
     VerifyConfig,
 )
+from gatepack.verify import properties as properties_mod
 from gatepack.verify.synchronous import SynchronousVerify
 
 
@@ -66,10 +67,15 @@ def _infra_checks(
                 "flop reset connectivity",
                 CheckStatus.FAILED,
                 "; ".join(unreset),
+                kind="property",
             )
         )
     else:
-        checks.append(CheckResult("flop reset connectivity", CheckStatus.PASSED))
+        checks.append(
+            CheckResult(
+                "flop reset connectivity", CheckStatus.PASSED, kind="property"
+            )
+        )
 
     if compiled.design.reset.source:
         findings = check_supervisor(
@@ -77,10 +83,19 @@ def _infra_checks(
         )
         if findings:
             checks.append(
-                CheckResult("supervisor parameters", CheckStatus.FAILED, "; ".join(findings))
+                CheckResult(
+                    "supervisor parameters",
+                    CheckStatus.FAILED,
+                    "; ".join(findings),
+                    kind="property",
+                )
             )
         else:
-            checks.append(CheckResult("supervisor parameters", CheckStatus.PASSED))
+            checks.append(
+                CheckResult(
+                    "supervisor parameters", CheckStatus.PASSED, kind="property"
+                )
+            )
     return checks
 
 
@@ -122,6 +137,7 @@ def run_verify(
     library_csv: str | Path,
     build_dir: str | Path = "build",
     runner: SubprocessRunner | None = None,
+    properties_only: bool = False,
 ) -> VerifyResult:
     design_path = Path(design_path)
     build_dir = Path(build_dir)
@@ -130,13 +146,23 @@ def run_verify(
     compiled_result: CompileResult = compile_design_file(design_path)
     compiled = compiled_result.compiled
 
+    generated_v = build_dir / "generated.v"
+    properties_sv = build_dir / "properties.sv"
+    generated_v.write_text(compiled_result.verilog)
+    properties_sv.write_text(compiled_result.properties)
+
+    runner = runner or SubprocessRunner()
+
+    if properties_only:
+        return _run_properties_only(
+            compiled, build_dir, generated_v, properties_sv, runner
+        )
+
     parts = load_parts(library_csv)
     vcc = compiled.design.constraints.vcc
     liberty = generate_liberty(parts, library_name="gatepack", project_vcc=vcc)
     sim_text = generate_sim(parts, project_vcc=vcc) + "\n" + load_m_cell_models()
 
-    generated_v = build_dir / "generated.v"
-    properties_sv = build_dir / "properties.sv"
     cells_lib = build_dir / "cells.lib"
     cells_sim_v = build_dir / "cells_sim.v"
     premap_json = build_dir / "premap.json"
@@ -146,8 +172,6 @@ def run_verify(
     testbench_v = build_dir / "exhaustive_tb.v"
     yosys_script_path = build_dir / "yosys.ys"
 
-    generated_v.write_text(compiled_result.verilog)
-    properties_sv.write_text(compiled_result.properties)
     cells_lib.write_text(liberty.text)
     cells_sim_v.write_text(sim_text)
 
@@ -164,7 +188,6 @@ def run_verify(
     yosys_script = SynchronousBackend().generate_script(synth_config)
     yosys_script_path.write_text(yosys_script)
 
-    runner = runner or SubprocessRunner()
     if runner.available("yosys"):
         runner.run(yosys_command(yosys_script), cwd=str(build_dir.parent or "."))
 
@@ -188,7 +211,11 @@ def run_verify(
     report = strategy.verify(config, compiled, runner, liberty.text, sim_text)
 
     infra = _infra_checks(compiled, parts, compiled_result.verilog, vcc)
-    report = VerificationReport(checks=report.checks + infra, mutations=report.mutations)
+    property_checks = properties_mod.run_properties(compiled, config, runner)
+    report = VerificationReport(
+        checks=report.checks + infra + property_checks,
+        mutations=report.mutations,
+    )
 
     manifest = _manifest(compiled, report)
     manifest_path = build_dir / "manifest.json"
@@ -206,6 +233,41 @@ def run_verify(
             "cells_lib": cells_lib,
             "cells_sim": cells_sim_v,
             "yosys_script": yosys_script_path,
+            "manifest": manifest_path,
+        },
+    )
+
+
+def _run_properties_only(
+    compiled: CompiledDesign,
+    build_dir: Path,
+    generated_v: Path,
+    properties_sv: Path,
+    runner: SubprocessRunner,
+) -> VerifyResult:
+    """``gatepack verify --properties-only``: run §11 property checks and nothing
+    else — no synthesis, no equivalence/simulation/mutation, no §9.5 S-cell
+    checks."""
+    config = VerifyConfig(
+        top=compiled.design.name,
+        generated_v=str(generated_v),
+        properties_sv=str(properties_sv),
+        cwd=str(build_dir.parent or "."),
+    )
+    property_checks = properties_mod.run_properties(compiled, config, runner)
+    report = VerificationReport(checks=property_checks, mutations=[])
+    manifest = _manifest(compiled, report)
+    manifest_path = build_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    return VerifyResult(
+        report=report,
+        compiled=compiled,
+        config=config,
+        manifest=manifest,
+        yosys_script="",
+        paths={
+            "generated_v": generated_v,
+            "properties_sv": properties_sv,
             "manifest": manifest_path,
         },
     )
