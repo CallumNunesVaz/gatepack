@@ -89,7 +89,16 @@ def test_output_provenance_is_on_port_not_assign():
     v = compile_design_text(yaml).verilog
     assert "(* gp_src" in v
     assert "output wire green" in v
-    assert "assign green = state_B;" in v
+    # Output logic has no declaration of its own, so C1 emits an explicitly
+    # declared intermediate wire to carry the provenance (M0-FINDINGS §1, §3):
+    # a net attribute survives `abc`, and an attribute before `assign` is a
+    # Yosys syntax error. The output is then driven from that wire.
+    assert "wire green_int = state_B;" in v
+    assert "assign green = green_int;" in v
+    # the regression that matters: no attribute immediately precedes an assign
+    for prev, line in zip(v.splitlines(), v.splitlines()[1:]):
+        if line.lstrip().startswith("assign "):
+            assert "gp_src" not in prev, f"attribute before assign: {prev!r}"
     # the attribute is attached to the port declaration, not to the assign
     assert "*)\n  assign green" not in v
 

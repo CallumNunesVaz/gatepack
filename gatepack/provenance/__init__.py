@@ -21,6 +21,7 @@ Public API:
 
 from __future__ import annotations
 
+from gatepack.provenance.verilog_attrs import net_provenance
 from gatepack.provenance.capture import (
     PROVENANCE_ATTR,
     Cell,
@@ -51,6 +52,7 @@ __all__ = [
     "PinRef",
     "SourceRef",
     "capture_net_sources",
+    "net_provenance",
     "capture_sources",
     "match_netlists",
     "parse_netlist_json",
