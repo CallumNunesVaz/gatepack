@@ -167,3 +167,50 @@ def test_verify_reaches_sequential_golden(tmp_path):
     # reset-connected for the §9.5 check to pass.
     statuses = {c.name: c.status for c in result.report.checks}
     assert statuses["flop reset connectivity"] is CheckStatus.PASSED
+
+
+@pytest.mark.parametrize("name", ["traffic_light", "xor2", "decoder_3to8"])
+def test_single_file_round_trip_is_byte_deterministic(tmp_path, name):
+    # §10.4: explode(bundle(x)) == x and bundle(explode(y)) == y, byte-for-byte.
+    from gatepack.project import bundle, explode, explode_to_dir, gpk_text
+
+    raw = (DESIGNS / f"{name}.yaml").read_text()
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "design.yaml").write_text(raw)
+
+    gpk = bundle(src)
+    project = explode(gpk)
+    assert gpk_text(project) == gpk  # bundle(explode(y)) == y
+
+    out = tmp_path / "out"
+    explode_to_dir(gpk, out)
+    assert bundle(out) == gpk  # explode(bundle(x)) == x (canonical x)
+
+
+@pytest.mark.parametrize("name", ["traffic_light", "xor2", "decoder_3to8"])
+def test_compile_gpk_matches_exploded_design(tmp_path, name):
+    # C1 accepts either form (§10.4) and produces the same design model.
+    from gatepack.frontend import compile_design_file
+    from gatepack.project import bundle, explode_to_dir
+
+    raw = (DESIGNS / f"{name}.yaml").read_text()
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "design.yaml").write_text(raw)
+
+    gpk_path = tmp_path / "d.gpk"
+    gpk_path.write_text(bundle(src))
+    out = tmp_path / "out"
+    explode_to_dir(gpk_path.read_text(), out)
+
+    from_gpk = compile_design_file(gpk_path).compiled
+    from_yaml = compile_design_file(out / "design.yaml").compiled
+
+    assert from_gpk.design.name == from_yaml.design.name
+    assert from_gpk.state_order == from_yaml.state_order
+    assert from_gpk.encoding == from_yaml.encoding
+    assert [t.to for t in from_gpk.design.transitions] == [
+        t.to for t in from_yaml.design.transitions
+    ]
+    assert from_gpk.design.output_logic == from_yaml.design.output_logic
