@@ -19,7 +19,7 @@ from pathlib import Path
 
 from gatepack import __version__, parts as parts_mod
 from gatepack import refs as refs_mod
-from gatepack.estimate import VccIncompatibleError, run_estimate
+from gatepack.estimate import VccIncompatibleError, one_hot_init_cost, run_estimate
 from gatepack.frontend import AsyncRefused, CompileError, compile_design_file
 from gatepack.liberty.generator import generate, sanitize_library_name
 from gatepack.liberty.validate import LibertyError
@@ -270,6 +270,14 @@ def _cmd_estimate(args: argparse.Namespace) -> int:
         print(f"  {name + ':':22} {value:>10}  ({metric.status})")
     print(f"message: {verdict.message}")
     print(f"manifest: {result.paths['manifest']}")
+    one_hot_cost = one_hot_init_cost(result.compiled)
+    if one_hot_cost is not None:
+        print(
+            f"one-hot initial state: {one_hot_cost.mechanism}; "
+            f"NOR fan-in {one_hot_cost.nor_fanin} "
+            f"(<= {one_hot_cost.nor_gate_upper_bound} NOR gates) + 1 OR input "
+            f"counted in the gate budget"
+        )
     if result.compiled.johnson_suggestion:
         print(f"note: {result.compiled.johnson_suggestion}", file=sys.stderr)
     return EXIT_OK

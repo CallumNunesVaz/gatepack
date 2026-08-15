@@ -3,7 +3,7 @@
 Public entry points:
 
 * :func:`compile_design_file` — the CLI path (reads a file, uses its basename in
-  ``src`` attributes).
+  ``gp_src`` attributes).
 * :func:`compile_design_text` — test path (explicit source name).
 * :func:`compile_design` — compile an already-parsed :class:`Design`.
 """

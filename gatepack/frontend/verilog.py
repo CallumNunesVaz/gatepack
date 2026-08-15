@@ -1,15 +1,27 @@
 """Behavioural Verilog + properties emission (C1, §12 C1, §15.1).
 
-Every construct carries a ``(* src = "design.yaml:<line>:<path>" *)`` attribute —
-the provenance spine of §15.1.  Attributes are load-bearing, not decoration: C3
-captures them from ``premap.json`` before ``dfflibmap``/``abc`` strip them
-([R4-14]).
+Every construct carries a ``(* gp_src = "design.yaml:<line>:<path>" *)`` attribute
+— the provenance spine of §15.1.  The attribute is deliberately **not** called
+``src``: Yosys populates ``src`` itself with the Verilog file/line that created
+each cell and its value wins over an emitted one (M0-FINDINGS §2).
+
+Provenance rides on **named nets**, never on cells and never on a continuous
+``assign`` (M0-FINDINGS §1, §3).  Every attribute is attached to the ``wire`` or
+``reg`` *declaration* of the net it describes; where a construct has no
+declaration of its own (the output logic), C1 emits an explicitly declared
+intermediate wire so the provenance is not dropped.  Net attributes survive
+``abc`` intact, which is what makes the §15.1 spine work at all for
+combinational logic.
 
 Encoding:
 
 * ``one_hot`` (default) — one register bit per state named ``state_<NAME>``; the
   next-state term for each transition is a named wire ``t_<index>`` carrying the
-  transition's own ``src`` attribute, so provenance survives into the netlist.
+  transition's own ``gp_src`` attribute, so provenance survives into the netlist.
+  The initial state is realised as **set-via-feedback** on a reset-to-0 flop
+  (M0-FINDINGS §6): every state flop resets to 0, and the all-zero condition
+  feeds back to set the initial state, so no set-capable flop (``DFF_S``) is
+  required.
 * ``binary`` / ``gray`` — a ``state`` vector with ``STATE_<NAME>`` localparams and
   a ``case`` next-state block.
 """
@@ -24,7 +36,7 @@ from gatepack.frontend.schema import Reset
 def _attr(compiled: CompiledDesign, path: str) -> str:
     line = compiled.provenance.get(path)
     display = str(line) if line is not None else "?"
-    return f'(* src = "{compiled.source_name}:{display}:{path}" *)'
+    return f'(* gp_src = "{compiled.source_name}:{display}:{path}" *)'
 
 
 def _reset_active_low(reset: Reset) -> bool:
@@ -133,13 +145,18 @@ def emit_verilog(compiled: CompiledDesign) -> str:
         lines.extend(_emit_encoded_state(compiled, clock_name, reset_i, active_low, var_map))
 
     # --- output logic ----------------------------------------------------------
+    # Provenance must ride on a named net, never on a continuous `assign`
+    # (M0-FINDINGS §1).  The output port has no declaration of its own to carry
+    # the attribute, so C1 emits an explicitly declared intermediate wire and a
+    # bare `assign` onto the port.
     state_map = _state_map(compiled)
     for name in compiled.output_names:
         ast = compiled.output_asts[name]
         lines.append(f"  {_attr(compiled, f'output_logic.{name}')}")
         lines.append(
-            f"  assign {name} = {expr_mod.to_verilog(ast, var_map, state_map)};"
+            f"  wire {name}_int = {expr_mod.to_verilog(ast, var_map, state_map)};"
         )
+        lines.append(f"  assign {name} = {name}_int;")
 
     # --- macros (behavioural models are an M8 deliverable) ---------------------
     for macro in compiled.design.macros:
@@ -191,16 +208,28 @@ def _emit_one_hot_state(
         lines.append(f"  {_attr(compiled, 'states')}")
         lines.append(f"  wire next_{target} = {expr};")
 
+    # One-hot initial state via set-via-feedback (M0-FINDINGS §6, option 2).
+    # Every flop resets to 0; the all-zero (post-reset) condition feeds back to
+    # set the initial state on the first clock.  This needs no set-capable flop,
+    # which the shipped library does not have (DFF_S has no dual-sourced part).
+    all_state = " | ".join(f"state_{s}" for s in compiled.state_order)
+    lines.append(f"  {_attr(compiled, 'states')}")
+    lines.append(f"  wire state_active = ({all_state});")
+    lines.append(f"  {_attr(compiled, 'states')}")
+    lines.append(f"  wire set_feedback = ~state_active;")
+
     edge = f"negedge {reset_i}" if active_low else f"posedge {reset_i}"
     assert_expr = f"!{reset_i}" if active_low else reset_i
     lines.append(f"  always @(posedge {clock_name} or {edge}) begin")
     lines.append(f"    if ({assert_expr}) begin")
     for state in compiled.state_order:
-        value = "1'b1" if state == design.initial else "1'b0"
-        lines.append(f"      state_{state} <= {value};")
+        lines.append(f"      state_{state} <= 1'b0;")
     lines.append("    end else begin")
     for state in compiled.state_order:
-        lines.append(f"      state_{state} <= next_{state};")
+        if state == design.initial:
+            lines.append(f"      state_{state} <= next_{state} | set_feedback;")
+        else:
+            lines.append(f"      state_{state} <= next_{state};")
     lines.append("    end")
     lines.append("  end")
     lines.append("")

@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 from gatepack.frontend import expr as expr_mod
 from gatepack.frontend.model import CompiledDesign
+from gatepack.toolchain import iverilog_command, vvp_command
 from gatepack.verify.base import CheckStatus, VerifyConfig
 
 _PASS_MARK = "EXHAUSTIVE_SIM_PASS"
@@ -60,18 +61,13 @@ def parse_run(stdout: str) -> SimulationOutcome:
 
 
 def build_compile_command(config: VerifyConfig, vvp: str) -> list[str]:
-    return [
-        "iverilog",
-        "-o",
-        vvp,
-        config.mapped_v,
-        config.cells_sim_v,
-        config.testbench_v,
-    ]
+    return iverilog_command(
+        vvp, [config.mapped_v, config.cells_sim_v, config.testbench_v]
+    )
 
 
 def build_run_command(vvp: str) -> list[str]:
-    return ["vvp", vvp]
+    return vvp_command(vvp)
 
 
 # ---------------------------------------------------------------------------

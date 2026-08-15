@@ -18,8 +18,6 @@ as ``None`` when Yosys is unavailable, never fabricated.
 from __future__ import annotations
 
 import json
-import shutil
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping
@@ -33,6 +31,7 @@ from gatepack.macros import load_models as load_m_cell_models
 from gatepack.parts import Part, load_parts
 from gatepack.synth.base import SynthConfig
 from gatepack.synth.synchronous import SynchronousBackend
+from gatepack.toolchain import ToolchainRunner, yosys_command
 
 
 class VccIncompatibleError(ValueError):
@@ -175,11 +174,40 @@ def frontend_metrics(compiled: CompiledDesign) -> dict[str, float | None]:
     }
 
 
+@dataclass(frozen=True)
+class OneHotInitCost:
+    """The §6 cost of a one-hot initial state realised as set-via-feedback
+    (M0-FINDINGS §6, option 2) instead of a set-capable flop."""
+
+    mechanism: str
+    nor_fanin: int
+    nor_gate_upper_bound: int
+    extra_or_inputs: int = 1
+
+
+def one_hot_init_cost(compiled: CompiledDesign) -> OneHotInitCost | None:
+    """Return the set-via-feedback cost, or ``None`` when the mechanism is unused.
+
+    Only the one-hot encoding needs it, and a single state has a constant flop
+    rather than a one-hot set (its ``set_feedback`` folds away).  The gate count
+    is an *upper bound* assuming a tree of 2-input NOR gates; the real number is
+    settled by mapping and reported in the package count when Yosys runs.
+    """
+    if compiled.encoding != "one_hot" or compiled.state_width <= 1:
+        return None
+    return OneHotInitCost(
+        mechanism="set-via-feedback on a reset-to-0 flop (no set-capable part)",
+        nor_fanin=compiled.state_width,
+        nor_gate_upper_bound=compiled.state_width - 1,
+    )
+
+
 def run_estimate(
     design_path: str | Path,
     library_csv: str | Path,
     build_dir: str | Path = "build",
     thresholds: Thresholds | None = None,
+    runner: ToolchainRunner | None = None,
 ) -> EstimateResult:
     design_path = Path(design_path)
     build_dir = Path(build_dir)
@@ -225,9 +253,10 @@ def run_estimate(
     yosys_script_path.write_text(yosys_script)
 
     metrics = frontend_metrics(compiled)
+    runner = runner or ToolchainRunner()
     yosys_ran = False
-    if shutil.which("yosys"):
-        package_count = _run_yosys(yosys_script, build_dir)
+    if runner.available("yosys"):
+        package_count = _run_yosys(runner, yosys_script, build_dir)
         if package_count is not None:
             metrics["package_count"] = float(package_count)
             yosys_ran = True
@@ -260,19 +289,10 @@ def run_estimate(
     )
 
 
-def _run_yosys(script: str, build_dir: Path) -> int | None:
+def _run_yosys(runner: ToolchainRunner, script: str, build_dir: Path) -> int | None:
     """Run Yosys and return the mapped cell count, or ``None`` on any failure."""
-    try:
-        proc = subprocess.run(
-            ["yosys", "-p", script],
-            cwd=str(build_dir.parent or "."),
-            capture_output=True,
-            text=True,
-            timeout=600,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if proc.returncode != 0:
+    result = runner.run(yosys_command(script), cwd=str(build_dir.parent or "."))
+    if result.returncode != 0:
         return None
     return _count_mapped_cells(build_dir / "mapped.json")
 
@@ -307,7 +327,8 @@ def _manifest(
             ("combinational depth", "depth"),
         ]
     }
-    return {
+    one_hot_cost = one_hot_init_cost(compiled)
+    manifest = {
         "schema_version": 1,
         "tool": "gatepack",
         "tool_version": __version__,
@@ -322,6 +343,16 @@ def _manifest(
             "metrics": metric_blocks,
         },
     }
+    if one_hot_cost is not None:
+        # §9.2-style explicit line item: the set-via-feedback initial state is
+        # counted in the package count, never hidden inside it.
+        manifest["one_hot_initial_state"] = {
+            "mechanism": one_hot_cost.mechanism,
+            "nor_fanin": one_hot_cost.nor_fanin,
+            "nor_gate_upper_bound": one_hot_cost.nor_gate_upper_bound,
+            "extra_or_inputs": one_hot_cost.extra_or_inputs,
+        }
+    return manifest
 
 
 def _dump_json(data: dict) -> str:

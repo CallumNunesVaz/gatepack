@@ -17,13 +17,15 @@ def test_module_declaration_and_ports():
     assert "endmodule" in v
 
 
-def test_src_attributes_present_on_constructs():
+def test_gp_src_attributes_present_on_constructs():
     result = compile_design_text(sync_design())
     v = result.verilog
-    assert '(* src = "design.yaml:1:name" *)' in v
-    assert '(* src = "design.yaml:' in v
+    assert '(* gp_src = "design.yaml:1:name" *)' in v
+    assert '(* gp_src = "design.yaml:' in v
     assert "transitions[0]" in v
     assert "output_logic" not in v  # no outputs in the minimal design
+    # `src` is Yosys's own attribute and its value wins over an emitted one (M0 §2)
+    assert "(* src =" not in v
 
 
 def test_one_hot_state_bits_named_state_name():
@@ -58,7 +60,23 @@ def test_output_logic_emits_state_compare():
         output_logic={"green": "state == B"},
     )
     v = compile_design_text(yaml).verilog
-    assert "assign green = state_B;" in v
+    # provenance rides on an intermediate net, not the assign (M0 §1)
+    assert "wire green_int = state_B;" in v
+    assert "assign green = green_int;" in v
+
+
+def test_one_hot_initial_state_is_set_via_feedback():
+    result = compile_design_text(sync_design())  # initial A, states [A, B]
+    v = result.verilog
+    assert "wire state_active = (state_A | state_B);" in v
+    assert "wire set_feedback = ~state_active;" in v
+    # every flop resets to 0 (no set-capable part, M0 §6); the initial state is
+    # set via feedback on the first clock, not by a `1'b1` reset value.
+    assert "state_A <= 1'b0;" in v
+    assert "state_B <= 1'b0;" in v
+    assert "state_A <= next_A | set_feedback;" in v
+    assert "state_B <= next_B;" in v
+    assert "state_A <= 1'b1;" not in v
 
 
 def test_binary_encoding_emits_vector_and_localparams():

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from gatepack.estimate import Thresholds, VccIncompatibleError, assess, run_estimate
+from gatepack.estimate import Thresholds, VccIncompatibleError, assess, one_hot_init_cost, run_estimate
 
 from .helpers import sync_design
 
@@ -53,6 +53,28 @@ def test_boundaries():
 def test_thresholds_override():
     t = Thresholds(package_green=100, package_amber=200)
     assert assess(60, 4, 4, 3, thresholds=t).overall == "green"
+
+
+def test_one_hot_init_cost_counted_for_multistate_one_hot():
+    from gatepack.frontend import compile_design_text
+
+    result = compile_design_text(sync_design())
+    cost = one_hot_init_cost(result.compiled)
+    assert cost is not None
+    assert cost.nor_fanin == 2
+    assert cost.nor_gate_upper_bound == 1
+    assert "set-via-feedback" in cost.mechanism
+
+
+def test_one_hot_init_cost_none_for_single_state_or_encoded():
+    from gatepack.frontend import compile_design_text
+
+    single = compile_design_text(sync_design(states=["A"], transitions=[("A", "A", "1")]))
+    assert one_hot_init_cost(single.compiled) is None
+    encoded = compile_design_text(
+        sync_design().replace("encoding: one_hot", "encoding: binary")
+    )
+    assert one_hot_init_cost(encoded.compiled) is None
 
 
 def test_estimate_writes_files_without_yosys(tmp_path):

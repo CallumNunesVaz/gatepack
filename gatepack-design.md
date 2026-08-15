@@ -1,10 +1,15 @@
 # gatepack — Design Document and Build Plan
 
-**Status:** Draft 4
+**Status:** Draft 4.1
 **Date:** 2026-08-15
 **Licence:** GPL-3.0-or-later
 **Supersedes:** Draft 3 (async backend scoped for v0.1.0; provenance assumed to
 survive synthesis; `dfflibmap`/`dfflegalize` conflated; no v0.1.0 scope cut)
+
+**Prior-art survey (Draft 4.1):** §24 records what was adopted, declined and
+kept for interoperation after surveying the logic-simulator field, and
+`docs/M0-FINDINGS.md` supersedes this document wherever they conflict — it
+contains measurements from a real Yosys, this document contains assumptions.
 
 **External review:** Draft 3 was reviewed by DeepSeek v4-pro
 (`docs/reviews/2026-08-15-deepseek-v4-pro.md`). Findings accepted are folded
@@ -138,6 +143,7 @@ conflicts found. Rejected: `tinylogic` (onsemi/Fairchild trademark),
 | React Flow | MIT | npm (core only — verify no Pro features used) |
 | Electron | MIT | application shell |
 | KiCad | GPL-3.0+ | file interchange only |
+| Digital (hneemann) | GPL-3.0 | **no code or data linked** — optional file interchange and cross-check only (§24) |
 
 EPL-2.0 (elkjs) is weak-copyleft at file scope, consumed unmodified as a
 library, so it does not constrain the GPL-3.0 choice. Confirm by licence audit
@@ -742,7 +748,8 @@ constraints:
 
 | Artefact | Format | Committed |
 |---|---|---|
-| `design.yaml`, `truth_table.csv`, `parts.csv` | text | Yes — canonical |
+| `<name>.gpk` | text — multi-document YAML | Yes — canonical, **single-file form** (§10.4) |
+| `design.yaml`, `truth_table.csv`, `parts.csv` | text | Yes — canonical, **exploded form** (§10.4) |
 | `design.layout.json` | JSON — node positions | **No** — gitignored |
 | `build/generated.v`, `build/properties.sv` | Verilog | No — review artefacts |
 | `build/mapped.json`, `build/cells.lib` | JSON, Liberty | No |
@@ -752,6 +759,95 @@ constraints:
 Node positions never enter `design.yaml`. Auto-layout with elk or dagre and
 store nothing, or store in the gitignored sidecar. This keeps diffs about logic
 rather than pixels.
+
+### 10.4 Single-file project format
+
+A whole project — specification, truth table, and optionally its cell library —
+can live in **one file**, so a design can be mailed, attached to a ticket,
+dropped in a gist, or opened by double-clicking, without the recipient having to
+reassemble a directory.
+
+**The format is plain multi-document YAML, never an archive.** This is the
+binding constraint and it follows directly from principle 2. A zip or tar
+container would give the same portability and destroy the property that
+justifies the whole tool: `git diff` showing that a guard changed from
+`arm & !fault` to `arm`, review comments anchored to a line, `grep` finding
+every design that uses a part. A bundle you cannot diff is a binary, whatever
+its extension, and it recreates precisely the vendor lock-in §1 exists to avoid.
+
+```yaml
+# interlock.gpk — one file, three documents
+%YAML 1.2
+---
+gatepack: 1                      # format version, first key, always present
+kind: design
+name: interlock_fsm
+timing_model: synchronous
+# ... exactly the §10.2 design.yaml content ...
+---
+gatepack: 1
+kind: truth_table
+columns: [arm, fault_a, fault_b, enable]
+rows:
+  - [0, 0, 0, 0]
+  - [1, 0, 0, 1]
+---
+gatepack: 1
+kind: library                    # optional — see below
+source: 74aup.csv
+sha256: 3f9a…                    # of the exploded CSV, for provenance
+parts:
+  - {cell: INV, tier: G, family: AUP, part_suffix: 1G04, ...}
+```
+
+**Two equivalent representations, one semantic model.**
+
+| Form | Shape | Best for |
+|---|---|---|
+| **Exploded** | `design.yaml` + `truth_table.csv` + `parts.csv` | git-tracked work, review, CI |
+| **Single-file** | `<name>.gpk` | sharing, archiving, opening by double-click |
+
+Neither is privileged. C1 accepts either and produces identical downstream
+artefacts, and the conversion is lossless in both directions:
+
+```
+gatepack project bundle  ./            -o interlock.gpk    # explode -> single
+gatepack project explode interlock.gpk -o ./               # single  -> explode
+```
+
+**Round-tripping must be byte-deterministic**, and a golden asserts
+`explode(bundle(x)) == x` and `bundle(explode(y)) == y` for every §18 reference
+design. Sorted keys, no timestamps, fixed document order (§C6). A format that
+silently reorders or reformats on save makes every diff unreadable and would
+quietly defeat its own purpose.
+
+**The library document is optional, and the choice is a real trade.** Embedding
+`parts.csv` makes the file genuinely self-contained and pins the exact library
+the design was verified against, which serves reproducibility (§5.5) — the
+recipient cannot accidentally build against a different revision. Referencing it
+by path keeps one library shared across many projects, which is how a team
+actually maintains part data. Both are supported; embedding records the source
+filename and a `sha256` so a later divergence between embedded and on-disk
+library is *detectable* rather than silent, and `lib check` reports it.
+
+**What the file must never contain**, each for a reason already established:
+
+- **Node positions.** §10.3 is unchanged: layout lives in the gitignored
+  sidecar, so diffs stay about logic rather than pixels.
+- **Build artefacts** (`build/`, `out/`). They are derived, and embedding
+  derived data invites it to go stale and be trusted.
+- **Binary blobs of any kind.** If it cannot be read in a text editor, it does
+  not belong.
+
+**Extension.** `.gpk`, documented as plain YAML and safe to open in any editor.
+A distinct extension exists to give the desktop application a file association
+(§16 C9, whose project scope widens from *a directory* to *a directory or a
+`.gpk`*); it is not a claim to a proprietary format. Availability of the
+extension is unchecked and should be confirmed alongside the §2 name search.
+
+**Milestone.** Fold into **M2** (C1 already owns spec parsing and gains one
+loader plus one writer) with the CLI verbs and round-trip goldens; the C9 file
+association follows at **M12**.
 
 ---
 
@@ -1178,9 +1274,13 @@ implies a connection it does not deliver.
 
 ### C9 — Session manager (main process)
 
-Project open/close scoped to a directory, file watching with debounce, git
-status, child-process lifecycle, incremental build orchestration and
-cancellation, schema-validated IPC.
+Project open/close scoped to **a directory or a single `.gpk` file** (§10.4),
+file watching with debounce, git status, child-process lifecycle, incremental
+build orchestration and cancellation, schema-validated IPC.
+
+Opening a `.gpk` explodes it into a temporary working form; saving re-bundles it
+deterministically. The user sees one file; the core sees the same semantic model
+either way, so nothing downstream of C1 knows which form was opened.
 
 ### C10 — Spec editor
 
@@ -1199,6 +1299,17 @@ per-row divergence highlighting: C4's exhaustive check rendered interactively,
 showing exactly which minterm disagrees. Coverage indicator for specified,
 don't-care and unreachable minterms.
 
+**Live minimised-cover preview** (§24.2). Alongside the columns above, show the
+current Espresso cover and an estimated package count, recomputed on a debounced
+sub-second core call within the §16.1 `< 1 s` synthesis-preview budget.
+
+The reason is principle 8. §6.1 already suggests input-space collapse — encode
+one-hot groups, state-gate inputs, pre-combine OR'd faults — but a suggestion
+without a number is advice the engineer cannot weigh. Showing the cover shrink as
+don't-cares and collapses are edited turns each suggestion into a visible cost
+delta, and lets §6.1 cite a measured figure rather than a category. The
+suggestion is still never applied automatically.
+
 ### C12 — Schematic view
 
 **netlistsvg**, not React Flow. It consumes Yosys `write_json` directly and lays
@@ -1209,6 +1320,20 @@ orthogonal routing from scratch.
 
 Layers: mapped netlist (logical), packed netlist (package boundaries as
 containers), and an overlay for test points and unobservable nets from §13.1.
+
+**Per-vector signal-value overlay** (§24.2). For a selected minterm, state, or
+property counterexample, colour every net by its simulated 0/1 value for that
+vector.
+
+§15.2 currently maps a truth table row to *which gates are active* — membership.
+Value is strictly more informative, and C4 already computes the exhaustive
+vectors, so this is a rendering increment over data that exists rather than new
+analysis. It is what turns C12 from a picture into a debugger, and it is the
+clearest expression of the linked selection that justifies building the
+application at all. Schematic-capture simulators (Logisim-evolution, Digital)
+get their teachability almost entirely from this one affordance.
+
+C12 remains a **rendering**, never an editor (§24.3).
 
 ### C13 — Packing and BOM view
 
@@ -1303,6 +1428,8 @@ CLI:
 
 ```
 gatepack estimate design.yaml        # §6 viability verdict
+gatepack project bundle  ./ -o x.gpk # §10.4 exploded -> single-file
+gatepack project explode x.gpk -o ./ # §10.4 single-file -> exploded
 gatepack build    design.yaml --library 74aup.csv --out out/
 gatepack verify   out/
 gatepack analyse  out/               # SCOAP + stuck-at, standalone
@@ -1560,6 +1687,10 @@ CLI, and the desktop app as a read-mostly view.
 Async synthesis as a research task; the full M/S-cell inventory; 74LVC family;
 interactive packing; macOS distribution.
 
+From §24: package pinout rendering on the C13 packing cards (blocked on pinout
+*data*, not on the renderer); Verilog handoff to Digital for interactive
+simulation; an optional LTspice deck export.
+
 ### 23.4 Review findings not adopted
 
 - **"`abc -liberty` is purely area-driven, so timing arcs cannot affect
@@ -1571,3 +1702,108 @@ interactive packing; macOS distribution.
 - **"Drop C14 first."** The analysis dashboard is where the §6 verdict lives and
   is among the cheapest panels to build; C13's interactivity is the better cut,
   and is cut (§23.2).
+
+---
+
+## 24. Prior art and interoperation
+
+Added Draft 4.1 after a survey of the simple-logic-simulator field
+(`docs/reviews/2026-08-15-deepseek-simulator-survey.md`), prompted by the
+Hackaday survey of June 2021. The field is dominated by schematic-capture
+educational simulators — close to the inverse of gatepack's premise — so this
+section records what was taken, what was declined, and why, so the questions are
+not reopened from scratch later.
+
+### 24.1 Digital (Helmut Neemann)
+
+`github.com/hneemann/Digital` — GPL-3.0, Java/Maven, actively maintained. The
+closest neighbour in the field: a schematic simulator built around **real 74xx
+packages** rather than abstract gates.
+
+Verified facts, not inferences:
+
+- **131 74xx component definitions** under `src/main/dig/lib/DIL Chips/74xx/`,
+  as XML `.dig` files carrying description, DIL shape, pin positions and
+  internal logic.
+- **They contain no electrical data** — no tPD, no IQ, no supply range, no
+  manufacturer, no second source.
+- **Verilog and VHDL both ways.** Components can be *defined* in Verilog
+  (simulated via Icarus) and circuits *exported* to Verilog or VHDL.
+- **JEDEC export** for GAL16V8, GAL22V10 and ATF150x.
+
+Consequences for gatepack:
+
+- **The 74xx library is a cross-check corpus, never a source of record.** §10.1
+  [R4-21] requires a datasheet citation with document revision and table/page
+  for every electrical value, and Digital carries none — its delays are
+  simplified simulation values. It is useful for confirming pinouts and catching
+  transcription slips in `parts.csv`, and for nothing else. It does **not**
+  reduce the datasheet-transcription burden of R8.
+- **A two-way Verilog handoff exists and costs nothing.** Digital consumes
+  Verilog-defined components using the same Icarus gatepack already depends on
+  for C4, so `build/generated.v` can be dropped into Digital and simulated
+  interactively. This is a strictly better interchange route than exporting an
+  undocumented `.circ`, and requires no new dependency. v0.2, low cost.
+- **The CPLD escape hatch in §6 is real, and worth asserting.** Digital
+  demonstrates that compiling this class of logic into a constrained device is
+  routine. gatepack's Red verdict already recommends a flash CPLD; the
+  constraints that make RTL fit such a device — no `$mem`, no latches, no async,
+  no surviving `$_` cells — are the ones C3 **already enforces** ([R4-13], §9.2).
+  Make that explicit: state in the report which alternative consumes
+  `generated.v`, and add a golden that fails if a CPLD-hostile construct appears.
+  Fold into M3; low cost.
+- **Single-gate stepping and oscillation analysis** is the one capability in the
+  field that gatepack cannot express. Formal equivalence compares steady-state
+  functions and says nothing about transient behaviour — precisely the §7.1
+  problem where an async netlist is equivalent yet glitches. Relevant to v0.2
+  async work as a debugging aid; not a substitute for hazard analysis.
+
+### 24.2 Adopted from the wider field
+
+- **Live minimised-cover preview** in C11 (§16, M14), from Logic Friday's
+  interaction model — the missing *number* behind the §6.1 suggestions.
+- **Per-vector signal-value overlay** in C12 (§16, M16), from Logisim-evolution
+  and Digital — value rather than membership, over vectors C4 already computes.
+- **Package pinout rendering** on the C13 cards. Deferred to v0.2 and blocked on
+  *data*: `parts.csv` carries `package` but no pin map, and adding one increases
+  the transcription burden R8 warns about. The renderer is the easy half.
+
+### 24.3 Declined, with the principle each would breach
+
+- **Interactive schematic capture** (Logisim-evolution, Digital, CEDAR, TKGate,
+  Falstad) — breaches principle 2. Editable schematic state is exactly the
+  lock-in gatepack exists to avoid. C12 renders; it never edits.
+- **Analogue or live electrical simulation** (LTspice, Falstad, Proteus,
+  Multisim) — breaches §1.2. An optional SPICE *deck export*, for the engineer to
+  run against their own vendor models, stays on the right side of the line;
+  bundling models or running SPICE does not. Vendor 74xx SPICE models are
+  frequently "use but do not redistribute", so they must never be shipped.
+- **Interactive simulation as the deliverable** — gatepack is a verifier, not a
+  sandbox. Its guarantee is equivalence plus exhaustive simulation plus mutation,
+  not a poke-able waveform.
+- **K-map / Quine–McCluskey visual editors** — the truth-table grid with
+  don't-cares is strictly more general (K-maps cap out around six variables) and
+  Espresso already minimises. Adopt the preview affordance, not the UI.
+- **Importing RTL or capture files as source** (`.circ`, EDIF, BLIF, Verilog) —
+  breaches principle 2 and §1.1. gatepack compiles *specifications*; accepting
+  netlists would make it a Yosys front-end with none of the validation, verdict
+  or provenance that justify it.
+- **Building on Amaranth/nmigen** rather than emitting Verilog text. Not a
+  licence objection (BSD-2-Clause): an EDSL inserts a version-drifting
+  elaboration step into the byte-identical path (principle 5, §5.5), and blurs
+  the precise control over provenance attributes and construct choice that §15.1
+  and [R4-13] require. It would still emit Verilog at the end.
+
+### 24.4 Where gatepack actually differs
+
+Judged against this field, and worth stating because it is easy to lose sight of
+while building: no surveyed tool performs formal equivalence with a
+non-vacuous guarantee (§C4, R2), produces text-canonical reproducible builds, or
+emits a viability verdict (§6). None does BOM generation, package packing,
+mechanical second-sourcing, or spare-gate leakage accounting (§9.7, §10.1). None
+reports electrical consequence from cited datasheets, and none does stuck-at
+classification or SCOAP testability (§13). None maps an artefact back to a
+specification line (§15), because none of them has a specification to map to.
+
+The field simulates ideal logic. gatepack compiles a specification into a
+buildable, verified bill of materials.

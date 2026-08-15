@@ -28,6 +28,7 @@ from gatepack.macros import load_models as load_m_cell_models
 from gatepack.parts import Part, load_parts
 from gatepack.synth.base import SynthConfig
 from gatepack.synth.synchronous import SynchronousBackend
+from gatepack.toolchain import yosys_command
 from gatepack.verify.base import (
     CheckResult,
     CheckStatus,
@@ -165,7 +166,7 @@ def run_verify(
 
     runner = runner or SubprocessRunner()
     if runner.available("yosys"):
-        runner.run(["yosys", "-p", yosys_script], cwd=str(build_dir.parent or "."))
+        runner.run(yosys_command(yosys_script), cwd=str(build_dir.parent or "."))
 
     config = VerifyConfig(
         top=compiled.design.name,
@@ -176,6 +177,8 @@ def run_verify(
         premap_json=str(premap_json),
         mapped_json=str(mapped_json),
         mapped_v=str(mapped_v),
+        gold_v=str(build_dir / "gold.v"),
+        gate_v=str(mapped_v),
         golden_json=str(golden_json),
         testbench_v=str(testbench_v),
         cwd=str(build_dir.parent or "."),

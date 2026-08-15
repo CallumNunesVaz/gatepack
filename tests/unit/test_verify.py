@@ -46,8 +46,36 @@ def test_golden_prep_is_the_shared_frontend():
 
 def test_equivalence_script_commands_in_order():
     script = equivalence.build_equivalence_script(_config())
-    assert script.index("equiv_make -seq") < script.index("equiv_induct")
+    assert script.index("equiv_make golden mapped equiv") < script.index("equiv_induct")
     assert script.index("equiv_induct") < script.index("equiv_status -assert")
+
+
+def test_equivalence_recipe_reads_cells_sim_v():
+    # M0 §6: cells_sim.v is mandatory; without the behavioural models equiv_make
+    # dies with "Module '\INV' ... is not part of the design".
+    script = equivalence.build_equivalence_script(_config())
+    assert "cells_sim.v" in script
+    gate_read = script.index("read_verilog build/mapped.v build/cells_sim.v")
+    assert gate_read > script.index("design -reset")
+
+
+def test_equivalence_recipe_runs_async2sync_on_both_sides():
+    # M0 §6: async-reset flops are $adff with no SAT model; async2sync must run
+    # on both sides or induction cannot close.
+    script = equivalence.build_equivalence_script(_config())
+    assert script.count("async2sync") == 2
+
+
+def test_equivalence_recipe_reprocs_after_roundtrip():
+    # M0 §6: re-`proc` after every Verilog round-trip, or the module "contains
+    # memories or processes".
+    script = equivalence.build_equivalence_script(_config())
+    lines = [ln.strip() for ln in script.splitlines() if ln.strip()]
+    assert "write_verilog -noattr build/gold.v" in lines
+    assert "proc; opt; async2sync; opt" in lines
+    assert "proc; flatten; opt; async2sync; opt" in lines
+    assert "design -stash golden" in lines
+    assert "design -stash mapped" in lines
 
 
 def test_equivalence_fallback_ladder():

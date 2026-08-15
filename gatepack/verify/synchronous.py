@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from gatepack.frontend.model import CompiledDesign
+from gatepack.toolchain import yosys_command
 from gatepack.verify import equivalence as equiv_mod
 from gatepack.verify import mutation as mutation_mod
 from gatepack.verify import simulation as sim_mod
@@ -47,9 +48,9 @@ class SynchronousVerify(VerificationStrategy):
     def _equivalence(self, config: VerifyConfig, runner: ToolRunner, state_count: int) -> CheckResult:
         if not runner.available("yosys"):
             return CheckResult("equivalence", CheckStatus.NOT_RUN, "yosys not installed")
-        step, steps = equiv_mod.EquivStep.EQUIV_INDUCT, equiv_mod.default_induction_steps(state_count)
-        script = equiv_mod.build_equivalence_script(config, step, steps)
-        result = runner.run(["yosys", "-p", script], cwd=config.cwd)
+        # Primary run: the measured M0 recipe (equiv_simple + equiv_induct, bare).
+        script = equiv_mod.build_equivalence_script(config)
+        result = runner.run(yosys_command(script), cwd=config.cwd)
         if result.returncode != 0:
             return CheckResult(
                 "equivalence",
@@ -112,7 +113,7 @@ class SynchronousVerify(VerificationStrategy):
             lib_path.write_text(mutated_lib)
             try:
                 result = runner.run(
-                    ["yosys", "-p", equiv_mod.build_equivalence_script(config)],
+                    yosys_command(equiv_mod.build_equivalence_script(config)),
                     cwd=config.cwd,
                 )
                 if result.returncode != 0:

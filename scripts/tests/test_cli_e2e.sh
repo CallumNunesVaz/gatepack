@@ -96,8 +96,8 @@ check_code "compile traffic_light exits 0" 0 \
   "${CLI[@]}" compile "$WORK/traffic_light.yaml" -o "$WORK/build"
 check_file "compile writes generated.v" "$WORK/build/generated.v"
 check_file "compile writes properties.sv" "$WORK/build/properties.sv"
-check "generated.v carries src provenance attributes" \
-  grep -q '(\* src = "traffic_light.yaml:' "$WORK/build/generated.v"
+check "generated.v carries gp_src provenance attributes" \
+  grep -q '(\* gp_src = "traffic_light.yaml:' "$WORK/build/generated.v"
 check "generated.v uses one-hot state bits" \
   grep -q 'reg state_RED;' "$WORK/build/generated.v"
 

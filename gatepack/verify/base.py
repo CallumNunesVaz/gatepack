@@ -19,6 +19,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Protocol, Sequence
 
+from gatepack.toolchain import ToolResult, ToolchainRunner
+
+# ``SubprocessRunner`` is the historical name; the implementation now lives in
+# :mod:`gatepack.toolchain` so every tool invocation goes through one module.
+SubprocessRunner = ToolchainRunner
+
 
 class CheckStatus(str, Enum):
     PASSED = "passed"
@@ -40,6 +46,8 @@ class VerifyConfig:
     premap_json: str = "build/premap.json"
     mapped_json: str = "build/mapped.json"
     mapped_v: str = "build/mapped.v"
+    gold_v: str = "build/gold.v"
+    gate_v: str = "build/mapped.v"
     golden_json: str = "build/golden.json"
     testbench_v: str = "build/exhaustive_tb.v"
     exhaustive_cap: int = 1 << 24  # §21.4: ~2^24 vectors is the tractable bound
@@ -97,33 +105,6 @@ class ToolRunner(Protocol):
     def available(self, name: str) -> bool: ...
 
     def run(self, argv: Sequence[str], cwd: str, timeout: int = 600) -> ToolResult: ...
-
-
-class SubprocessRunner:
-    """Default runner backed by :mod:`subprocess` (Yosys, Icarus, sby)."""
-
-    def __init__(self, which=None) -> None:
-        import shutil
-
-        self._which = which or shutil.which
-
-    def available(self, name: str) -> bool:
-        return self._which(name) is not None
-
-    def run(self, argv: Sequence[str], cwd: str, timeout: int = 600) -> ToolResult:
-        import subprocess
-
-        try:
-            proc = subprocess.run(
-                list(argv),
-                cwd=cwd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            return ToolResult(returncode=-1, stdout="", stderr=str(exc))
-        return ToolResult(returncode=proc.returncode, stdout=proc.stdout, stderr=proc.stderr)
 
 
 class VerificationStrategy(ABC):

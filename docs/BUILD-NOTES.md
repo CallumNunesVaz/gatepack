@@ -496,3 +496,101 @@ the class of "undefined after power-on" bug the check exists to catch.
 - The C5 "M- and S-cells are never written to Liberty" invariant is still
   enforced by `select_for_liberty`; a regression test exists via
   `test_m_and_s_tier_excluded`.
+
+---
+
+# BUILD NOTES — M0 measured-defect pass (toolchain-corrections)
+
+## What was changed
+
+This pass applies the six measured defects from `docs/M0-FINDINGS.md` to the
+existing source. Every change is a correction against a real Yosys 0.23 / Icarus
+11.0 measurement, not a design-document assumption.
+
+1. **Generated Verilog no longer emits an attribute before an `assign`.**
+   `gatepack/frontend/verilog.py` now attaches provenance to `wire`/`reg`
+   *declarations* only. Output logic (which has no declaration of its own) is
+   emitted as an explicitly declared intermediate net (`wire {name}_int = ...`)
+   followed by a bare `assign {name} = {name}_int;`. A golden regression test
+   (`test_no_attribute_immediately_precedes_assign`) walks every line and asserts
+   no attribute immediately precedes an `assign`.
+2. **`src` renamed to `gp_src` everywhere.** Yosys populates `src` itself, so the
+   emitted attribute is `gp_src` in C1, the new `gatepack/provenance.py`, and
+   every test/script that asserts on it.
+3. **Provenance rides on named nets.** C1 already put attributes on named nets for
+   states/transitions/expressions; the output-logic fix above completes the
+   picture so every carrier is a named net. A new pure helper
+   `gatepack.provenance.net_provenance(verilog)` extracts which nets carry
+   `gp_src`, so a coverage statement is about real net names. The mapped-cell
+   association (net -> cell -> source, plus structural matching fallback) is
+   **not** implemented — it is the M11b deliverable and needs a real
+   `mapped.json`; nothing here fabricates one.
+4. **Equivalence flow matches the measured M0 recipe.** `build_equivalence_script`
+   now: writes `gold.v` from the shared front end, `design -reset`, re-`proc`s
+   after each round-trip (`proc; opt; async2sync; opt` golden / `proc; flatten;
+   opt; async2sync; opt` gate), reads `cells_sim.v` alongside the mapped netlist,
+   and runs `equiv_make golden mapped equiv ; prep -top equiv ; equiv_simple ;
+   equiv_induct ; equiv_status -assert`.
+5. **One-hot initial state is set-via-feedback.** Every one-hot state flop now
+   resets to 0; an all-zero detector (`set_feedback = ~(state_A | ...)`) is OR'd
+   into the initial state's next term. No set-capable part (`DFF_S`) is needed.
+   The cost is counted explicitly: `gatepack.estimate.one_hot_init_cost()` and a
+   `one_hot_initial_state` block in the estimate manifest + a CLI line. The
+   default encoding is unchanged.
+6. **Single injectable runner module.** New `gatepack/toolchain.py` centralises
+   `yosys_command` / `iverilog_command` / `vvp_command` (pure command-line
+   functions, assertable without the binary) and `ToolchainRunner` (the only
+   thing that shells out). `verify/base.py` re-exports `SubprocessRunner` as an
+   alias so existing imports keep working; `estimate`, `verify/run`, and
+   `verify/synchronous` now route every Yosys/Icarus call through it.
+
+## Exact commands run and their real output
+
+```
+$ .venv/bin/pytest -q
+234 passed, 2 skipped in 0.49s
+
+$ bash scripts/tests/run.sh
+== test_cli_e2e.sh ==
+test_cli_e2e.sh: 12 passed, 0 failed
+PASS test_cli_e2e.sh
+== test_verify.sh ==
+test_verify.sh: 10 passed, 0 failed
+PASS test_verify.sh
+==== summary: 2/2 test scripts passed ====
+```
+
+The two skips are unchanged and name their missing tool: property-discharge
+needs sby (M6); the latch ban needs a real Yosys run (C3). No result is faked.
+
+## What I could not fix, and why
+
+- **The mapped-cell provenance association (M11b) is not built.** Defect 3's
+  "associate each mapped cell with source via net provenance + structural
+  matching" needs a real `mapped.json` from the pinned Yosys to develop and test
+  against. I implemented the testable half (net-carried `gp_src` + the
+  `net_provenance` extractor) and documented the rest as unbuilt, so coverage is
+  reported honestly rather than implied.
+- **No real tool run was possible.** The `gatepack-toolchain:probe` image exists
+  but Docker cannot be run from this sandbox, and Yosys/Icarus/sby are not
+  installed. All tool-dependent checks report `not run` with an explicit reason.
+- **`equiv_status -assert` / `equiv_induct` wording** is still best-effort: the
+  parser keys on "Equivalence successfully proven"/"failed", which must be
+  re-validated against real Yosys output at M0.
+
+## Claims still unverified against a real toolchain
+
+Everything below is generated and its *construction* is unit-tested, but none of
+it has been executed against a real binary:
+
+- The corrected equivalence script (gold.v round-trip, `async2sync`,
+  `cells_sim.v`, re-`proc`) has never been run — only its exact text is asserted.
+- The one-hot set-via-feedback RTL has never been through `dfflibmap`/`abc`; the
+  claim that it verifies end-to-end with the shipped library is inferred from
+  M0's "all four flop variants map" and "both sides through the same front end"
+  measurements, not from a fresh run.
+- `dfflegalize` flavour strings (`FLOP_TYPE_MAP`) remain unconfirmed.
+- The exhaustive testbench (reset-flush count 4, clock toggling) has never been
+  compiled by Icarus.
+- `gatepack.provenance.net_provenance` parses our own emitted Verilog; it has
+  never been cross-checked against `premap.json`/`mapped.json` from a real run.

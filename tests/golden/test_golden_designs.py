@@ -25,23 +25,46 @@ def test_traffic_light_compiles_one_hot():
     assert c.encoding == "one_hot"
     assert c.state_order == ["RED", "GREEN", "AMBER"]
     assert "reg state_RED;" in result.verilog
-    assert '(* src = "traffic_light.yaml:' in result.verilog
-    # every transition carries its own src attribute
+    assert '(* gp_src = "traffic_light.yaml:' in result.verilog
+    assert "(* src =" not in result.verilog  # Yosys's own attribute (M0 §2)
+    # every transition carries its own gp_src attribute
     for i in range(5):
         assert f"transitions[{i}]" in result.verilog
 
 
 def test_xor2_combinational():
     result = compile_design_file(DESIGNS / "xor2.yaml")
-    assert "assign y = (a ^ b);" in result.verilog
+    assert "wire y_int = (a ^ b);" in result.verilog
+    assert "assign y = y_int;" in result.verilog
 
 
 def test_decoder_3to8_combinational():
     result = compile_design_file(DESIGNS / "decoder_3to8.yaml")
     v = result.verilog
     for i in range(8):
-        assert f"assign y{i}" in v
-    assert "assign y7 = ((s0 & s1) & s2);" in v
+        assert f"assign y{i} = y{i}_int;" in v
+    assert "wire y7_int = ((s0 & s1) & s2);" in v
+
+
+def test_no_attribute_immediately_precedes_assign():
+    # M0-FINDINGS §1: an attribute before a continuous assign is a syntax error
+    # in Yosys 0.23.  Every provenance attribute must sit on a wire/reg
+    # declaration; no line of emitted Verilog may be an attribute immediately
+    # followed by an `assign`.
+    import re
+
+    result = compile_design_file(DESIGNS / "traffic_light.yaml")
+    lines = result.verilog.splitlines()
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("assign"):
+            prev = lines[i - 1].strip() if i > 0 else ""
+            assert not prev.endswith("*)"), (
+                f"attribute immediately precedes an assign at line {i + 1}: {prev!r}"
+            )
+    # and the output logic specifically rides on a declared net, not the assign
+    assert "wire red_int = state_RED;" in result.verilog
+    assert "assign red = red_int;" in result.verilog
 
 
 @pytest.mark.parametrize(
