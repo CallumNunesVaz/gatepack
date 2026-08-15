@@ -157,6 +157,45 @@ export interface Metric {
 /** `gatepack analyse --json` returns AnalysisSummary directly. */
 
 /* ------------------------------------------------------------------ */
+/* Exhaustive simulation (§C11)                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * One row of the exhaustive check C4 already performs: the specified output
+ * values against the values the mapped netlist actually produces.
+ *
+ * C11's divergence column is the most valuable thing in the truth table view,
+ * and it must come from the core. Computing "simulated" outputs in the
+ * renderer would compare the specification against itself and could never
+ * disagree — a check incapable of failing, which is the failure mode this
+ * project exists to prevent.
+ */
+export interface SimulationRow {
+  /** Input assignment, signal name -> '0' | '1'. */
+  inputs: Record<string, string>;
+  /** For a sequential design, the state this row was evaluated in. */
+  state?: string;
+  /** What the specification says the outputs should be. */
+  expected: Record<string, string>;
+  /** What the mapped netlist produces. Absent when synthesis has not run. */
+  actual?: Record<string, string>;
+  /** True when expected and actual disagree on any output. */
+  diverges: boolean;
+}
+
+export interface SimulationTable {
+  inputNames: string[];
+  outputNames: string[];
+  rows: SimulationRow[];
+  /** Minterms the specification leaves as don't-care. */
+  dontCareCount: number;
+  /** States/minterms proven unreachable, so never simulated. */
+  unreachableCount: number;
+  /** False when the input space was too large to enumerate exhaustively. */
+  exhaustive: boolean;
+}
+
+/* ------------------------------------------------------------------ */
 /* Provenance (§15)                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -213,6 +252,8 @@ export interface GatepackApi {
   build(token?: string): Promise<Envelope<BuildResult>>;
   analyse(token?: string): Promise<Envelope<AnalysisSummary>>;
   provenance(): Promise<Envelope<ProvenanceMap>>;
+  /** §C11 divergence data — the exhaustive check, rendered interactively. */
+  simulate(token?: string): Promise<Envelope<SimulationTable>>;
   /** Yosys `write_json` output for C12/netlistsvg. */
   mappedNetlist(): Promise<Envelope<unknown>>;
   /** Cancel an in-flight call started with this token (§16.1). */

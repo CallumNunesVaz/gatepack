@@ -189,6 +189,17 @@ def _build_parser() -> argparse.ArgumentParser:
     build.add_argument(
         "--json", action="store_true", help="emit one machine-readable JSON object to stdout"
     )
+    examples_p = sub.add_parser(
+        "examples", help="bundled example projects (§18.1)"
+    )
+    examples_sub = examples_p.add_subparsers(dest="examples_command", required=True)
+    examples_sub.add_parser("list", help="list the bundled examples")
+    extract_p = examples_sub.add_parser(
+        "extract", help="copy a bundled example into a directory"
+    )
+    extract_p.add_argument("name", help="example name (see `gatepack examples list`)")
+    extract_p.add_argument("-o", "--output", required=True, help="target directory")
+
     project = sub.add_parser(
         "project", help="single-file project format (§10.4)"
     )
@@ -225,6 +236,11 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_verify(args)
     if args.command == "build":
         return _cmd_build(args)
+    if args.command == "examples":
+        if args.examples_command == "list":
+            return _cmd_examples_list(args)
+        if args.examples_command == "extract":
+            return _cmd_examples_extract(args)
     if args.command == "project":
         if args.project_command == "bundle":
             return _cmd_project_bundle(args)
@@ -527,6 +543,34 @@ def _cmd_lib_check_gpk(gpk_path: Path) -> int:
         return EXIT_OK
     print(f"error: {detail}", file=sys.stderr)
     return EXIT_ERROR
+
+
+def _cmd_examples_list(args: argparse.Namespace) -> int:
+    from gatepack.examples import list_examples
+
+    found = list_examples()
+    if not found:
+        print("no bundled examples found", file=sys.stderr)
+        return EXIT_USAGE
+    for example in found:
+        marker = " (showcase)" if example.is_showcase else ""
+        print(f"{example.name}{marker}")
+        if example.summary:
+            print(f"    {example.summary}")
+    return EXIT_OK
+
+
+def _cmd_examples_extract(args: argparse.Namespace) -> int:
+    from gatepack.examples import ExampleError, extract
+
+    try:
+        written = extract(args.name, args.output)
+    except ExampleError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+    for path in written:
+        print(f"wrote {path}")
+    return EXIT_OK
 
 
 def _cmd_project_bundle(args: argparse.Namespace) -> int:
