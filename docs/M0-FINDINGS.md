@@ -136,14 +136,7 @@ be explicit rather than papered over. But two things follow:
 
 ## 5. Still unmeasured
 
-- Whether Liberty timing arcs change ABC's mapping (§C2 [R4-11] A/B test).
-  **Attempted, inconclusive.** The no-arc baseline maps cleanly (13 cells:
-  4×NAND2, 2×NAND3, 2×INV, 2×OR2, 2×XOR2, 1×AND3). Adding hand-written
-  `timing()` groups made ABC abort with `Can't open ABC output file` — my
-  arc-bearing Liberty is malformed, not proof of anything about arcs. Needs a
-  correctly-formed `lu_table_template` before the question can be answered.
-  Incidental: a malformed Liberty makes ABC fail *loudly* here, which is a
-  different and friendlier failure than R1's "parses but is degenerate" case.
+- ~~Whether Liberty timing arcs change ABC's mapping~~ — **measured, see §7.**
 - ~~Whether `equiv_make`/`equiv_induct` close~~ — **measured, see §6 below.**
 - ~~`dfflibmap` mapping of `DFF_S`/`DFF_SR`~~ — **measured, all four variants
   map.** With `--allow-single-source` to admit `DFF_S`, a design needing a
@@ -210,3 +203,49 @@ before M5 is called done:
   count that cost in the §6 gate budget.
 - Change the default encoding for designs whose library has no set flop, and say
   so loudly in the report rather than silently.
+
+---
+
+## 7. Timing arcs vs. area: the [R4-11] A/B test, answered
+
+The earlier attempt was inconclusive because the arc-bearing Liberty was
+malformed. Redone with a well-formed `lu_table_template(scalar)` and 21
+`timing()` groups spanning 1.0–3.5 ns across gate types, on the traffic-light
+golden through the production script.
+
+| Library | Mapping |
+|---|---|
+| Baseline (no arcs, all `area : 1.0`) | AND2 2, DFF_R 9, INV 2, NAND2 3, NAND3 1, NOR2 1, OR2 2 |
+| **+ timing arcs**, areas unchanged | **identical, cell for cell** |
+| No arcs, **areas perturbed** (inverting/complex gates 9.0, NAND/NOR 1.0) | DFF_R 9, INV 1, NAND2 3, NOR2 5, OR2 2 |
+
+**Timing arcs changed nothing. Area changed the mapping decisively** — `AND2`
+and `NAND3` disappeared entirely and `NOR2` went from 1 to 5.
+
+The area result is the control, and it is what makes the arc result meaningful:
+it proves the harness can detect a mapping change at all. Without it, "identical"
+would have been indistinguishable from a design too rigid to remap — which is
+exactly the trap the first attempt fell into.
+
+One caveat, recorded rather than glossed: ABC printed
+`Warning: Templates are not defined` in **both** runs, so it may have discarded
+the arcs rather than weighed them and found them irrelevant. The two cases are
+not distinguished by this experiment. The actionable conclusion is the same
+either way, and it is the conclusion [R4-11] was asking for:
+
+> **Area is the lever that steers ABC. Timing arcs, in the Liberty form C2
+> currently emits, are not.**
+
+**Consequence for C2, and it is not a small one.** Every cell in the generated
+Liberty currently has `area : 1.0`, so ABC is minimising raw gate count while
+treating a `74AUP1G00` and a `74AUP1G86` as equally expensive. They are not —
+they differ in price, availability, and second-source status, which is the
+entire subject of §10.1. The packer then optimises `pack_cost` *after* the
+mapper has already committed to a gate mix chosen on a cost model that does not
+match it.
+
+Making `area` carry a real per-part cost is therefore the highest-leverage
+change available to C3's output quality, and it needs no new Yosys capability —
+only the number. It should be derived from the same `parts.csv` data
+`pack_cost` uses, so the two optimisers stop disagreeing. Deferring the effort
+into timing arcs would have bought nothing.
