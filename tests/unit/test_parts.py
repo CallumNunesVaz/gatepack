@@ -164,3 +164,14 @@ def test_m_and_s_tier_excluded():
     included, excluded = select_for_liberty([m, s], project_vcc=3.3)
     assert included == []
     assert [e.reason for e in excluded] == [DropReason.TIER, DropReason.TIER]
+
+
+def test_part_number_composition():
+    # 74-logic: family + suffix -> 74<FAMILY><SUFFIX>
+    assert _part(cell="NAND2", family="AUP", part_suffix="1G00").part_number == "74AUP1G00"
+    # suffix already carries the family (74HC4017)
+    assert _part(cell="JOHN10", tier="M", family="HC", part_suffix="HC4017", function="").part_number == "74HC4017"
+    # S-cell with no family uses the suffix verbatim
+    assert _part(cell="SUPERVISOR", tier="S", family="-", part_suffix="TPS3839", function="").part_number == "TPS3839"
+    # empty suffix -> empty part number
+    assert _part(cell="DFF_S", part_suffix="").part_number == ""

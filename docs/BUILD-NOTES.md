@@ -320,3 +320,148 @@ scripts/tests/run.sh    # 1/1 test scripts passed (12 assertions)
 - C5 packer, C6 emitters, and the §10.3 `out/manifest.json` from a full `build`
   (M9/M10). The `estimate` manifest is a §6-verdict manifest, not the M10
   build manifest.
+
+---
+
+# BUILD NOTES — M9 (C5 packer) + M10 (C6 emitters, C7 analysis, C8 report)
+
+## What was built
+
+M9 (the constrained bin packer) and the parts of M10 that do not depend on C4's
+vector infrastructure (BOM + KiCad netlist emitters, power/clock analysis, the
+report generator), plus the `gatepack build` orchestration that stitches them
+together. SCOAP testability (§13.1) and stuck-at fault analysis (§13.2) were
+**not** built — they need C4's exhaustive-vector infrastructure (another
+milestone) and are left as a documented seam.
+
+New files:
+
+- `gatepack/pins.py` — pin naming/directions per tier. G-cells from the boolean
+  input count (A,B,C…+Y); F-cells from the §9.2 [R4-3] layout (D/CK/RST_N/SET_N/Q);
+  a provisional S-cell table (OSC, SUPERVISOR) marked as a seam for
+  `gatepack/infra`. M-cell pinouts raise with a clear "defined in
+  gatepack/macros" message.
+- `gatepack/netlist.py` — the mapped-netlist model (`MappedCell`, `MappedNetlist`),
+  a Yosys `write_json` parser, part/tier resolution, and `stable_cell_names`
+  ([R4-19] stage 1: function + topologically-ordered input-cone hash).
+- `gatepack/pack/packer.py` — C5. Groups by function (a 74AUP2G02 holds two NOR2
+  gates, never a NOR and a NAND); spares are a cost via the §9.7 objective
+  exactly (`pack_cost = Σ(package_cost) + spare_count * spare_leakage_weight`);
+  package count and spare count reported separately (no gates/packages ratio);
+  `force_groups` overrides; a coin-change DP that will select *more* packages to
+  avoid spares when the penalty exceeds the marginal package cost. Deterministic
+  (every sort keyed, ties broken lexicographically).
+- `gatepack/emit/` — `refdes.py` ([R4-19] stage 3: sorted assignment + delta),
+  `bom.py` (CSV, deduplicated by `part_suffix` so configurable-gate
+  configurations collapse to one line, §9.1), `kicad.py` (s-expression `.net`
+  with rail tie-offs as global power references, `no_connect` flags for
+  genuinely unconnected pins, and S-cells rendered from their pin table with no
+  function).
+- `gatepack/analysis/` — `power.py` (static current broken out by tier G/F/M/S,
+  spare-gate leakage, dynamic current *flagged* as excluding routing
+  capacitance), `clock.py` (worst-case combinational depth, cumulative tPD,
+  flop/clock fanout, with the "not STA" caveat).
+- `gatepack/report/report.py` — C8: `report.md` with every assumption inline.
+- `gatepack/build.py` — `assemble` (pure: netlist → BOM/netlists/report/refdes)
+  and `run_build` (front-end → Liberty → optional Yosys/`--mapped` → C5..C8).
+
+Changed files (kept small): `gatepack/cli.py` (added the `build` subcommand),
+`gatepack/parts.py` (added a `Part.part_number` property for the BOM),
+`tests/contract/test_cli_contract.py` and `tests/unit/test_parts.py` (new tests).
+
+## Test command and result
+
+```
+.venv/bin/pytest -q
+# 206 passed, 2 skipped in 0.44s
+```
+
+The two skips are the pre-existing M6/M3 toolchain skips (sby, Yosys). 43 new
+tests were added (netlist, packer, emitters, analysis, report, build). A real
+end-to-end run against a hand-written `mapped.json`:
+
+```
+.venv/bin/python -m gatepack.cli build tests/golden/designs/traffic_light.yaml \
+  --library libraries/74aup.csv --out /tmp/opencode/btest/out \
+  --mapped /tmp/opencode/btest/mapped.json
+# packed: 3 package(s), 0 spare gate(s), pack_cost 3
+# wrote .../bom.csv, .../netlist.net, .../netlist.unpacked.net,
+#       .../report.md, .../refdes.json     (exit 0)
+```
+
+## Guesses / decisions made
+
+1. **`package_cost = part.area`**, and **`spare_leakage_weight` defaults to
+   2.0** (configurable via `--spare-weight`). §9.7 gives the cost *form* but no
+   numbers. With `area` as the per-package cost and a weight of 2.0, the packer
+   demonstrably prefers 2×1G packages over 1×3G-with-a-spare (the §9.7
+   "sometimes select more packages to avoid spares" behaviour) — verified by
+   `test_more_packages_to_avoid_spare`.
+2. **Part-number composition** (`Part.part_number`): `74<FAMILY><SUFFIX>`
+   (74AUP1G00), but if the suffix already carries the family (`HC4017`) it is
+   `74<suffix>` (74HC4017); S-cells with family `-` use the suffix verbatim
+   (TPS3839). §10.1 is inconsistent (AUP suffix `1G00` vs HC suffix `HC4017`),
+   so I handle both.
+3. **Pin numbers are assigned deterministically**, gate-1 pins, gate-2 pins, …,
+   VCC, GND. `parts.csv` has no footprint pin map, so real pin numbers are a
+   data concern; the generated numbers are stable but not footprint-correct.
+4. **The `.net` format is best-effort.** It follows the KiCad legacy
+   s-expression shape (components/libparts/nets) but has **not** been
+   import-tested against KiCad (not installed). `no_connect` is emitted in a
+   dedicated `(no_connects …)` section, and rails as `GND`/`VCC` nets whose
+   libpart pins are `power_in` — this is my reading of [R4-20], to be verified
+   at M10 against real KiCad.
+5. **Static current has no temperature derating.** `iq_ua` is a single
+   placeholder per cell and the data model has no derating curve, so nothing is
+   invented; `static_current_by_tier` takes a `derating` multiplier defaulting
+   to 1.0 for a later datasheet-derived curve.
+6. **Dynamic current** uses an assumed per-gate output capacitance (2 pF) and
+   activity (0.1), always flagged "excludes inter-package routing capacitance …
+   not a budget" — a nominal figure, never validated against a real build.
+7. **Stable naming disambiguates** structurally identical cells by appending
+   `_0`, `_1`, … sorted by output-net name then instance name. The determinism
+   guarantee is exact; the *reduced-churn-under-re-optimisation* guarantee is
+   best-effort and only fully observable against real Yosys output (see
+   "never executed").
+8. **Unresolved mapped cells are dropped** (cells whose Liberty `type` has no
+   `parts.csv` row) with a note, rather than failing the whole build.
+
+## Never executed against a real tool
+
+- The Yosys `write_json` **parser** (`netlist.parse_mapped_json`) is validated
+  only against hand-written JSON fixtures; it has not run on real Yosys output
+  (Yosys is not installed) and should be exercised at M0.
+- The **KiCad `.net` emitter** has never been imported into KiCad.
+- **Everything in C5/C6/C7/C8** runs on the *mapped netlist* only; no real
+  synthesis has fed it. `gatepack build` without `--mapped` and without Yosys
+  refuses with exit 1 (never fakes a result).
+- `cells_sim.v`, M-cell behavioural models, and S-cell pin tables are the other
+  agent's milestones; the S-cell table in `gatepack/pins.py` is provisional and
+  the M-cell path raises until `gatepack/macros` lands.
+
+## Unfinished / seams
+
+- **Overrides persist in `design.yaml`** is not wired end-to-end. The packer
+  accepts `force_groups` (tested) but there is no `packing` block in the schema,
+  because it is under-specified *how the engineer names a cell* (stable names
+  are hash-derived and not human-friendly; `src` provenance is a candidate but
+  needs a decision). `run_build` does not yet read a `packing` override block.
+- **M-/S-cell injection** into the netlist (reset `SUPERVISOR`, clock `OSC`) is
+  not done: the current library has no S/M rows, so a real design's supervisor
+  and oscillator will not appear in the BOM until `gatepack/infra` exists.
+- **SCOAP and stuck-at** (C7's remaining §13.1/§13.2) are deliberately absent
+  (C4 dependency); `gatepack/analysis/__init__.py` documents the seam.
+
+## Design issues I think are wrong or under-specified
+
+- **§10.1 `part_suffix` composition is inconsistent** (see guess #2): AUP uses
+  `1G00` (family + suffix → 74AUP1G00) but HC uses `HC4017` (suffix already
+  contains the family). There is no explicit full-part-number column; a `part_number`
+  column (or documenting the composition rule) would remove the ambiguity.
+- **"Overrides persist in design.yaml" (§12 C5) has no schema shape** anywhere
+  in the document, and no way to reference a cell by a human-meaningful name.
+- **`package_cost` and `spare_leakage_weight` are never given values or units**
+  in §9.7; I chose `area` and 2.0 (guess #1).
+- **The KiCad no-connect/power-symbol representation** is asserted in [R4-20]
+  but the concrete s-expression spelling is not; my `(no_connects …)` section is
+  an interpretation to verify at M10.
