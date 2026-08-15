@@ -132,3 +132,18 @@ button:disabled { opacity: 0.5; cursor: default; }
 .cex-table { border-collapse: collapse; margin-top: 4px; }
 .cex-table th, .cex-table td { border: 1px solid var(--border); padding: 1px 6px; font-family: ui-monospace, monospace; }
 .cex-pointers { color: var(--muted); margin-top: 4px; }
+
+/* --- Linked selection (§15.2) --- */
+.link-badge { display: inline-flex; border-radius: 4px; padding: 1px 7px; font-weight: 600; font-size: 11px; }
+.link-badge--exact { color: #5eea94; background: var(--green-bg); border: 1px solid var(--green); }
+.link-badge--inferred { color: #ffc35c; background: var(--amber-bg); border: 1px solid var(--amber); }
+.link-badge--none { color: #a3a8b4; background: var(--grey-bg); border: 1px dashed var(--grey); }
+.tt__row--highlight td { background: #1d3a56; }
+.tt__row--highlight.tt__row--divergent td { background: #3a2230; }
+.link-list { color: var(--muted); font-family: ui-monospace, monospace; font-size: 12px; }
+.fsm-node--highlight { box-shadow: 0 0 0 2px var(--green); }
+.fsm-edge--highlight { stroke: var(--green); stroke-width: 2; }
+.fsm__inspector { display: flex; align-items: center; gap: 8px; padding: 6px 0; flex-wrap: wrap; }
+.fsm__toolbar { display: flex; gap: 6px; margin-bottom: 6px; }
+
+

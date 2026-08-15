@@ -9,18 +9,27 @@ import ReactFlow, {
 import { useProject } from '../../state/project';
 import { createLocalStorageLayoutStore, type LayoutMap } from '../../design/layout';
 import { applyTopLevelEdit, renameState, type Transition } from '../../design/model';
-
-type Selection = { kind: 'node'; id: string } | { kind: 'edge'; index: number } | null;
+import { useHighlights, useSelection } from '../../selection/bus';
+import { useLinkContext } from '../../selection/useLinkContext';
+import { SelectionBadge } from '../../selection/SelectionBadge';
 
 /**
  * FSM graph (React Flow): states are nodes, transitions are labelled edges. A
  * graph edit is a *document mutation* — it produces new YAML text, which is what
  * is saved. Node positions are cosmetic and live in the gitignored sidecar
  * store, never in the YAML.
+ *
+ * Selecting a node/edge emits a §15.2 selection; the same selection reflected
+ * back from another view (a truth-table row, a schematic gate) highlights the
+ * matching nodes/edges here. A transition whose provenance has no surviving
+ * link renders its "no exact link" state instead of silently highlighting
+ * nothing.
  */
 export function FsmGraph() {
   const { specText, model, setSpecText, project } = useProject();
-  const [selected, setSelected] = useState<Selection>(null);
+  const { selection, setSelection } = useSelection();
+  const ctx = useLinkContext();
+  const highlights = useHighlights(ctx);
   const [positions, setPositions] = useState<LayoutMap>(() => {
     const store = createLocalStorageLayoutStore(project?.path ?? '');
     return store.load();
@@ -39,7 +48,13 @@ export function FsmGraph() {
     id: state,
     position: positions[state] ?? { x: i * 180, y: 0 },
     data: { label: state },
-    style: state === model.initial ? { border: '2px solid #4c9ffe' } : undefined,
+    className: highlights.states.includes(state) ? 'fsm-node--highlight' : undefined,
+    style:
+      state === model.initial
+        ? { border: '2px solid #4c9ffe' }
+        : highlights.states.includes(state)
+          ? { border: '2px solid #23a55a' }
+          : undefined,
   }));
 
   const edges: Edge[] = model.transitions.map((t, i) => ({
@@ -49,6 +64,8 @@ export function FsmGraph() {
     label: t.when,
     type: 'default',
     markerEnd: { type: MarkerType.ArrowClosed },
+    className: highlights.transitions.includes(i) ? 'fsm-edge--highlight' : undefined,
+    style: highlights.transitions.includes(i) ? { stroke: '#23a55a', strokeWidth: 2 } : undefined,
   }));
 
   const onNodeDragStop = (_event: unknown, node: Node) => {
@@ -80,8 +97,12 @@ export function FsmGraph() {
     setTransitions([...model.transitions, { from, to, when: '1' }]);
   };
 
-  const selectedTransition = selected?.kind === 'edge' ? model.transitions[selected.index] : null;
-  const selectedState = selected?.kind === 'node' ? selected.id : null;
+  const selectedTransitionIndex =
+    selection?.kind === 'transition'
+      ? model.transitions.findIndex((t) => t.from === selection.from && t.to === selection.to)
+      : -1;
+  const selectedTransition = selectedTransitionIndex >= 0 ? model.transitions[selectedTransitionIndex] : null;
+  const selectedState = selection?.kind === 'state' ? selection.id : null;
 
   return (
     <div className="fsm" data-testid="fsm-graph">
@@ -93,9 +114,13 @@ export function FsmGraph() {
         <ReactFlow
           nodes={nodes}
           edges={edges}
-          onNodeClick={(_e, node) => setSelected({ kind: 'node', id: node.id })}
-          onEdgeClick={(_e, edge) => setSelected({ kind: 'edge', index: Number(edge.id.slice(1)) })}
-          onPaneClick={() => setSelected(null)}
+          onNodeClick={(_e, node) => setSelection({ kind: 'state', id: node.id })}
+          onEdgeClick={(_e, edge) => {
+            const index = Number(edge.id.slice(1));
+            const t = model.transitions[index];
+            if (t) setSelection({ kind: 'transition', from: t.from, to: t.to });
+          }}
+          onPaneClick={() => setSelection(null)}
           onNodeDragStop={onNodeDragStop}
           fitView
         >
@@ -104,13 +129,14 @@ export function FsmGraph() {
         </ReactFlow>
       </div>
       {selectedTransition ? (
-        <div className="fsm__inspector">
+        <div className="fsm__inspector" data-testid="transition-inspector">
           <strong>transition</strong>
+          <SelectionBadge confidence={highlights.confidence} />
           <span>
             {selectedTransition.from} →{' '}
             <select
               value={selectedTransition.to}
-              onChange={(e) => updateEdge(selected!.kind === 'edge' ? selected!.index : 0, { to: e.target.value })}
+              onChange={(e) => updateEdge(selectedTransitionIndex, { to: e.target.value })}
             >
               {model.states.map((s) => (
                 <option key={s} value={s}>{s}</option>
@@ -121,17 +147,21 @@ export function FsmGraph() {
             when{' '}
             <input
               value={selectedTransition.when}
-              onChange={(e) =>
-                updateEdge(selected!.kind === 'edge' ? selected!.index : 0, { when: e.target.value })
-              }
+              onChange={(e) => updateEdge(selectedTransitionIndex, { when: e.target.value })}
               aria-label="transition guard"
             />
           </span>
+          {highlights.nets.length || highlights.cells.length ? (
+            <span className="link-list">
+              nets {highlights.nets.join(', ') || '(none)'} · cells {highlights.cells.join(', ') || '(none)'}
+            </span>
+          ) : null}
         </div>
       ) : null}
       {selectedState ? (
-        <div className="fsm__inspector">
+        <div className="fsm__inspector" data-testid="state-inspector">
           <strong>state</strong>
+          <SelectionBadge confidence={highlights.confidence} />
           <input
             defaultValue={selectedState}
             aria-label="state name"

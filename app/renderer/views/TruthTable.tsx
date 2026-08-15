@@ -1,34 +1,29 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect } from 'react';
 import { useApi } from '../bridge/context';
 import { useProject } from '../state/project';
 import { useRevisionedTask } from '../hooks/useRevisionedTask';
-import { parseWriteJson, simulateCombinational, type ParsedNetlist } from '../mapped/sim';
-import { allMinterms, computeLiveOutputs, MAX_MINTERM_INPUTS, reachableStates } from '../truth/minterms';
+import { useLinkContext } from '../selection/useLinkContext';
+import { useHighlights, useSelection } from '../selection/bus';
 import type { EstimateResult } from '../../shared/api';
 
 const COVER_DEBOUNCE_MS = 300;
 
+/**
+ * C11 truth table. The divergence column now comes from the *core*
+ * (`simulate()`): `expected` is the specification evaluated by C4's own
+ * exhaustive-check code, `actual` is the mapped netlist, and `diverges` is the
+ * core's verdict. The renderer no longer compares the spec against itself.
+ * Clicking a row emits a §15.2 selection; the gates in that row's cone highlight
+ * in the schematic and the row itself reflects selections from other views.
+ */
 export function TruthTable() {
   const { model, revision } = useProject();
   const api = useApi();
-
-  const [netlist, setNetlist] = useState<ParsedNetlist | null>(null);
-  const [stateContext, setStateContext] = useState<string | undefined>(undefined);
-  const [dontCare, setDontCare] = useState<Set<string>>(new Set());
+  const ctx = useLinkContext();
+  const { setSelection } = useSelection();
+  const highlights = useHighlights(ctx);
 
   const cover = useRevisionedTask<EstimateResult>(revision, (t) => api.estimate(t));
-
-  // Fetch the mapped netlist (build artefact) once on mount.
-  useEffect(() => {
-    let cancelled = false;
-    api.mappedNetlist().then((env) => {
-      if (cancelled || !env.ok) return;
-      setNetlist(parseWriteJson(env.data));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [api]);
 
   // Debounced live cover preview (§16.1: < 1 s synthesis preview).
   useEffect(() => {
@@ -36,84 +31,30 @@ export function TruthTable() {
     return () => clearTimeout(id);
   }, [revision]);
 
-  useEffect(() => {
-    if (model && stateContext === undefined) setStateContext(model.initial);
-  }, [model, stateContext]);
-
-  const inputs = model ? model.inputs.map((i) => i.name) : [];
-  const outputs = model ? model.outputs.map((o) => o.name) : [];
-
-  const minterms = useMemo(() => allMinterms(inputs), [inputs]);
-
-  const liveRows = useMemo(
-    () =>
-      model
-        ? minterms.map((env) => computeLiveOutputs(model, env, stateContext))
-        : [],
-    [model, minterms, stateContext],
-  );
-
-  const simRows = useMemo(
-    () =>
-      netlist
-        ? minterms.map((env) => simulateCombinational(netlist, env))
-        : [],
-    [netlist, minterms],
-  );
-
-  const reachable = useMemo(() => (model ? reachableStates(model) : new Set<string>()), [model]);
-
   if (!model) {
     return <section className="pane"><p className="pane__empty">The spec does not parse yet.</p></section>;
   }
 
-  const total = minterms.length;
-  let specified = 0;
-  let dcCount = 0;
-  for (let row = 0; row < total; row += 1) {
-    let rowSpecified = true;
-    for (const output of outputs) {
-      const key = `${row}:${output}`;
-      const live = liveRows[row]?.[output];
-      if (dontCare.has(key) || live === 'x') rowSpecified = false;
-    }
-    if (rowSpecified) specified += 1;
-    else dcCount += 1;
-  }
-  const unreachableStates = model.states.filter((s) => !reachable.has(s)).length;
-  const unreachable = unreachableStates * total;
+  const table = ctx?.simulation ?? null;
+  const inputs = table?.inputNames ?? model.inputs.map((i) => i.name);
+  const outputs = table?.outputNames ?? model.outputs.map((o) => o.name);
+  const multiState = model.states.length > 1;
+  const rows = table?.rows ?? [];
 
-  const tooMany = inputs.length > MAX_MINTERM_INPUTS;
-  const shownRows = tooMany ? minterms.slice(0, 1024) : minterms;
-
-  const toggle = (row: number, output: string) => {
-    const key = `${row}:${output}`;
-    const next = new Set(dontCare);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    setDontCare(next);
-  };
+  const dontCare = table?.dontCareCount ?? 0;
+  const unreachable = table?.unreachableCount ?? 0;
+  const specified = rows.length - dontCare - unreachable;
 
   return (
     <section className="pane tt" data-testid="truth-table">
       <header className="pane__header">
         <h2>Truth table</h2>
-        {model.states.length > 1 ? (
-          <label>
-            state{' '}
-            <select value={stateContext} onChange={(e) => setStateContext(e.target.value)}>
-              {model.states.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-        {netlist ? null : <span className="muted">no mapped netlist — divergence unavailable</span>}
+        {table ? null : <span className="muted">no simulation table — divergence unavailable</span>}
       </header>
 
       <div className="tt__coverage" data-testid="coverage">
         <span className="cov">specified <strong>{specified}</strong></span>
-        <span className="cov">don't-care <strong>{dcCount}</strong></span>
+        <span className="cov">don't-care <strong>{dontCare}</strong></span>
         <span className="cov">unreachable <strong>{unreachable}</strong></span>
       </div>
 
@@ -137,9 +78,9 @@ export function TruthTable() {
         {cover.isStale ? <span className="stale-note">stale</span> : null}
       </div>
 
-      {tooMany ? (
+      {table && !table.exhaustive ? (
         <div className="error-note">
-          {total} minterms (2^{inputs.length}) — showing the first 1024.
+          input space too large to enumerate — showing {rows.length} rows (not exhaustive).
         </div>
       ) : null}
 
@@ -148,59 +89,49 @@ export function TruthTable() {
           <thead>
             <tr>
               <th>#</th>
+              {multiState ? <th>state</th> : null}
               {inputs.map((name) => (
                 <th key={name}>{name}</th>
               ))}
               {outputs.map((name) => (
-                <th key={`live-${name}`}>live {name}</th>
+                <th key={`expected-${name}`}>expected {name}</th>
               ))}
               {outputs.map((name) => (
-                <th key={`sim-${name}`}>sim {name}</th>
+                <th key={`actual-${name}`}>actual {name}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {shownRows.map((env, row) => {
-              const live = liveRows[row] ?? {};
-              const sim = simRows[row] ?? {};
-              let diverged = false;
-              for (const output of outputs) {
-                const l = live[output];
-                const s = sim[output];
-                if (dontCare.has(`${row}:${output}`)) continue;
-                if (l !== undefined && s !== undefined && l !== 'x' && s !== 'x' && l !== s) {
-                  diverged = true;
-                }
-              }
+            {rows.map((row, i) => {
+              const isHighlighted = highlights.minterms.includes(i);
+              const cls = [
+                row.diverges ? 'tt__row--divergent' : '',
+                isHighlighted ? 'tt__row--highlight' : '',
+              ].filter(Boolean).join(' ');
               return (
-                <tr key={row} className={diverged ? 'tt__row--divergent' : ''} data-divergent={diverged || undefined}>
-                  <td>{row}</td>
+                <tr
+                  key={i}
+                  className={cls || undefined}
+                  data-divergent={row.diverges || undefined}
+                  data-highlight={isHighlighted || undefined}
+                  onClick={() => setSelection({ kind: 'minterm', index: i })}
+                >
+                  <td>{i}</td>
+                  {multiState ? <td>{row.state ?? ''}</td> : null}
                   {inputs.map((name) => (
-                    <td key={name}>{env[name]}</td>
+                    <td key={name}>{row.inputs[name] ?? 'x'}</td>
+                  ))}
+                  {outputs.map((name) => (
+                    <td key={`expected-${name}`} data-testid={`expected-${i}-${name}`}>
+                      {row.expected[name] ?? 'x'}
+                    </td>
                   ))}
                   {outputs.map((name) => {
-                    const key = `${row}:${name}`;
-                    const value = dontCare.has(key) ? '-' : live[name] ?? 'x';
+                    const value = row.actual?.[name];
+                    const divergent = row.diverges && value !== undefined && value !== 'x' && value !== row.expected[name];
                     return (
-                      <td key={`live-${name}`}>
-                        <button
-                          className="tt__output-button"
-                          onClick={() => toggle(row, name)}
-                          title="click to cycle 0 → 1 → don't-care"
-                          data-testid={`live-${row}-${name}`}
-                        >
-                          {value === '-' ? <span className="tt__cell-dc">-</span> : value === 'x' ? <span className="tt__cell-x">x</span> : value}
-                        </button>
-                      </td>
-                    );
-                  })}
-                  {outputs.map((name) => {
-                    const value = sim[name] ?? 'x';
-                    const l = dontCare.has(`${row}:${name}`) ? '-' : live[name];
-                    const divergent = l !== undefined && value !== 'x' && l !== 'x' && l !== '-' && l !== value;
-                    return (
-                      <td key={`sim-${name}`} className={divergent ? 'tt__cell-divergent' : ''}>
-                        {value === 'x' ? <span className="tt__cell-x">x</span> : value}
+                      <td key={`actual-${name}`} className={divergent ? 'tt__cell-divergent' : ''}>
+                        {value === undefined ? '' : value === 'x' ? <span className="tt__cell-x">x</span> : value}
                       </td>
                     );
                   })}
