@@ -78,6 +78,62 @@ is:
 This is more tractable than Draft 4 assumed: linked selection (§15.2) does not
 require the lossy cell-matching to carry the whole load.
 
+## 4a. Sequential provenance: measured on a real design, and the earlier framing was wrong
+
+Measured on the traffic-light golden through the production script, dumping
+`write_json` after `dfflibmap`, after `abc`, and after `opt_clean`:
+
+| Point | Cells | Cells with `gp_src` | Flops | Flops with `gp_src` | Nets with `gp_src` |
+|---|---|---|---|---|---|
+| after `dfflibmap` | 25 | 0 | 9 | **0** | 22 |
+| after `abc` | 20 | 0 | 9 | **0** | 22 |
+| after `opt_clean` | 20 | 0 | 9 | 0 | **16** |
+
+Two corrections to what §3/§4 above imply.
+
+**The flops carry no `gp_src` before `abc` ever runs.** §4 asks why the 9 mapped
+`DFF_R` cells are bare and assumes `abc` is responsible. It is not: they are
+already bare immediately after `dfflibmap`. The reason is that these cells did
+not exist in the source — they are named `$auto$ff.cc:266:slice$130`, i.e.
+Yosys *created* them from the `always` block. `gp_src` was attached to the `reg`
+declaration, which is a **net**, so there was never a cell attribute to survive.
+§3's "cell attribute survives `dfflibmap`" is still true; it is simply
+irrelevant to flops that C1 never instantiates as cells.
+
+The practical answer to §4's open question: **sequential provenance is exact,
+and it is exact via the net, not the cell.** All three `state_*` nets survive to
+the final netlist.
+
+**`opt_clean`, not `abc`, is where net provenance is lost.** 22 net attributes
+survive `abc` intact and 6 are dropped by `opt_clean`:
+
+```
+lost:      next_RED, set_feedback, state_active   (states)
+           t_0, t_1, t_3                          (transitions[0], [1], [3])
+survivors: 16, including all state_*, all *_int outputs, all synchronisers
+```
+
+These are **not recoverable**. The dropped bits appear in no cell connection in
+the final netlist — `abc` folded those intermediates into the combinational
+cone, and `opt_clean` then removed wires that genuinely no longer exist. Bit
+identity does not rescue them, because there is no bit.
+
+**Coverage, measured: 16/22 = 73% overall, but transitions are the weak axis at
+2/5.** That matters more than the headline number, because §15.2's most valuable
+interaction is selecting a transition edge in the FSM graph and highlighting the
+gates it produced — and 3 of 5 transitions have no exact link on this design.
+
+The architecture is not in trouble; §20 M11b already requires that partial links
+be explicit rather than papered over. But two things follow:
+
+1. **Capture the provenance map from the post-`abc`, pre-`opt_clean` netlist.**
+   Six links are available there for free and are thrown away afterwards. They
+   refer to nets absent from the final netlist, so they must be recorded as
+   `inferred`, resolved onto the cells that consumed them.
+2. **Do not "fix" this by marking `gp_src` nets with `keep`.** It would preserve
+   the names by inhibiting the optimisation, changing the emitted netlist to
+   improve a diagnostic — buying provenance with real gates.
+
 ## 5. Still unmeasured
 
 - Whether Liberty timing arcs change ABC's mapping (§C2 [R4-11] A/B test).
