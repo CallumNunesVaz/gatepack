@@ -24,8 +24,16 @@ FROM debian:bookworm-slim@${BASE_DIGEST}
 # abc is a Yosys submodule, so it is pinned by the Yosys commit's submodule
 # pointer, not a separate ARG.
 ARG YOSYS_COMMIT=TODO_M0_yosys_commit_placeholder
-ARG SBY_COMMIT=TODO_M0_sby_commit_placeholder
 ARG ESPRESSO_COMMIT=TODO_M0_espresso_commit_placeholder
+
+# sby is no longer a placeholder: measured at M6 (docs/M6-FINDINGS.md §5).
+# It is pinned by bare commit rather than tag because the oldest tagged sby
+# release is `yosys-0.26` and the pinned Yosys is older than that, so no tag
+# matches. The current release v0.68 is measured NOT to work here — it emits
+# `formalff -hierarchy`, an option that postdates the pinned Yosys.
+# If YOSYS_COMMIT is ever moved forward, this pin must be re-measured, not
+# assumed to still hold.
+ARG SBY_COMMIT=beb8b3c6e38ee716cd9771eb906c37684e83eab4
 
 # Build + runtime dependencies.
 #  - iverilog (Icarus Verilog) and z3 (the SMT solver sby uses for formal

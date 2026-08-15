@@ -1,0 +1,34 @@
+# gatepack measurement toolchain — the image every M0/M6 finding was measured in.
+#
+# This is deliberately NOT the reproducible release container (`Dockerfile`,
+# which builds Yosys from a pinned source commit and still carries TODO(M0)
+# placeholders). This one installs Debian's packaged Yosys, which is what
+# docs/M0-FINDINGS.md and docs/M6-FINDINGS.md were actually measured against.
+# Keeping the two separate stops a measured claim being quietly attributed to a
+# toolchain that was never run.
+#
+#   Yosys 0.23 (git sha1 7ce5011c24b)  — Debian bookworm archive
+#   Icarus Verilog                     — Debian bookworm archive
+#   z3                                 — Debian bookworm archive
+#   yosys-smtbmc, yosys-witness        — ship with the Debian yosys package
+#
+# TODO: pin the base by digest before this is used for anything reproducible.
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        yosys iverilog z3 python3 python3-click git make \
+    && rm -rf /var/lib/apt/lists/*
+
+# SymbiYosys. Pinned to a bare commit, not a tag, and the reason is measured:
+# the current release (v0.68) emits `formalff -hierarchy`, an option that
+# postdates Yosys 0.23, so it fails immediately. The oldest tagged sby release
+# is `yosys-0.26`, so NO tagged release matches the pinned Yosys. This commit
+# (2022-12-19) is contemporaneous with Yosys 0.23 and is measured to work —
+# see docs/M6-FINDINGS.md §5.
+ARG SBY_COMMIT=beb8b3c6e38ee716cd9771eb906c37684e83eab4
+RUN git clone https://github.com/YosysHQ/sby.git /opt/sby \
+ && cd /opt/sby \
+ && git checkout "${SBY_COMMIT}" \
+ && make install
+
+WORKDIR /work
