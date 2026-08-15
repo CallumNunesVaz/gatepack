@@ -70,6 +70,7 @@ def test_estimate_writes_files_without_yosys(tmp_path):
     assert (tmp_path / "build" / "generated.v").exists()
     assert (tmp_path / "build" / "properties.sv").exists()
     assert (tmp_path / "build" / "cells.lib").exists()
+    assert (tmp_path / "build" / "cells_sim.v").exists()
     assert (tmp_path / "build" / "yosys.ys").exists()
     assert (tmp_path / "build" / "manifest.json").exists()
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Sequence
+from typing import Mapping, Sequence
 
 
 class LibertyError(ValueError):
@@ -274,11 +274,20 @@ def _duplicates(names: list[str]) -> list[str]:
     return sorted(dups)
 
 
-def validate_library(text: str, expected_cells: Sequence[str]) -> list[str]:
+def validate_library(
+    text: str,
+    expected_cells: Sequence[str],
+    flop_requirements: Mapping[str, set[str]] | None = None,
+) -> list[str]:
     """Validate ``text`` structurally and check it contains exactly ``expected_cells``.
 
+    ``flop_requirements`` maps an F-cell name to the set of ``ff`` attributes it
+    must carry (§9.2 [R4-3]), re-derived from the generator's ``_FLOP_SPECS`` so
+    the self-check is independent of the emitter.  When omitted, only the
+    universal ``next_state``/``clocked_on`` attributes are required.
+
     Returns the list of cell names found (in order).  Raises ``LibertyError`` on
-    any structural problem or cell-count/name mismatch.
+    any structural problem, cell-count/name mismatch, or ff-attribute mismatch.
     """
     _brace_balanced(text)
     library_name, cells = parse_library(text)
@@ -303,9 +312,21 @@ def validate_library(text: str, expected_cells: Sequence[str]) -> list[str]:
         if not cell.area:
             raise LibertyError(f"cell {cell.name}: missing 'area'")
         if cell.has_ff:
-            for attr in ("next_state", "clocked_on"):
-                if attr not in cell.ff_attrs:
-                    raise LibertyError(f"cell {cell.name}: ff group missing '{attr}'")
+            required = (
+                flop_requirements.get(cell.name, {"next_state", "clocked_on"})
+                if flop_requirements is not None
+                else {"next_state", "clocked_on"}
+            )
+            absent = sorted(required - cell.ff_attrs)
+            if absent:
+                raise LibertyError(
+                    f"cell {cell.name}: ff group missing {absent}"
+                )
+            unexpected = sorted(cell.ff_attrs - required)
+            if unexpected:
+                raise LibertyError(
+                    f"cell {cell.name}: ff group has unexpected {unexpected}"
+                )
         else:
             if not cell.output_function:
                 raise LibertyError(

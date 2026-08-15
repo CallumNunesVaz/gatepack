@@ -28,6 +28,8 @@ from gatepack import __version__
 from gatepack.frontend.frontend import CompileResult, compile_design_file
 from gatepack.frontend.model import CompiledDesign
 from gatepack.liberty.generator import generate as generate_liberty
+from gatepack.liberty.sim import generate as generate_sim
+from gatepack.macros import load_models as load_m_cell_models
 from gatepack.parts import Part, load_parts
 from gatepack.synth.base import SynthConfig
 from gatepack.synth.synchronous import SynchronousBackend
@@ -192,10 +194,12 @@ def run_estimate(
     if vcc_errors:
         raise VccIncompatibleError("; ".join(vcc_errors))
     liberty = generate_liberty(parts, library_name="gatepack", project_vcc=vcc)
+    cells_sim = generate_sim(parts, project_vcc=vcc) + "\n" + load_m_cell_models()
 
     generated_v = build_dir / "generated.v"
     properties_sv = build_dir / "properties.sv"
     cells_lib = build_dir / "cells.lib"
+    cells_sim_v = build_dir / "cells_sim.v"
     yosys_script_path = build_dir / "yosys.ys"
     mapped_json = build_dir / "mapped.json"
     mapped_v = build_dir / "mapped.v"
@@ -205,6 +209,7 @@ def run_estimate(
     generated_v.write_text(compiled_result.verilog)
     properties_sv.write_text(compiled_result.properties)
     cells_lib.write_text(liberty.text)
+    cells_sim_v.write_text(cells_sim)
 
     flop_cells = tuple(sorted(p.cell for p in parts if p.tier == "F" and p.cell in liberty.cells))
     config = SynthConfig(
@@ -248,6 +253,7 @@ def run_estimate(
             "generated_v": generated_v,
             "properties_sv": properties_sv,
             "cells_lib": cells_lib,
+            "cells_sim": cells_sim_v,
             "yosys_script": yosys_script_path,
             "manifest": manifest_path,
         },

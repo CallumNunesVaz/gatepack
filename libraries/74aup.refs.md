@@ -28,3 +28,5 @@
 | DFF_R | TBD | TBD | TBD | placeholder — unverified |
 | DFF_S | TBD | TBD | TBD | placeholder — unverified (no candidate part yet, §9.2) |
 | DFF_SR | TBD | TBD | TBD | placeholder — unverified |
+| CNT4 | TBD | TBD | TBD | placeholder — unverified (74LVC161 candidate, §9.4) |
+| SUPERVISOR | TBD | TBD | TBD | placeholder — unverified (TPS3839 candidate, §9.5) |

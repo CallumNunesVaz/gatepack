@@ -320,3 +320,179 @@ scripts/tests/run.sh    # 1/1 test scripts passed (12 assertions)
 - C5 packer, C6 emitters, and the §10.3 `out/manifest.json` from a full `build`
   (M9/M10). The `estimate` manifest is a §6-verdict manifest, not the M10
   build manifest.
+
+---
+
+# BUILD NOTES — three defects + cells_sim.v + M8 + M5 (C4 verification)
+
+## What was built
+
+This increment closes three known defects, the M1 `cells_sim.v` gap, the M8
+M-/S-cell libraries, and the M5 C4 verification component, and wires it into the
+CLI.
+
+### 1. Three defects
+
+1. **Duplicate YAML keys** (`gatepack/frontend/yaml_subset.py`). Block and flow
+   mappings now reject a repeated key with a line-numbered `ParseError`
+   ("duplicate mapping key 'name' …"), instead of silently last-wins. A golden
+   (`tests/golden/designs/duplicate_key.yaml`) and three unit tests pin it,
+   including the quoted/plain collision (`name` vs `"name"`).
+2. **Spec-driven C2 self-check** (`gatepack/liberty/{generator,validate}.py`).
+   `flop_ff_requirements()` derives the required `ff` attributes per F-cell from
+   `_FLOP_SPECS`, and `validate_library(text, expected, flop_requirements=…)`
+   now checks them exactly (missing *and* unexpected). Regression tests assert
+   a `DFF_R` without `clear` is rejected, and a `DFF` with a spurious `clear`
+   is rejected. The self-check no longer shares the generator's blind spots
+   (§19 R1).
+3. **Dockerfile reproducibly pinned** (`Dockerfile`). Base image is now
+   `debian:bookworm-slim@${BASE_DIGEST}` and the three tool checkouts are by
+   commit SHA (`YOSYS_COMMIT`/`SBY_COMMIT`/`ESPRESSO_COMMIT`). **Every value is
+   a `TODO(M0)` placeholder that is deliberately invalid, so the build fails
+   loudly until M0 records the real values.** No digest/SHA was invented and
+   presented as real.
+
+### 2. `cells_sim.v` (M1 gap, [R4-17])
+
+`gatepack/liberty/sim.py` emits behavioural Verilog models of every G- and
+F-cell from the *same* `parts.csv` functions and `_FLOP_SPECS` the Liberty file
+uses (`gatepack.liberty.boolean.translate_verilog` was added for `!`→`~`). Both
+`gatepack estimate` and `gatepack verify` now write `build/cells_sim.v`.
+
+### 3. M8 — M-/S-cells + tie-off
+
+- `gatepack/macros/` — `CNT4` hand-written behavioural model
+  (`models/CNT4.v`) + physical binding (`bindings.py` → 74LVC161/SO-16, pinout
+  **candidate/unverified**). `load_models()` concatenates the models onto
+  `cells_sim.v` — the *same files* C4 uses (§19 R25).
+- `gatepack/infra/` — `supervisor.py` (the `SUPERVISOR` S-cell + its parameter
+  checks: VCC range, asserted reset width vs. worst-case flop reset recovery,
+  with the "cannot be checked" case surfaced as a finding, never a green pass);
+  `reset.py` (the "every flop is reset-connected" check, implemented by scanning
+  the *emitted* Verilog, so it is independent of C1's internal model); and
+  `tieoff.py` (identity-value computation for spare/unused gate inputs).
+- `libraries/74aup.csv` + `.refs.md` gained `CNT4` (M) and `SUPERVISOR` (S)
+  rows; both are excluded from Liberty (tier), so the 13-cell G/F set is
+  unchanged and no existing test broke.
+
+### 4. M5 — C4 verification (`gatepack/verify/`)
+
+- `base.py` — `VerificationStrategy` ABC, `VerifyConfig`, `CheckStatus`
+  (including the distinct `bounded pass` and `not run` / `not applicable`
+  states), `CheckResult`, `VerificationReport`, and a `ToolRunner` protocol
+  (`SubprocessRunner` default) so everything is testable without tools.
+- `equivalence.py` — the shared-front-end `golden_prep` (literally
+  `yosys.common_frontend`, never copied), the `equiv_make -seq` →
+  `equiv_induct` → `equiv_status -assert` script, the `equiv_simple` →
+  `equiv_induct -seq N` (N raised) → sby miter fallback ladder, and parsers for
+  `equiv_status` and sby BMC (BMC "PASS" → `bounded pass` carrying its bound).
+- `simulation.py` — exhaustive-sim command construction, the runtime-cap
+  decision (`not applicable` above the cap, never random vectors/coverage), a
+  self-checking testbench generator (combinational `2**n` truth-table, and
+  sequential BFS-driven (state × input) traversal), and result parsing.
+- `mutation.py` — three faults (NAND→AND, flop D invert, reset-polarity flip) as
+  pure text transforms on `cells.lib`/`cells_sim.v`, plus the assertion logic: a
+  mutation is *detected* only when **both** checks fail.
+- `synchronous.py` / `asynchronous.py` — the strategies; async refuses (§7.3).
+- `run.py` — `run_verify` orchestration (C1→C2→C3→C4 + §9.5 checks) and the
+  deterministic manifest.
+
+### 5. CLI + tests
+
+`gatepack verify <design.yaml> --library <csv> [--build dir]` was added (exit
+0 = nothing failed and nothing unrun; exit 1 = failed or not-run; exit 3 =
+async-refused). Tests: `tests/unit/{test_sim,test_macros,test_infra,test_verify}.py`
+(new), a contract addition for the `verify` CLI surface, a golden addition
+(`verify` reaches xor2/traffic-light), and `scripts/tests/test_verify.sh`.
+
+## Test command and result
+
+```
+.venv/bin/pytest -q
+# 219 passed, 2 skipped in 0.59s
+bash scripts/tests/run.sh
+# 2/2 test scripts passed (test_cli_e2e.sh: 12, test_verify.sh: 10)
+```
+
+The two skips are unchanged (property-discharge needs sby; latch-ban needs a
+real Yosys run). The `verify` checks deliberately exit non-zero here because
+Yosys/Icarus are absent — a verification that could not run is never a pass
+(§14).
+
+## What has NEVER been executed against a real tool
+
+This is the single most important thing in these notes. **None of the following
+has been run against a real binary; nothing was faked to make it look otherwise:**
+
+- The **equivalence script** (`equiv_make -seq` / `design -stash` /
+  `equiv_induct` / `equiv_status -assert`) is generated and its *construction*
+  is unit-tested, but the exact `equiv_make`/`design -stash` invocation is a
+  best-effort form and **must be confirmed against the pinned Yosys at M0** —
+  exactly like the M2/M3 `dfflegalize` flavour strings.
+- The **exhaustive testbench** is generated (and its shape is asserted) but has
+  **never been compiled or run by Icarus**. The reset-flush count (4 clocks) and
+  the clock-toggling convention are guesses until a real `iverilog`/`vvp` run.
+- The **mutation suite's tool path** (re-map with the mutated library, re-run
+  equivalence + sim) is written but **untested** — only its pure transform +
+  detection logic is exercised (with synthetic results).
+- The **sby BMC miter** is generated but never run.
+- `cells_sim.v` models have never been simulated; the CNT4 model has never been
+  compared against hardware or a real part.
+
+## Guesses / decisions made
+
+1. **The `equiv_make`/`design -stash` equivalence idiom is unverified** (above).
+2. **Reset-recovery data is a placeholder.** `worst_flop_reset_recovery_ns`
+   returns `max(tpd_ns)` over F-cells (reset recovery ≈ tPD order-of-magnitude).
+   `parts.csv` has no recovery column (§10.1), so this is a documented proxy.
+3. **`SUPERVISOR.reset_assert_min_ns = 200 ms`** is a candidate placeholder
+   (typical supervisor delay); unverified.
+4. **CNT4 → 74LVC161 pinout is candidate-only**, and the behavioural model
+   exposes only CLK/RST_N/EN/Q; the parallel-load/ripple-carry pins (LOAD_N,
+   ENT) are recorded as tie-offs, not modelled. `verified=False` throughout.
+5. **M-cell models are appended to `cells_sim.v` unconditionally** (all known
+   M-cells, not just the ones a design uses). Unused module definitions are
+   harmless to Icarus and keep the "same files for sim and equivalence" rule
+   trivial.
+6. **`verify` takes `design.yaml` + `--library` + `--build`** (mirroring
+   `estimate`), not the §17 `gatepack verify out/` form, because there is no
+   M9/M10 `build` command producing `out/` yet.
+
+## A real bug the new check found (and I fixed)
+
+The §9.5 "every flop is reset-connected" check, implemented against the emitted
+Verilog, immediately flagged the **input synchroniser flops** — C1 emitted them
+as `always @(posedge clk)` with no reset, so they come up undefined after
+power-on. I fixed `gatepack/frontend/verilog.py` to reset them (async-assert on
+the raw reset, active polarity aware). This changes the generated Verilog for
+every `sync` input but no flop count; all goldens still pass. This is precisely
+the class of "undefined after power-on" bug the check exists to catch.
+
+## Design issues I think are wrong or under-specified
+
+- **`gatepack verify out/` (§17) needs the M9/M10 `build` command** that
+  produces `out/` with `mapped.json`/`mapped.v`. Until then `verify` re-runs the
+  front-end + C2 + C3 from `design.yaml`; the §17 signature is not yet
+  implementable.
+- **The exhaustive testbench must compare against the spec (truth table), not
+  the behavioural Verilog**, because the mapped top module shares the golden's
+  module name and cannot be co-instantiated. I compare against expected values
+  computed from the compiled design. The design text says "compared against the
+  truth table" (§C4.3) and this is consistent with it, but the module-name
+  clash that forces it is not called out anywhere.
+- **`equiv_status -assert` exit code vs. parsed text**: the parser keys on
+  "Equivalence successfully proven" / "failed", which must be re-validated
+  against the real Yosys output wording at M0.
+- **Flop reset recovery has no schema field**; the proxy (tPD) is my invention
+  and should become a real `parts.csv` column when datasheets are transcribed.
+
+## Unfinished / not in this increment
+
+- M0 toolchain spike: everything under "never executed against a real tool"
+  above, plus the `src`-survival and timing-arc A/B measurements.
+- M6 property *discharging* (sby) — `properties.sv` is still only emitted.
+- C5 packer, C6 emitters (which will *apply* the tie-off values `infra/tieoff.py`
+  computes), C7 analysis, C8 report (M9/M10).
+- The C5 "M- and S-cells are never written to Liberty" invariant is still
+  enforced by `select_for_liberty`; a regression test exists via
+  `test_m_and_s_tier_excluded`.

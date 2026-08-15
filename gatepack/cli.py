@@ -24,6 +24,8 @@ from gatepack.frontend import AsyncRefused, CompileError, compile_design_file
 from gatepack.liberty.generator import generate, sanitize_library_name
 from gatepack.liberty.validate import LibertyError
 from gatepack.parts import DropReason, Exclusion, load_parts
+from gatepack.verify.base import CheckStatus
+from gatepack.verify.run import run_verify
 
 # Exit-code contract (§C6, pinned in tests/contract):
 EXIT_OK = 0
@@ -99,6 +101,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "--build", default="build", help="build directory (default: %(default)s)"
     )
 
+    verify = sub.add_parser(
+        "verify", help="C4: equivalence + exhaustive simulation + mutation (§12)"
+    )
+    verify.add_argument("design", help="path to design.yaml")
+    verify.add_argument("--library", required=True, help="path to parts.csv")
+    verify.add_argument(
+        "--build", default="build", help="build directory (default: %(default)s)"
+    )
+
     return parser
 
 
@@ -114,6 +125,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_compile(args)
     if args.command == "estimate":
         return _cmd_estimate(args)
+    if args.command == "verify":
+        return _cmd_verify(args)
     parser.error(f"unknown command {args.command!r}")
     return EXIT_USAGE
 
@@ -260,6 +273,35 @@ def _cmd_estimate(args: argparse.Namespace) -> int:
     if result.compiled.johnson_suggestion:
         print(f"note: {result.compiled.johnson_suggestion}", file=sys.stderr)
     return EXIT_OK
+
+
+def _cmd_verify(args: argparse.Namespace) -> int:
+    try:
+        result = run_verify(args.design, args.library, args.build)
+    except AsyncRefused as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return EXIT_ASYNC_REFUSED
+    except (CompileError, parts_mod.PartError, LibertyError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    report = result.report
+    print(f"verification: {report.checks and result.manifest['verification']['overall']}")
+    for check in report.checks:
+        suffix = f" (bound {check.bound})" if check.bound is not None else ""
+        print(f"  {check.name + ':':26} {check.status.value}{suffix}")
+        if check.detail:
+            print(f"      {check.detail}")
+    if report.mutations:
+        for mutation in report.mutations:
+            state = "detected" if mutation.detected else "NOT DETECTED"
+            print(f"  mutation {mutation.mutation + ':':17} {state}")
+    print(f"manifest: {result.paths['manifest']}")
+    if report.ok:
+        return EXIT_OK
+    if report.has_failure:
+        return EXIT_ERROR
+    return EXIT_ERROR  # not-run is not a pass (§14: never claim an unrun proof)
 
 
 if __name__ == "__main__":

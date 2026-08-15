@@ -239,6 +239,7 @@ class _Parser:
 
     def parse_mapping(self, indent: int, start_line: int) -> Mapping:
         items: list[tuple[str, Node]] = []
+        seen: set[str] = set()
         while True:
             entry = self.peek()
             if entry is None:
@@ -252,6 +253,13 @@ class _Parser:
             if _is_seq_item(content):
                 raise ParseError(lineno, "sequence item where mapping key expected")
             key, inline = _split_mapping_line(content, lineno)
+            if key in seen:
+                raise ParseError(
+                    lineno,
+                    f"duplicate mapping key {key!r} "
+                    "(text is canonical; a duplicate is a silent wrong build)",
+                )
+            seen.add(key)
             self.pos += 1
             if inline is None:
                 nxt = self.peek()
@@ -371,12 +379,20 @@ def parse_inline_value(text: str, lineno: int) -> Node:
 def _parse_flow_mapping(text: str, lineno: int) -> Mapping:
     inner = text[1:-1].strip()
     items: list[tuple[str, Node]] = []
+    seen: set[str] = set()
     if inner:
         for part in _split_top_level(inner, ","):
             part = part.strip()
             if not part:
                 continue
             key, value = _split_flow_kv(part, lineno)
+            if key in seen:
+                raise ParseError(
+                    lineno,
+                    f"duplicate mapping key {key!r} "
+                    "(text is canonical; a duplicate is a silent wrong build)",
+                )
+            seen.add(key)
             items.append((key, parse_inline_value(value, lineno)))
     return Mapping(items, lineno)
 

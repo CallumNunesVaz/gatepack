@@ -64,9 +64,16 @@ def emit_verilog(compiled: CompiledDesign) -> str:
             lines.append(f"  reg {name}_s1;")
             lines.append(f"  {_attr(compiled, path)}")
             lines.append(f"  reg {name}_s2;")
-            lines.append(f"  always @(posedge {clock_name}) begin")
-            lines.append(f"    {name}_s1 <= {name};")
-            lines.append(f"    {name}_s2 <= {name}_s1;")
+            sync_edge = f"negedge {reset_name}" if active_low else f"posedge {reset_name}"
+            sync_assert = f"!{reset_name}" if active_low else reset_name
+            lines.append(f"  always @(posedge {clock_name} or {sync_edge}) begin")
+            lines.append(f"    if ({sync_assert}) begin")
+            lines.append(f"      {name}_s1 <= 1'b0;")
+            lines.append(f"      {name}_s2 <= 1'b0;")
+            lines.append("    end else begin")
+            lines.append(f"      {name}_s1 <= {name};")
+            lines.append(f"      {name}_s2 <= {name}_s1;")
+            lines.append("    end")
             lines.append("  end")
             lines.append(f"  wire {name}_i = {name}_s2;")
             var_map[name] = f"{name}_i"

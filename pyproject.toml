@@ -20,6 +20,7 @@ include = ["gatepack*"]
 
 [tool.setuptools.package-data]
 "gatepack.yosys" = ["*.ys"]
+"gatepack.macros" = ["models/*.v"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

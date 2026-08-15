@@ -94,3 +94,24 @@ def test_missing_colon_rejected():
 def test_block_scalar_rejected():
     with pytest.raises(ys.ParseError, match="block scalar"):
         ys.parse("x: |\n  text\n")
+
+
+def test_duplicate_block_key_rejected_with_line_number():
+    # §1 defect: duplicate keys are silently last-wins; they must be rejected.
+    with pytest.raises(ys.ParseError, match="duplicate mapping key 'name'"):
+        ys.parse("name: a\nname: b\n")
+    try:
+        ys.parse("x: 1\ny: 2\nname: a\nname: b\n")
+    except ys.ParseError as exc:
+        assert exc.line == 4
+
+
+def test_duplicate_flow_key_rejected():
+    with pytest.raises(ys.ParseError, match="duplicate mapping key 'signal'"):
+        ys.parse("clock: {signal: clk, signal: clk2, freq_hz: 1}\n")
+
+
+def test_quoted_and_plain_key_collide():
+    # `name` and `"name"` are the same key; the second must be rejected.
+    with pytest.raises(ys.ParseError, match="duplicate mapping key 'name'"):
+        ys.parse('name: a\n"name": b\n')

@@ -1,0 +1,11 @@
+name: dup
+name: dup2
+timing_model: synchronous
+clock: {signal: clk, freq_hz: 1, source: OSC}
+reset: {signal: rst_n, active: low}
+states: [A, B]
+initial: A
+transitions:
+  - {from: A, to: B, when: "1"}
+  - {from: B, to: A, when: "1"}
+output_logic: {}

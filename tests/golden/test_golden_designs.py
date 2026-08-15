@@ -16,6 +16,7 @@ from gatepack.estimate import VccIncompatibleError, run_estimate
 from gatepack.frontend import AsyncRefused, CompileError, compile_design_file
 
 DESIGNS = Path(__file__).parent / "designs"
+LIBRARY_CSV = Path(__file__).resolve().parents[2] / "libraries" / "74aup.csv"
 
 
 def test_traffic_light_compiles_one_hot():
@@ -50,6 +51,7 @@ def test_decoder_3to8_combinational():
         ("unreachable_state.yaml", CompileError, "unreachable"),
         ("non_exhaustive.yaml", CompileError, "non-exhaustive"),
         ("async_handshake.yaml", AsyncRefused, "asynchronous"),
+        ("duplicate_key.yaml", CompileError, "duplicate mapping key"),
     ],
 )
 def test_must_fail_designs(filename, exc, match):
@@ -105,3 +107,40 @@ def test_single_source_part_requires_override(tmp_path):
     ]
     with pytest.raises(LibertyError, match="no cells eligible"):
         generate_liberty(single, library_name="t", project_vcc=3.3)
+
+
+def test_verify_reaches_combinational_golden(tmp_path):
+    # C4 now reaches the §18 designs: the full verify pipeline runs without the
+    # toolchain, reporting the tool-dependent checks as "not run" (never a pass)
+    # while the pure-Python §9.5 checks pass.
+    from gatepack.verify.base import CheckStatus
+    from gatepack.verify.run import run_verify
+
+    result = run_verify(
+        DESIGNS / "xor2.yaml",
+        LIBRARY_CSV,
+        build_dir=tmp_path / "vb",
+    )
+    statuses = {c.name: c.status for c in result.report.checks}
+    assert statuses["equivalence"] is CheckStatus.NOT_RUN
+    assert statuses["flop reset connectivity"] is CheckStatus.PASSED
+    assert statuses["supervisor parameters"] is CheckStatus.PASSED
+    assert result.manifest["verification"]["overall"] == "not run"
+
+
+def test_verify_reaches_sequential_golden(tmp_path):
+    from gatepack.verify.base import CheckStatus
+    from gatepack.verify.run import run_verify
+
+    result = run_verify(
+        DESIGNS / "traffic_light.yaml",
+        LIBRARY_CSV,
+        build_dir=tmp_path / "vb",
+    )
+    assert (tmp_path / "vb" / "cells_sim.v").exists()
+    assert (tmp_path / "vb" / "yosys.ys").exists()
+    assert result.manifest["design"] == "traffic_light"
+    # sync inputs (go, emergency) -> input synchronisers; they must be
+    # reset-connected for the §9.5 check to pass.
+    statuses = {c.name: c.status for c in result.report.checks}
+    assert statuses["flop reset connectivity"] is CheckStatus.PASSED

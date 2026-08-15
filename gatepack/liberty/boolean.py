@@ -102,6 +102,14 @@ def _emit(node: tuple) -> str:
     return f"({_emit(node[2])} {node[1]} {_emit(node[3])})"
 
 
+def _emit_verilog(node: tuple) -> str:
+    if node[0] == "var":
+        return node[1]
+    if node[0] == "not":
+        return f"(~{_emit_verilog(node[1])})"
+    return f"({_emit_verilog(node[2])} {node[1]} {_emit_verilog(node[3])})"
+
+
 def pin_names(inputs: int) -> list[str]:
     """Input pin names for a combinational cell: ``A``, ``B``, ``C``, ..."""
     return [chr(ord("A") + i) for i in range(inputs)]
@@ -109,6 +117,22 @@ def pin_names(inputs: int) -> list[str]:
 
 def translate(func: str, inputs: int) -> str:
     """Validate ``func`` against ``inputs`` pins and emit Liberty syntax."""
+    node, expected = _parse_and_validate(func, inputs)
+    return _emit(node)
+
+
+def translate_verilog(func: str, inputs: int) -> str:
+    """Validate ``func`` against ``inputs`` pins and emit Verilog syntax.
+
+    Used by the ``cells_sim.v`` behavioural models ([R4-17]) so the simulation
+    model of a G-cell is generated from the same ``parts.csv`` function string
+    the Liberty file uses, and cannot drift from it.
+    """
+    node, expected = _parse_and_validate(func, inputs)
+    return _emit_verilog(node)
+
+
+def _parse_and_validate(func: str, inputs: int) -> tuple[tuple, set[str]]:
     tokens = _tokenize(func)
     if not tokens:
         raise BooleanError("empty boolean function")
@@ -123,4 +147,29 @@ def translate(func: str, inputs: int) -> str:
             f"function {func!r} references {sorted(unknown)!r}; "
             f"expected inputs {sorted(expected)!r}"
         )
-    return _emit(node)
+    return node, expected
+
+
+def _eval_node(node: tuple, env: dict[str, bool]) -> bool:
+    if node[0] == "var":
+        return env[node[1]]
+    if node[0] == "not":
+        return not _eval_node(node[1], env)
+    left = _eval_node(node[2], env)
+    right = _eval_node(node[3], env)
+    if node[1] == "&":
+        return left and right
+    if node[1] == "|":
+        return left or right
+    if node[1] == "^":
+        return left != right
+    raise BooleanError(f"unknown operator {node[1]!r}")
+
+
+def evaluate(func: str, inputs: int, assignment: dict[str, bool]) -> bool:
+    """Evaluate ``func`` (over pins A..) under a complete ``assignment``."""
+    node, expected = _parse_and_validate(func, inputs)
+    missing = expected - set(assignment)
+    if missing:
+        raise BooleanError(f"assignment missing inputs {sorted(missing)!r}")
+    return _eval_node(node, assignment)

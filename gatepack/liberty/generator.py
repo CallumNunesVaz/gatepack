@@ -64,6 +64,28 @@ class LibraryResult:
     excluded: list[Exclusion]
 
 
+def flop_ff_requirements(
+    specs: dict[str, dict[str, object]] | None = None,
+) -> dict[str, set[str]]:
+    """Derive the ``ff`` attributes each F-cell *must* carry, from ``_FLOP_SPECS``.
+
+    This is the C2 self-check's independent view of §9.2 [R4-3]: the generator
+    emits ``ff`` groups from the same spec, but the validator re-derives the
+    requirement from the spec itself rather than trusting the emitter.  A
+    generator bug that drops ``clear`` from ``DFF_R`` is therefore caught by the
+    validator instead of silently shared (§19 R1).
+    """
+    specs = specs if specs is not None else _FLOP_SPECS
+    out: dict[str, set[str]] = {}
+    for cell, spec in specs.items():
+        attrs = {"next_state", "clocked_on"}
+        for key in ("clear", "preset", "clear_preset_var1", "clear_preset_var2"):
+            if key in spec:
+                attrs.add(key)
+        out[cell] = attrs
+    return out
+
+
 def sanitize_library_name(name: str) -> str:
     """Return a Liberty-safe identifier for ``name`` (e.g. a CSV stem)."""
     name = name.strip()
@@ -94,7 +116,9 @@ def generate(
     text = _library_text(library_name, blocks)
 
     cell_names = [p.cell for p in included]
-    validate_library(text, cell_names)  # C2 self-check (R1)
+    validate_library(
+        text, cell_names, flop_requirements=flop_ff_requirements()
+    )  # C2 self-check (R1)
 
     return LibraryResult(
         text=text, cells=cell_names, library_name=library_name, excluded=excluded

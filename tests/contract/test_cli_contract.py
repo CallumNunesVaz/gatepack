@@ -39,7 +39,7 @@ def _valid_design(tmp_path: Path) -> Path:
         "name: t\n"
         "timing_model: synchronous\n"
         "clock: {signal: clk, freq_hz: 1, source: OSC}\n"
-        "reset: {signal: rst_n, active: low}\n"
+        "reset: {signal: rst_n, active: low, source: SUPERVISOR}\n"
         "inputs:\n  - {name: x, sync: false}\n"
         "states: [A, B]\n"
         "initial: A\n"
@@ -149,3 +149,40 @@ def test_cli_contract_via_subprocess(tmp_path):
     )
     assert proc.returncode == EXIT_OK
     assert proc.stdout.startswith("gatepack ")
+
+
+def test_verify_exits_error_without_tools(tmp_path):
+    # §14: a verification that could not run is never a pass.  No Yosys/Icarus
+    # here, so `verify` reports "not run" and exits non-zero.
+    design = _valid_design(tmp_path)
+    assert (
+        main(["verify", str(design), "--library", str(LIBRARY_CSV), "--build", str(tmp_path / "vb")])
+        == EXIT_ERROR
+    )
+
+
+def test_verify_manifest_is_deterministic_and_has_no_timestamp(tmp_path):
+    design = _valid_design(tmp_path)
+    b1 = tmp_path / "vb1"
+    b2 = tmp_path / "vb2"
+    assert main(["verify", str(design), "--library", str(LIBRARY_CSV), "--build", str(b1)]) == EXIT_ERROR
+    assert main(["verify", str(design), "--library", str(LIBRARY_CSV), "--build", str(b2)]) == EXIT_ERROR
+
+    m1 = json.loads((b1 / "manifest.json").read_text())
+    m2 = json.loads((b2 / "manifest.json").read_text())
+    assert m1 == m2
+    assert list(m1.keys()) == sorted(m1.keys())
+    assert "timestamp" not in str(m1)
+    names = [c["name"] for c in m1["verification"]["checks"]]
+    assert names == [
+        "equivalence",
+        "exhaustive simulation",
+        "mutation",
+        "flop reset connectivity",
+        "supervisor parameters",
+    ]
+    assert m1["verification"]["overall"] == "not run"
+    # every check that could not run names its missing tool, never "passed"
+    for check in m1["verification"]["checks"]:
+        if check["status"] == "not run":
+            assert "not installed" in check["detail"] or "required" in check["detail"]

@@ -77,3 +77,65 @@ def test_ff_missing_required_attr_fails():
     )
     with pytest.raises(LibertyError, match="next_state"):
         validate_library(text, ["DFF"])
+
+
+def _ff_library(cell: str, ff_body: str) -> str:
+    return (
+        f'library (test) {{\n'
+        f'  cell ({cell}) {{\n'
+        f'    area : 1.0;\n'
+        f'    ff (IQ, IQN) {{ {ff_body} }}\n'
+        f'    pin(D) {{ direction : input; }}\n'
+        f'    pin(CK) {{ direction : input; clock : true; }}\n'
+        f'    pin(Q) {{ direction : output; function : "IQ"; }}\n'
+        f'  }}\n'
+        f'}}\n'
+    )
+
+
+def test_dff_r_without_clear_rejected_by_spec():
+    # §1 defect / §19 R1: the C2 self-check must be spec-driven, so a DFF_R
+    # emitted without its `clear` is rejected — the validator shares the
+    # generator's truth (the spec), not its output.
+    from gatepack.liberty.generator import flop_ff_requirements
+
+    text = _ff_library(
+        "DFF_R",
+        'next_state : "D"; clocked_on : "CK";',
+    )
+    with pytest.raises(LibertyError, match="clear"):
+        validate_library(text, ["DFF_R"], flop_requirements=flop_ff_requirements())
+
+
+def test_dff_r_complete_passes_spec():
+    from gatepack.liberty.generator import flop_ff_requirements
+
+    text = _ff_library(
+        "DFF_R",
+        'next_state : "D"; clocked_on : "CK"; clear : "!RST_N";',
+    )
+    names = validate_library(text, ["DFF_R"], flop_requirements=flop_ff_requirements())
+    assert names == ["DFF_R"]
+
+
+def test_unexpected_ff_attr_rejected_by_spec():
+    # DFF must not carry a `clear`; a spec-driven check catches the inverse bug.
+    from gatepack.liberty.generator import flop_ff_requirements
+
+    text = _ff_library(
+        "DFF",
+        'next_state : "D"; clocked_on : "CK"; clear : "!RST_N";',
+    )
+    with pytest.raises(LibertyError, match="unexpected"):
+        validate_library(text, ["DFF"], flop_requirements=flop_ff_requirements())
+
+
+def test_dff_sr_requires_dominance_vars():
+    from gatepack.liberty.generator import flop_ff_requirements
+
+    text = _ff_library(
+        "DFF_SR",
+        'next_state : "D"; clocked_on : "CK"; clear : "!RST_N"; preset : "!SET_N";',
+    )
+    with pytest.raises(LibertyError, match="clear_preset_var1"):
+        validate_library(text, ["DFF_SR"], flop_requirements=flop_ff_requirements())
