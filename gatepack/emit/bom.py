@@ -12,6 +12,8 @@ configurable-gate configurations sharing a suffix collapse to one line, §9.1).
 
 from __future__ import annotations
 
+import re
+
 import csv
 import io
 from dataclasses import dataclass
@@ -43,6 +45,19 @@ class BomRow:
     unit_price: str = ""
 
 
+def _refdes_key(ref: str) -> tuple[str, int, str]:
+    """Sort refdes naturally: U9 before U10, not after it.
+
+    Plain lexicographic order puts U10 before U7, which reads as a mistake
+    on a BOM line and makes a part list hard to check against a board.
+    """
+    match = re.match(r"^([A-Za-z]+)(\d+)(.*)$", ref)
+    if match is None:
+        return (ref, 0, "")
+    prefix, number, rest = match.groups()
+    return (prefix, int(number), rest)
+
+
 def collect_bom(assigned: Sequence[tuple[str, PackageGroup]]) -> list[BomRow]:
     """Aggregate assigned packages into BOM rows, deduplicated by part number."""
     by_part: dict[str, dict] = {}
@@ -68,7 +83,7 @@ def collect_bom(assigned: Sequence[tuple[str, PackageGroup]]) -> list[BomRow]:
             equivalents=by_part[pn]["equivalents"],
             package=by_part[pn]["package"],
             quantity=len(by_part[pn]["refdes"]),
-            refdes=tuple(sorted(by_part[pn]["refdes"])),
+            refdes=tuple(sorted(by_part[pn]["refdes"], key=_refdes_key)),
             tier=by_part[pn]["tier"],
             unit_price="",
         )

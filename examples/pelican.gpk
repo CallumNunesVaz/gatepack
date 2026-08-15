@@ -1,0 +1,56 @@
+%YAML 1.2
+---
+gatepack: 1
+kind: design
+clock: {freq_hz: 1, signal: clk, source: OSC}
+constraints: {vcc: 3.3}
+encoding: one_hot
+expressions: {}
+initial: STOP
+inputs:
+  - {name: request, sync: true}
+  - {name: hold, sync: true}
+name: pelican
+output_logic: {traffic_amber: "state == WARN", traffic_green: "state == GO", traffic_red: "state == STOP | state == CROSS | state == CLEAR", walk: "state == CROSS"}
+outputs:
+  - {name: traffic_red}
+  - {name: traffic_amber}
+  - {name: traffic_green}
+  - {name: walk}
+properties:
+  - {expr: "!(walk & traffic_green) & !(walk & traffic_amber)", kind: mutex, name: never_walk_with_traffic}
+  - {expr: "!(traffic_red & traffic_green) & !(traffic_green & traffic_amber) & !(traffic_red & traffic_amber)", kind: mutex, name: one_traffic_aspect}
+reset: {active: low, async_assert: true, signal: rst_n, source: SUPERVISOR, sync_deassert: true}
+safe_state: {traffic_amber: 0, traffic_green: 0, traffic_red: 1, walk: 0}
+states: [GO, WARN, STOP, CROSS, CLEAR]
+timing_model: synchronous
+transitions:
+  - {from: GO, to: WARN, when: "request & !hold"}
+  - {from: GO, to: GO, when: "!request | hold"}
+  - {from: WARN, to: STOP, when: "1"}
+  - {from: STOP, to: CROSS, when: "!hold"}
+  - {from: STOP, to: STOP, when: hold}
+  - {from: CROSS, to: CLEAR, when: "1"}
+  - {from: CLEAR, to: GO, when: "1"}
+---
+gatepack: 1
+kind: library
+parts:
+  - {area: 1.0, cell: INV, equivalents: ~, family: AUP, function: "!A", gates_per_pkg: 1, inputs: 1, iq_ua: 0.9, mfrs: "TI;Nexperia;Diodes", package: SOT-353, part_suffix: 1G04, tier: G, tpd_ns: 4.6, vcc_max: 3.6, vcc_min: 0.8}
+  - {area: 1.0, cell: BUF, equivalents: ~, family: AUP, function: A, gates_per_pkg: 1, inputs: 1, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-353, part_suffix: 1G34, tier: G, tpd_ns: 4.6, vcc_max: 3.6, vcc_min: 0.8}
+  - {area: 1.0, cell: NAND2, equivalents: ~, family: AUP, function: "!(A&B)", gates_per_pkg: 1, inputs: 2, iq_ua: 0.9, mfrs: "TI;Nexperia;Diodes", package: SOT-353, part_suffix: 1G00, tier: G, tpd_ns: 5.1, vcc_max: 3.6, vcc_min: 0.8}
+  - {area: 1.0, cell: NAND3, equivalents: ~, family: AUP, function: "!(A&B&C)", gates_per_pkg: 1, inputs: 3, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-353, part_suffix: 1G10, tier: G, tpd_ns: 5.5, vcc_max: 3.6, vcc_min: 0.8}
+  - {area: 1.0, cell: NOR2, equivalents: ~, family: AUP, function: "!(A|B)", gates_per_pkg: 1, inputs: 2, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-353, part_suffix: 1G02, tier: G, tpd_ns: 5.1, vcc_max: 3.6, vcc_min: 0.8}
+  - {area: 1.0, cell: NOR3, equivalents: ~, family: AUP, function: "!(A|B|C)", gates_per_pkg: 1, inputs: 3, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-353, part_suffix: 1G27, tier: G, tpd_ns: 5.5, vcc_max: 3.6, vcc_min: 0.8}
+  - {area: 1.0, cell: AND2, equivalents: ~, family: AUP, function: "A&B", gates_per_pkg: 1, inputs: 2, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-353, part_suffix: 1G08, tier: G, tpd_ns: 5.1, vcc_max: 3.6, vcc_min: 0.8}
+  - {area: 1.0, cell: AND3, equivalents: ~, family: AUP, function: "A&B&C", gates_per_pkg: 1, inputs: 3, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-353, part_suffix: 1G11, tier: G, tpd_ns: 5.5, vcc_max: 3.6, vcc_min: 0.8}
+  - {area: 1.0, cell: OR2, equivalents: ~, family: AUP, function: "A|B", gates_per_pkg: 1, inputs: 2, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-353, part_suffix: 1G32, tier: G, tpd_ns: 5.1, vcc_max: 3.6, vcc_min: 0.8}
+  - {area: 1.0, cell: XOR2, equivalents: ~, family: AUP, function: "A^B", gates_per_pkg: 1, inputs: 2, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-353, part_suffix: 1G86, tier: G, tpd_ns: 5.1, vcc_max: 3.6, vcc_min: 0.8}
+  - {area: 1.0, cell: DFF, equivalents: ~, family: AUP, function: ~, gates_per_pkg: 1, inputs: 2, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-353, part_suffix: 1G79, tier: F, tpd_ns: 7.2, vcc_max: 3.6, vcc_min: 0.8}
+  - {area: 1.0, cell: DFF_R, equivalents: ~, family: AUP, function: ~, gates_per_pkg: 1, inputs: 3, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-353, part_suffix: 1G175, tier: F, tpd_ns: 7.5, vcc_max: 3.6, vcc_min: 0.8}
+  - {area: 1.0, cell: DFF_S, equivalents: ~, family: AUP, function: ~, gates_per_pkg: 1, inputs: 3, iq_ua: 0.9, mfrs: ~, package: SOT-353, part_suffix: "", tier: F, tpd_ns: 7.5, vcc_max: 3.6, vcc_min: 0.8}
+  - {area: 1.0, cell: DFF_SR, equivalents: ~, family: AUP, function: ~, gates_per_pkg: 1, inputs: 4, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-353, part_suffix: 1G74, tier: F, tpd_ns: 7.5, vcc_max: 3.6, vcc_min: 0.8}
+  - {area: 8.0, cell: CNT4, equivalents: ~, family: LVC, function: ~, gates_per_pkg: 1, inputs: 3, iq_ua: 4.0, mfrs: "TI;Nexperia", package: SO-16, part_suffix: 74LVC161, tier: M, tpd_ns: ~, vcc_max: 5.5, vcc_min: 1.65}
+  - {area: 2.0, cell: SUPERVISOR, equivalents: "APX803:Diodes;NCP303:onsemi", family: "-", function: ~, gates_per_pkg: 1, inputs: 1, iq_ua: 0.15, mfrs: TI, package: SOT-23, part_suffix: TPS3839, tier: S, tpd_ns: ~, vcc_max: 6.0, vcc_min: 1.6}
+sha256: 8e15b6a8b4c3126920deca031facc1d6b9801dc6900b65c2d2ba47716cfa0e75
+source: parts.csv

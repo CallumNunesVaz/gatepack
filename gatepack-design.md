@@ -1502,6 +1502,25 @@ gatepack gui
 The must-fail entries matter as much as the rest. A malformed Liberty file that
 parses cleanly yields an implausibly low gate count, which reads as success.
 
+#### 10.4 limitation, measured — `.gpk` is not yet faithful source
+
+Bundling and exploding the showcase round-trips the *model* but not the
+*document*: comments are stripped and top-level keys are re-emitted in
+alphabetical order, because `bundle` parses to the model and re-serialises
+canonically rather than carrying the original text.
+
+That is a real gap against §10.4's claim that "an entire project can be
+contained within a single file **as source**". For most projects it is
+cosmetic. For the showcase it is not: its comments are half of what it teaches,
+and a user who opens the `.gpk` sees them gone.
+
+Until it is fixed, the showcase ships in **both** forms — the exploded
+directory is what the application opens, and `examples/pelican.gpk` exists as
+the format's worked example. The fix is to carry the verbatim `design.yaml`
+text through `DesignDocument` and emit it as the document body, falling back to
+canonical serialisation only when a project was constructed in memory rather
+than read from a file.
+
 ### 18.1 The showcase project — what opens on first launch
 
 The application opens a **bundled showcase project** when it starts with no
