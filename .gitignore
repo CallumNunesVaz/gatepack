@@ -20,5 +20,7 @@ app/resources/bin/
 # OS
 .DS_Store
 
-# venv symlink (worktrees)
+# worktree symlinks — bare names, because a `dir/` pattern does not match a
+# symlink and one of these got committed once, which pointed it at itself
 .venv
+node_modules
