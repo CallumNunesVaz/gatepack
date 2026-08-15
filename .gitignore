@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# gatepack build artefacts (§10.3 — not committed)
+build/
+design.layout.json
+
+# Node / Electron
+node_modules/
+app/dist/
+app/resources/bin/
+
+# OS
+.DS_Store
