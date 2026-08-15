@@ -8,8 +8,9 @@ survive synthesis; `dfflibmap`/`dfflegalize` conflated; no v0.1.0 scope cut)
 
 **Prior-art survey (Draft 4.1):** §24 records what was adopted, declined and
 kept for interoperation after surveying the logic-simulator field, and
-`docs/M0-FINDINGS.md` supersedes this document wherever they conflict — it
-contains measurements from a real Yosys, this document contains assumptions.
+`docs/M0-FINDINGS.md` and `docs/M6-FINDINGS.md` supersede this document wherever
+they conflict — they contain measurements from a real Yosys and a real
+SymbiYosys, this document contains assumptions.
 
 **External review:** Draft 3 was reviewed by DeepSeek v4-pro
 (`docs/reviews/2026-08-15-deepseek-v4-pro.md`). Findings accepted are folded
@@ -869,6 +870,29 @@ netlist instead would let them pass vacuously on a degenerate result.
 Kinds: `invariant` (always true), `reachability` (state B reachable from A),
 `liveness` (bounded, with a documented bound), `mutex` (signals never
 simultaneously asserted).
+
+**[M6-1] Assertions are emitted as immediate assertions inside a clocked
+`always` block, not as SVA concurrent assertions.** Measured: open-source Yosys
+does not implement `assert property (@(posedge clk) ...)` — that path needs the
+commercial Verific front end, and the construct is a syntax error without it.
+`disable iff (!rst_n)` becomes an `rst_n &&` guard on the enclosing `if`. See
+`docs/M6-FINDINGS.md` §1.
+
+**[M6-2] The properties file must emit a reset assumption.** A formal engine
+starts from a completely unconstrained state, so a register with no initial
+value can begin in a state the circuit can never reach after reset, and a true
+invariant then fails at step 1. Without the assumption, M6 reports failures
+against correct designs — which is worse than reporting nothing. See
+`docs/M6-FINDINGS.md` §2.
+
+**[M6-3] A bounded result must never be inferred from sby's summary line.**
+`mode prove` and `mode bmc` both print `returned pass`. The distinguishing
+information is the mode the driver chose: `prove` yields `passed` only when
+*both* basecase and induction pass, and `bmc` always yields `bounded` with the
+configured depth. A parser keying on the summary string alone renders a
+depth-limited result as a full pass, which is exactly the vacuous-pass failure
+mode §C15 [R4-25] introduced the fourth state to prevent. See
+`docs/M6-FINDINGS.md` §3.1.
 
 For asynchronous designs the same machinery expresses hazard-freedom
 obligations, which is a second reason to have it.
