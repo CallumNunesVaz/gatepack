@@ -168,6 +168,45 @@ equiv_make gold gate equiv ; prep -top equiv
 equiv_simple ; equiv_induct ; equiv_status -assert
 ```
 
+**Correction (2026-08-16): "stash as gold" above is ambiguous shorthand, it was
+implemented literally, and the result never worked.** `design -stash` saves the
+current design *and clears it*, and `equiv_make` takes **module names in the
+current design**, not stash names — so `equiv_make golden mapped equiv` after
+two stashes fails with:
+
+```
+ERROR: Can't find gold module golden.
+```
+
+The stashes have to be copied back in and renamed first. Measured working form:
+
+```
+read_verilog gold.v
+proc; opt; async2sync; opt
+design -stash goldstash
+
+read_verilog mapped.v cells_sim.v
+proc; flatten; opt; async2sync; opt
+design -stash gatestash
+
+design -copy-from goldstash -as golden <top>
+design -copy-from gatestash -as mapped <top>
+equiv_make golden mapped equiv
+prep -top equiv
+equiv_simple ; equiv_induct ; equiv_status -assert
+```
+
+On the `xor2` golden this reports `Of those cells 1 are proven and 0 are
+unproven. Equivalence successfully proven!` — and, with `XOR2` swapped for
+`AND2` in the mapped netlist, `ERROR: Found 1 unproven $equiv cells`. The
+check can therefore actually fail, which the previous form could not: it
+errored out before comparing anything, on every design, always.
+
+**This means M5's exit criterion "equivalence closes on all goldens" has never
+once been met**, and 403 unit tests passed over it, because no test ran the
+real flow. It was found by running `gatepack verify` under a container with
+Yosys, Icarus and sby present, which nothing in the suite had ever done.
+
 Three requirements Draft 4 does not state, each of which is a hard failure:
 
 1. **`cells_sim.v` is mandatory, not a convenience.** Without behavioural models
