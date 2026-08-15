@@ -186,3 +186,45 @@ def test_verify_manifest_is_deterministic_and_has_no_timestamp(tmp_path):
     for check in m1["verification"]["checks"]:
         if check["status"] == "not run":
             assert "not installed" in check["detail"] or "required" in check["detail"]
+_MAPPED = (
+    '{"modules": {"t": {'
+    '"ports": {"x": {"direction": "input", "bits": [2]}, "y": {"direction": "output", "bits": [4]}},'
+    '"cells": {'
+    '"$1": {"type": "INV", "port_directions": {"A": "input", "Y": "output"},'
+    '"connections": {"A": [2], "Y": [4]}}'
+    "},"
+    '"netnames": {"x": {"bits": [2]}, "y": {"bits": [4]}}'
+    "}}}"
+)
+
+
+def test_build_with_mapped_writes_artefacts(tmp_path):
+    design = _valid_design(tmp_path)
+    mapped = tmp_path / "mapped.json"
+    mapped.write_text(_MAPPED)
+    out = tmp_path / "out"
+    assert (
+        main(
+            ["build", str(design), "--library", str(LIBRARY_CSV),
+             "--out", str(out), "--mapped", str(mapped)]
+        )
+        == EXIT_OK
+    )
+    assert (out / "bom.csv").exists()
+    assert (out / "netlist.net").exists()
+    assert (out / "netlist.unpacked.net").exists()
+    assert (out / "report.md").exists()
+    assert (out / "refdes.json").exists()
+
+
+def test_build_without_synthesis_exits_error(tmp_path):
+    design = _valid_design(tmp_path)
+    out = tmp_path / "out"
+    # no --mapped and no yosys -> refuses rather than faking a result
+    assert (
+        main(
+            ["build", str(design), "--library", str(LIBRARY_CSV),
+             "--out", str(out)]
+        )
+        == EXIT_ERROR
+    )

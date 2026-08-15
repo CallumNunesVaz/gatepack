@@ -150,6 +150,25 @@ class Part(BaseModel):
             raise PartError(cell, _format_validation_error(exc)) from exc
 
     @property
+    def part_number(self) -> str:
+        """Full part number for the BOM.
+
+        ``family`` + ``part_suffix`` are composed as ``74<FAMILY><SUFFIX>`` for
+        the 74-logic families (``74AUP1G00``), except when the suffix already
+        carries the family (``HC4017`` -> ``74HC4017``).  S-cells with no family
+        (``-``) use the suffix verbatim (``TPS3839``).
+        """
+        suffix = self.part_suffix
+        if not suffix:
+            return ""
+        family = self.family
+        if family in ("", "-"):
+            return suffix
+        if suffix.startswith(family):
+            return "74" + suffix
+        return "74" + family + suffix
+
+    @property
     def second_source_count(self) -> int:
         return len(self.mfrs) + len(self.equivalents)
 

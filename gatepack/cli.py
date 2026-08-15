@@ -110,6 +110,22 @@ def _build_parser() -> argparse.ArgumentParser:
         "--build", default="build", help="build directory (default: %(default)s)"
     )
 
+    build = sub.add_parser(
+        "build", help="C5+C6+C7+C8: pack and emit BOM, KiCad netlist, report"
+    )
+    build.add_argument("design", help="path to design.yaml")
+    build.add_argument("--library", required=True, help="path to parts.csv")
+    build.add_argument("--out", default="out", help="output directory (default: %(default)s)")
+    build.add_argument(
+        "--mapped", help="path to a mapped.json; skips Yosys (default: run Yosys if present)"
+    )
+    build.add_argument(
+        "--spare-weight",
+        type=float,
+        default=None,
+        help="§9.7 spare leakage weight (default: %(default)s)",
+    )
+
     return parser
 
 
@@ -127,6 +143,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_estimate(args)
     if args.command == "verify":
         return _cmd_verify(args)
+    if args.command == "build":
+        return _cmd_build(args)
     parser.error(f"unknown command {args.command!r}")
     return EXIT_USAGE
 
@@ -310,6 +328,37 @@ def _cmd_verify(args: argparse.Namespace) -> int:
     if report.has_failure:
         return EXIT_ERROR
     return EXIT_ERROR  # not-run is not a pass (§14: never claim an unrun proof)
+def _cmd_build(args: argparse.Namespace) -> int:
+    from gatepack.build import run_build
+
+    try:
+        result, paths = run_build(
+            args.design,
+            args.library,
+            out_dir=args.out,
+            mapped_json=args.mapped,
+            spare_leakage_weight=args.spare_weight,
+        )
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    except (
+        AsyncRefused,
+        CompileError,
+        parts_mod.PartError,
+        LibertyError,
+        VccIncompatibleError,
+        OSError,
+    ) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    s = result.packed_stats
+    print(f"packed: {s.package_count} package(s), {s.spare_count} spare gate(s), "
+          f"pack_cost {s.pack_cost:g}")
+    for name, path in sorted(paths.items()):
+        print(f"wrote {path}")
+    return EXIT_OK
 
 
 if __name__ == "__main__":
