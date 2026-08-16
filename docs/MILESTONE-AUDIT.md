@@ -18,7 +18,7 @@ tool closes, the only evidence that counts is that tool closing.
 | M6 | sby discharges invariants/reachability/liveness; covers guard vacuity | **met** (2026-08-16) |
 | M8 | CNT4 + SUPERVISOR + tie-off; shared behavioural models | **met** (2026-08-16) — a wrong M-cell model now fails equivalence |
 | M9 | `pack_cost`; spare avoidance; deterministic; override works | **met** (2026-08-16) |
-| M10 | KiCad import clean; SCOAP delta; stuck-at classification | **partial** — analysis met, KiCad import unverified |
+| M10 | ~~KiCad import clean~~; SCOAP delta; stuck-at classification | **met** (2026-08-16) for the analysis half; KiCad import **descoped** from v0.1.0 |
 | M11a | Two clean builds hash-identical | **met** (2026-08-16) |
 | M11b | Provenance coverage measured and reported on every golden | **met** (2026-08-16) |
 | M12 | Project opens; core invoked; §5.2 posture verified | **met** |
@@ -196,7 +196,7 @@ pending citation, marked as such in `74aup.refs.md` — a wrong `gates_per_pkg`
 yields a netlist that cannot be built, which is a worse failure than a wrong
 tPD, so it is called out separately there.
 
-## M10 — not met
+## M10 — met for v0.1.0, with the KiCad import criterion descoped
 
 **The analysis half is now met.** `scoap.py` and `faults.py` exist and run on a
 real netlist; the report carries a SCOAP delta table, an unobservable-net list,
@@ -218,7 +218,25 @@ port. Unobservable nets went from 24 (including every output) to 1
 The delegated agent stated plainly that it had never run against a real
 netlist. It was right to, and that is exactly where the defect was.
 
-"KiCad import clean" has never been tested by importing anything into KiCad.
+**"KiCad import clean" is descoped from v0.1.0** (decision 2026-08-16).
+
+It has never been tested by importing anything into KiCad, and it cannot be
+tested here: it needs a human with KiCad installed, opening the emitted netlist
+and confirming that power symbols and no-connects survive. Rather than carry a
+milestone open indefinitely on a criterion no automated check can close, the
+criterion is removed from the v0.1.0 exit set and the emitter ships with its
+status stated.
+
+What this does **not** mean: it is not a claim that the import works. The
+emitter is exercised by unit and golden tests against its own output format,
+which establishes that it emits what it intends to emit, and nothing more.
+Whether KiCad accepts it is unverified, and the release documentation says so
+in those words.
+
+The check to reinstate when someone has KiCad: import
+`out/netlist.net` from a showcase build, confirm every component lands with its
+footprint, confirm power symbols and no-connect flags survive, and diff the
+resulting refdes set against `out/refdes.json`.
 That needs a human with KiCad in front of them, and should be recorded as an
 unverified claim until someone does it.
 

@@ -74,10 +74,15 @@ walkthrough from specification to BOM is in `docs/worked-example.md`.
 
 `docs/MILESTONE-AUDIT.md` is the honest status of every milestone, checked by
 running things rather than by counting tests. Read it before relying on
-anything here. Two things remain open, both recorded there: "KiCad import
-clean" has never been tested by importing anything into KiCad (M10), and
-installers build **unsigned** until a maintainer supplies signing identities
-(M18).
+anything here.
+
+**The KiCad netlist is emitted but its import has never been verified.** No
+check in this project can close that — it needs a human with KiCad opening the
+file and confirming power symbols and no-connect flags survive — so the
+criterion is descoped from v0.1.0 rather than left open indefinitely. The
+emitter's tests establish that it emits what it intends to emit, and nothing
+about whether KiCad accepts it. Treat the netlist as unverified output until
+you have imported one yourself.
 
 This project records what it has *measured* rather than what it assumes.
 `docs/M0-FINDINGS.md` and `docs/M6-FINDINGS.md` hold results from real Yosys and

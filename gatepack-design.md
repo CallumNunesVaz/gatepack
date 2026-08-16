@@ -149,6 +149,15 @@ conflicts found. Rejected: `tinylogic` (onsemi/Fairchild trademark),
 EPL-2.0 (elkjs) is weak-copyleft at file scope, consumed unmodified as a
 library, so it does not constrain the GPL-3.0 choice.
 
+**[M10-1] Descoped from v0.1.0 on 2026-08-16.** "KiCad import clean" cannot be
+closed by any check this project can run: it requires a human with KiCad opening
+the emitted netlist and confirming power symbols and no-connect flags survive.
+Carrying a milestone open indefinitely on a criterion no automated test can
+discharge is worse than stating the limit, so the criterion leaves the v0.1.0
+exit set. The emitter still ships, and its tests establish that it emits what it
+intends to emit — not that KiCad accepts it. See `docs/MILESTONE-AUDIT.md` for
+the check to reinstate when someone has KiCad.
+
 **[M18-1] Measured 2026-08-16, and this table was wrong — since resolved.** The full installed
 npm tree carries **two** copies of elkjs: the declared 0.9.3 at EPL-2.0, and
 `netlistsvg`'s own bundled `elkjs@0.3.0` at **EPL-1.0**. The paragraph above
@@ -1640,7 +1649,7 @@ visible rather than quietly absorbed.
 | ~~M7~~ | ~~AsynchronousBackend~~ | **Deferred to v0.2** (§7.3). v0.1.0 detects and refuses. | 8 d | **0 d** |
 | M8 | M-cell and S-cell libraries | CNT4 + SUPERVISOR + tie-off only (§23.2); shared behavioural models | 4 d | 4 d |
 | M9 | C5 packer | `pack_cost` reported; spare avoidance; deterministic; override works | 4 d | **9 d** |
-| M10 | C6 emitters + C7 analysis + C8 report | KiCad import clean incl. power symbols and no-connects; SCOAP delta; stuck-at classification; refdes delta | 6 d | **8 d** |
+| M10 | C6 emitters + C7 analysis + C8 report | ~~KiCad import clean incl. power symbols and no-connects~~ **[M10-1]**; SCOAP delta; stuck-at classification; refdes delta | 6 d | **8 d** |
 | M11a | CI, reproducibility, licence audit | Two clean builds hash-identical | — | 2 d |
 | M11b | **Provenance map** | Coverage measured and reported on every golden; partial links explicit | — | **6 d** |
 
