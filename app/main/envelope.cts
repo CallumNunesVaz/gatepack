@@ -82,6 +82,7 @@ export const BomLineSchema = z.object({
   refdes: z.array(z.string()),
   tier: z.string(),
   singleSourced: z.boolean(),
+  gatesPerPackage: z.number(),
 });
 
 export const MetricSchema = z.object({

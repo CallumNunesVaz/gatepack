@@ -196,6 +196,9 @@ def bomline(row) -> dict:
         # manufacturers only, exactly as api.ts defines it (equivalents are not
         # part of the definition).
         "singleSourced": len(manufacturers) < 2,
+        # How many gates this package holds. The packing view needs it to know
+        # whether grouping can achieve anything, instead of hardcoding a claim.
+        "gatesPerPackage": row.gates_per_pkg,
     }
 
 

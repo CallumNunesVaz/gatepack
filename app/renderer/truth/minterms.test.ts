@@ -22,6 +22,7 @@ function model(partial: Partial<DesignModel>): DesignModel {
     macros: [],
     fundamentalMode: null,
     constraints: { vcc: 3.3 },
+    packing: { forceGroups: [] },
     ...partial,
   };
 }

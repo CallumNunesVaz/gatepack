@@ -131,6 +131,17 @@ export interface BomLine {
   tier: string;
   /** §C13: a single-sourced part gets a hard visual marker. */
   singleSourced: boolean;
+  /**
+   * Gates this package holds.
+   *
+   * The packing view needs it to know whether grouping can achieve anything:
+   * with a one-gate-per-package library, `packed === unpacked` by construction
+   * and a spare gate cannot exist. Derive that from this field — never
+   * hardcode it, because the library gained multi-gate parts once already and
+   * a hardcoded "grouping is inert" note became a false statement about the
+   * user's own design.
+   */
+  gatesPerPackage: number;
 }
 
 /** §C14 dashboard metrics, each against its §10.2 constraint. */

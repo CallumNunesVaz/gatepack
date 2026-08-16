@@ -43,6 +43,12 @@ class BomRow:
     refdes: tuple[str, ...]
     tier: str
     unit_price: str = ""
+    #: Gates the package holds. Not a BOM column — it is carried so the
+    #: application can say whether grouping is possible at all rather than
+    #: asserting it. A one-gate-per-package library makes packing a no-op, and
+    #: a UI that claims otherwise (or hardcodes "inert" when it is not) is
+    #: telling the user something false about their own design.
+    gates_per_pkg: int = 1
 
 
 def _refdes_key(ref: str) -> tuple[str, int, str]:
@@ -73,6 +79,7 @@ def collect_bom(assigned: Sequence[tuple[str, PackageGroup]]) -> list[BomRow]:
                 "refdes": [],
                 "tier": group.part.tier,
                 "unit_price": "",
+                "gates_per_pkg": group.part.gates_per_pkg,
             }
             order.append(pn)
         by_part[pn]["refdes"].append(ref)
@@ -81,6 +88,7 @@ def collect_bom(assigned: Sequence[tuple[str, PackageGroup]]) -> list[BomRow]:
             part_number=pn,
             manufacturers=by_part[pn]["manufacturers"],
             equivalents=by_part[pn]["equivalents"],
+            gates_per_pkg=by_part[pn]["gates_per_pkg"],
             package=by_part[pn]["package"],
             quantity=len(by_part[pn]["refdes"]),
             refdes=tuple(sorted(by_part[pn]["refdes"], key=_refdes_key)),
