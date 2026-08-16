@@ -17,12 +17,16 @@ and the desktop app (Electron) are versioned together and released from one tree
   notarisation credentials exist in the tree, and none are fabricated. Until a
   maintainer supplies them, macOS/Windows builds are unsigned and will trip
   Gatekeeper / SmartScreen.
-- **The Python core does not ship inside the app yet.** `app/main/core.cts`
-  locates the core in this order: `GATEPACK_CORE`, then `app/resources/bin/gatepack`
-  (the §17-reserved location), then `.venv/bin/gatepack`, then `gatepack` on
-  `PATH`. Nothing populates `app/resources/bin/` today, so a packaged app finds
-  the core on the host (venv or PATH) or reports a visible error envelope. This
-  is the one thing M18 did **not** solve — see "The core" below.
+- **The Python core now ships inside the app.** `scripts/bundle_core.py` builds a
+  self-contained `gatepack` binary (PyInstaller onefile, ~14.5 MB — no host
+  Python, venv or gatepack required) at `app/resources/bin/gatepack`, the
+  §17-reserved location `app/main/core.cts` prefers. The bundler smoke-tests the
+  result under a scrubbed environment and refuses to install a stub; the
+  acceptance test (`tests/toolchain/test_core_bundle.py`) re-proves it, and a
+  packaging test greps the unpacked electron-builder tree for
+  `resources/resources/bin/gatepack` (present, executable, outside the asar).
+  This closes the one thing the earlier M18 round left open — see
+  `docs/BUILD-NOTES-m18-core.md`.
 
 ## What CI does
 
@@ -32,7 +36,9 @@ and the desktop app (Electron) are versioned together and released from one tree
   fails if any toolchain test *skips*.
 - `desktop-packaging` — `npm ci`, version-consistency check, licence audit over
   the *installed* npm tree (`--require-node-tree`), app build, and an unsigned
-  `electron-builder --linux dir` package.
+  `electron-builder --linux dir` package. It does **not** yet run
+  `scripts/bundle_core.py` (the core-bundle step is in the manual release
+  steps above); wiring it in is a follow-up.
 
 ## Cutting v0.1.0
 
@@ -48,15 +54,20 @@ and the desktop app (Electron) are versioned together and released from one tree
    installed tree and fails on any unrecognised licence. If it reports one, add
    the licence to `POLICY` in `scripts/licence_audit.py` *by name, after
    review* — never by defaulting it to compatible.
-4. **Build the app** from `app/`: `npm ci && npm run build`.
-5. **Package the targets**:
+4. **Build the bundled core**: `python3 scripts/bundle_core.py` (needs
+   PyInstaller in the build environment). It refuses to install a broken binary,
+   and the acceptance test (`tests/toolchain/test_core_bundle.py`) re-proves it.
+5. **Build the app** from `app/`: `npm ci && npm run build`.
+6. **Package the targets**:
    - Linux: `npx electron-builder --linux`
    - macOS: `npx electron-builder --mac` (on macOS, with signing set up — see
      below)
    - Windows: `npx electron-builder --win`
-6. **Smoke-test the packaged app** (at minimum `--linux dir` into `.gpout/` and
+7. **Smoke-test the packaged app** (at minimum `--linux dir` into `.gpout/` and
    launch the unpacked binary), as a check that the config is valid and the
-   renderer loads from the packaged layout.
+   renderer loads from the packaged layout — and confirm the unpacked tree
+   contains `resources/resources/bin/gatepack` (see
+   `tests/toolchain/test_packaging.py`).
 
 ## What a maintainer must supply before a real release
 
@@ -76,30 +87,45 @@ them empty.
   SmartScreen will warn.
 - **Linux deb `maintainer`** — `app/electron-builder.yml` uses a placeholder;
   set a real name and email.
-- **The bundled core** — see below.
+- **The native toolchain** — see below (the Python core is already bundled).
 
-## The core
+## The core and the native toolchain
 
-The design (§17) reserves `app/resources/bin/` for bundled binaries, and
-`app/main/core.cts` prefers a bundled binary there. Nothing produces that binary
-today. For v0.1.0 the honest statement is: **a self-contained app does not exist
-yet; the packaged app depends on the core being present on the host.**
+The Python core is bundled: `scripts/bundle_core.py` produces
+`app/resources/bin/gatepack`, `app/main/core.cts` prefers that location (both in
+the dev tree and, via `process.resourcesPath`, in the packaged app where
+electron-builder's `extraResources` lands it at
+`<package>/resources/resources/bin/gatepack`), and `app/electron-builder.yml`
+already carries the matching `extraResources` + `asarUnpack` entries. The
+bundler is a **build-only** step — PyInstaller must be installed in the build
+environment (`pip install pyinstaller`) but is deliberately not a runtime
+dependency in `pyproject.toml`.
 
-To close this, a future milestone must, in order of difficulty:
+The **native toolchain does not ship yet.** A packaged app with no host `yosys`/
+`sby`/`iverilog` still works for everything that does not need them, and fails
+legibly when it does: `gatepack build` without yosys reports
+`yosys is not on PATH (logic synthesis: …)`, and `gatepack doctor` reports each
+required tool as found (with version) or missing. Closing this means, per
+platform, a source-built yosys/sby plus iverilog (and z3 for sby, reached
+indirectly), each with its licence cleared (yosys ISC, sby ISC, iverilog
+GPL-2.0-or-later, z3 MIT — all compatible with the app's GPL-3.0-only; the
+chipsalliance espresso fork has **no top-level licence file** and is not needed
+until the async backend, so it is not a blocker today). See
+`docs/BUILD-NOTES-m18-core.md` for the full licence write-up.
 
-1. Build a standalone `gatepack` executable (PyInstaller or similar) plus the
-   native toolchain — yosys, sby, espresso, iverilog — for each platform. The
-   reproducible `Dockerfile` (pinned source builds) is the starting point; it
-   has not been built end to end (see `docs/BUILD-NOTES.md`).
-2. Place those under `app/resources/bin/`. `app/electron-builder.yml` already
-   carries `extraResources` + `asarUnpack` for `resources/bin/**`, so the moment
-   the directory exists it is copied and unpacked (native binaries must live
-   outside the asar to be executable).
+To finish bundling, a future milestone must, in order of difficulty:
+
+1. Build the native toolchain for each platform from the reproducible pinned
+   `Dockerfile` (yosys 0.23, sby, espresso, Debian-packaged iverilog/z3) — the
+   image has not been built end to end (see `docs/BUILD-NOTES.md`).
+2. Place those under `app/resources/bin/` alongside the Python core; the
+   `extraResources`/`asarUnpack` entries pick them up automatically.
 3. Re-verify §5.2's "bundled binaries hash-pinned and verified at launch"
    requirement, which currently has no implementation to pin against.
 
-Until then, the packaged app's core location falls through to host venv/PATH, and
-`GATEPACK_CORE` remains the integration/test override.
+Until then the packaged app's core location falls through to host toolchain for
+synthesis/verification, `GATEPACK_CORE` remains the integration/test override,
+and `gatepack doctor` is the honest status report.
 
 ## Known packaging inefficiencies (not bugs)
 
@@ -110,5 +136,6 @@ Until then, the packaged app's core location falls through to host venv/PATH, an
   packages (or bundling the main process) is a size optimisation, not a
   correctness fix, and is deliberately left for later.
 - **`electron-builder` logs** `file source doesn't exist … app/resources` when
-  `app/resources/` is absent. This is the reserved-binary directory not existing
-  yet, and is expected — not a misconfiguration.
+  `app/resources/` is absent. With the bundler run, `app/resources/bin/gatepack`
+  exists and the entry is live; the warning now means the core was not built
+  (run `python3 scripts/bundle_core.py`), not a misconfiguration.

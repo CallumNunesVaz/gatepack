@@ -48,7 +48,7 @@ class SynchronousVerify(VerificationStrategy):
     def _equivalence(self, config: VerifyConfig, runner: ToolRunner, state_count: int) -> CheckResult:
         if not runner.available("yosys"):
             return CheckResult(
-                "equivalence", CheckStatus.NOT_RUN, "yosys not installed", kind="equivalence"
+                "equivalence", CheckStatus.NOT_RUN, "yosys not installed (logic synthesis, §C3)", kind="equivalence"
             )
         # Primary run: the measured M0 recipe (equiv_simple + equiv_induct, bare).
         script = equiv_mod.build_equivalence_script(config)
@@ -79,7 +79,7 @@ class SynchronousVerify(VerificationStrategy):
             return CheckResult(
                 "exhaustive simulation",
                 CheckStatus.NOT_RUN,
-                "iverilog not installed",
+                "iverilog not installed (Icarus — compiles the simulation testbench)",
                 kind="simulation",
             )
 
@@ -118,7 +118,7 @@ class SynchronousVerify(VerificationStrategy):
                 CheckResult(
                     "mutation",
                     CheckStatus.NOT_RUN,
-                    "yosys + iverilog required",
+                    "yosys + iverilog required (synthesis + simulation)",
                     kind="mutation",
                 ),
                 [],

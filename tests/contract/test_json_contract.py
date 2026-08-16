@@ -113,7 +113,7 @@ def test_verify_json_envelope_and_four_way_status(tmp_path):
     prop = checks["property never_both"]
     assert prop["kind"] == "property"
     assert prop["status"] == "not_run"
-    assert prop["skippedReason"] == "sby not found on PATH"
+    assert prop["skippedReason"].startswith("sby not found on PATH")
     # every not_run check names a missing tool
     for check in data["checks"]:
         if check["status"] == "not_run":
@@ -130,7 +130,7 @@ def test_verify_properties_only_json(tmp_path):
     data = _envelope(proc)["data"]
     assert [c["name"] for c in data["checks"]] == ["property never_both"]
     assert data["checks"][0]["status"] == "not_run"
-    assert data["checks"][0]["skippedReason"] == "sby not found on PATH"
+    assert data["checks"][0]["skippedReason"].startswith("sby not found on PATH")
 
 
 _MAPPED = (
