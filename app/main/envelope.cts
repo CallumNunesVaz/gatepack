@@ -173,6 +173,48 @@ export const ProvenanceMapSchema = z.object({
   coverage: z.number(),
 });
 
+export const LibraryPartSchema = z.object({
+  cell: z.string(),
+  tier: z.string(),
+  family: z.string(),
+  partNumber: z.string(),
+  // `.nullable()` and not `.optional()`: the core always emits the key, and
+  // "no function"/"uncited"/"included" must be an explicit null rather than an
+  // absent field a reader could mistake for "not checked".
+  function: z.string().nullable(),
+  inputs: z.number(),
+  gatesPerPackage: z.number(),
+  package: z.string(),
+  manufacturers: z.array(z.string()),
+  equivalents: z.number(),
+  secondSourceCount: z.number(),
+  citation: z.string().nullable(),
+  unverified: z.boolean(),
+  excluded: z.boolean(),
+  exclusionReason: z.string().nullable(),
+});
+
+export const LibraryCheckResultSchema = z.object({
+  path: z.string(),
+  refsPath: z.string(),
+  refsPresent: z.boolean(),
+  cellCount: z.number(),
+  includedCount: z.number(),
+  excludedCount: z.number(),
+  missingCitations: z.array(z.string()),
+  parts: z.array(LibraryPartSchema),
+});
+
+export const ExamplesListSchema = z.object({
+  examples: z.array(
+    z.object({
+      name: z.string(),
+      summary: z.string(),
+      isShowcase: z.boolean(),
+    }),
+  ),
+});
+
 export const SimulationTableSchema = z.object({
   inputNames: z.array(z.string()),
   outputNames: z.array(z.string()),
@@ -225,6 +267,8 @@ export const SaveProjectAsSchema = z.object({ gpkPath: z.string().min(1) });
 export const WriteSpecSchema = z.object({ text: z.string() });
 export const InvokeTokenSchema = z.object({ token: z.string().min(1).optional() });
 export const CancelTokenSchema = z.object({ token: z.string().min(1) });
+export const CheckLibrarySchema = z.object({ path: z.string().min(1) });
+export const OpenExampleSchema = z.object({ name: z.string().min(1) });
 
 /* ------------------------------------------------------------------ */
 /* Parsing                                                             */
