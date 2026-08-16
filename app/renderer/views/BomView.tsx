@@ -1,31 +1,114 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApi } from '../bridge/context';
 import { useProject } from '../state/project';
 import { useRevisionedTask } from '../hooks/useRevisionedTask';
+import { setPackingForceGroups } from '../design/model';
+import { parseWriteJson } from '../mapped/sim';
+import {
+  buildGroups,
+  groupsToForceGroups,
+  regroup,
+  type PackingCell,
+} from '../components/packing';
+import { PackingCards } from '../components/PackingCards';
 import type { BuildResult } from '../../shared/api';
 
+/**
+ * C13 — packing and BOM.
+ *
+ * Package groupings as cards with drag-to-regroup; live (honestly inert) cost
+ * readout; the adjacent BOM table with a hard marker on single-sourced parts.
+ * Overrides persist to `design.yaml` via `packing.force_groups` — the text is
+ * authoritative, as everywhere else.
+ *
+ * Two honesty requirements are honoured here: grouping is inert for the shipped
+ * 74AUP library (every part is one gate per package), and a mixed-function
+ * regroup is refused with a message rather than silently dropped.
+ */
 export function BomView() {
-  const { revision } = useProject();
+  const { model, specText, setSpecText, revision } = useProject();
   const api = useApi();
-  const { state, run, isStale } = useRevisionedTask<BuildResult>(revision, (t) => api.build(t));
+  const build = useRevisionedTask<BuildResult>(revision, (t) => api.build(t));
+
+  const [cells, setCells] = useState<PackingCell[] | null>(null);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const [netlistVersion, setNetlistVersion] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.mappedNetlist().then((env) => {
+      if (cancelled || !env.ok) return;
+      const parsed = parseWriteJson(env.data);
+      if (parsed.top === '') {
+        setCells(null);
+      } else {
+        setCells(parsed.cells.map((c) => ({ name: c.name, func: c.type })));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, netlistVersion]);
+
+  // The mapped netlist only exists after a build; refetch once one lands.
+  useEffect(() => {
+    if (build.state.status === 'success') setNetlistVersion((v) => v + 1);
+  }, [build.state.status]);
+
+  const forceGroups = model?.packing.forceGroups ?? [];
+  const groups = useMemo(
+    () => (cells ? buildGroups(cells, forceGroups) : []),
+    [cells, forceGroups],
+  );
+
+  const handleRegroup = useCallback(
+    (cellName: string, targetGroupId: string) => {
+      const result = regroup(groups, cellName, targetGroupId);
+      if (result.error) {
+        setRefusal(result.error);
+        return;
+      }
+      setRefusal(null);
+      const next = groupsToForceGroups(result.groups);
+      const { text } = setPackingForceGroups(specText, next);
+      setSpecText(text);
+    },
+    [groups, specText, setSpecText],
+  );
+
+  const data = build.state.status === 'success' ? build.state.data : null;
 
   return (
     <section className="pane" data-testid="bom-view">
       <header className="pane__header">
         <h2>Packing &amp; BOM</h2>
-        <button onClick={run} disabled={state.status === 'running'}>
-          {state.status === 'running' ? 'Building…' : 'Run build'}
+        <button onClick={build.run} disabled={build.state.status === 'running'}>
+          {build.state.status === 'running' ? 'Building…' : 'Run build'}
         </button>
       </header>
-      {isStale ? <div className="stale-note">Stale — the source has changed.</div> : null}
-      {state.status === 'success' && state.data ? (
-        <div>
-          <div className="stat-row">
+      {build.isStale ? <div className="stale-note">Stale — the source has changed.</div> : null}
+
+      {cells === null ? (
+        <p className="pane__empty">Run a build to see the mapped cells and BOM.</p>
+      ) : (
+        <PackingCards
+          groups={groups}
+          inert
+          refusal={refusal}
+          onRegroup={handleRegroup}
+          onDragStart={() => setRefusal(null)}
+        />
+      )}
+
+      {data ? (
+        <div className="bom">
+          <div className="stat-row" data-testid="packing-stats">
             <span>Packages</span>
-            <strong>{state.data.packageCount}</strong>
+            <strong>{data.packageCount}</strong>
             <span>Spares</span>
-            <strong>{state.data.spareCount}</strong>
+            <strong>{data.spareCount}</strong>
             <span>pack_cost</span>
-            <strong>{state.data.packCost}</strong>
+            <strong>{data.packCost}</strong>
           </div>
           <table className="data-table">
             <thead>
@@ -38,11 +121,19 @@ export function BomView() {
               </tr>
             </thead>
             <tbody>
-              {state.data.bom.map((line) => (
-                <tr key={line.partNumber} className={line.singleSourced ? 'row--single-sourced' : ''}>
+              {data.bom.map((line) => (
+                <tr
+                  key={line.partNumber}
+                  className={line.singleSourced ? 'row--single-sourced' : ''}
+                  data-single-sourced={line.singleSourced || undefined}
+                >
                   <td>
                     {line.partNumber}
-                    {line.singleSourced ? <span className="single-source-marker">SINGLE-SOURCE</span> : null}
+                    {line.singleSourced ? (
+                      <span className="single-source-marker" data-testid="single-source-marker">
+                        SINGLE-SOURCE
+                      </span>
+                    ) : null}
                   </td>
                   <td>{line.quantity}</td>
                   <td>{line.package}</td>
@@ -54,7 +145,6 @@ export function BomView() {
           </table>
         </div>
       ) : null}
-      {state.status === 'idle' ? <p className="pane__empty">Run a build to see the BOM.</p> : null}
     </section>
   );
 }

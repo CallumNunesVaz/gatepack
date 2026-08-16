@@ -82,6 +82,16 @@ export interface Constraints {
   maxStaticUa?: number;
 }
 
+/**
+ * §12 C5 packing overrides, persisted in `design.yaml` (§C13). Each group names
+ * mapped cells that must share a package. Mirrors `schema.py` `Packing`; the
+ * packer still refuses a mixed-function group, so the renderer enforces the same
+ * rule client-side before writing.
+ */
+export interface Packing {
+  forceGroups: string[][];
+}
+
 export interface DesignModel {
   name: string;
   timingModel: 'synchronous' | 'asynchronous';
@@ -101,6 +111,7 @@ export interface DesignModel {
   macros: MacroSpec[];
   fundamentalMode: FundamentalMode | null;
   constraints: Constraints;
+  packing: Packing;
 }
 
 export interface ParseOutcome {
@@ -315,6 +326,15 @@ export function parseDesignText(text: string): ParseOutcome {
   const maxStaticUa = asNumber(cRaw['max_static_ua']);
   if (maxStaticUa !== null) constraints.maxStaticUa = maxStaticUa;
 
+  const pRaw = asDict(root['packing']) ?? {};
+  const forceGroups: string[][] = [];
+  for (const item of asList(pRaw['force_groups']) ?? []) {
+    const names = (asList(item) ?? [])
+      .map((s) => asString(s))
+      .filter((s): s is string => s !== null);
+    if (names.length > 0) forceGroups.push(names);
+  }
+
   const model: DesignModel = {
     name,
     timingModel,
@@ -334,6 +354,7 @@ export function parseDesignText(text: string): ParseOutcome {
     macros,
     fundamentalMode,
     constraints,
+    packing: { forceGroups },
   };
 
   validateStructure(model, diagnostics);
@@ -628,7 +649,15 @@ export function modelToYaml(model: DesignModel): string {
   if (model.fundamentalMode) {
     root.fundamental_mode = { mutually_exclusive: model.fundamentalMode.mutuallyExclusive };
   }
+  if (model.packing.forceGroups.length > 0) {
+    root.packing = { force_groups: model.packing.forceGroups.map((g) => [...g]) };
+  }
   return serializeDocument(root);
+}
+
+/** §C13: replace the persisted packing overrides (force_groups) in the text. */
+export function setPackingForceGroups(text: string, forceGroups: string[][]): EditOutcome {
+  return setField(text, 'packing', { force_groups: forceGroups.map((g) => [...g]) });
 }
 
 function constraintsToYaml(c: Constraints): Record<string, YValue> {
