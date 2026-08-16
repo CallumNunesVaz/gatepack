@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ProvenanceMap, SimulationTable } from '../../shared/api';
+import type { PackedView, ProvenanceMap, SimulationTable, VerifyResult } from '../../shared/api';
 import { parseDesignText } from '../design/model';
 import type { ParsedNetlist } from '../mapped/sim';
 import {
@@ -61,6 +61,8 @@ function ctx(overrides: Partial<LinkContext> = {}): LinkContext {
     provenance: { entries: [], coverage: 0 },
     netlist: null,
     simulation: null,
+    packed: null,
+    verify: null,
     ...overrides,
   };
 }
@@ -214,5 +216,124 @@ describe('resolveSelection — divergence', () => {
     const h = resolveSelection({ kind: 'cell', name: '$and' }, c);
     expect(h.minterms).toEqual([0, 1, 2, 3]);
     expect(h.cells).toEqual(['$and']);
+  });
+});
+
+function packedView(): PackedView {
+  return {
+    packages: [
+      {
+        refdes: 'U1',
+        partNumber: '74AUP1G02',
+        // STABLE cone-hash names — what `packing.force_groups` records, and
+        // deliberately NOT the mapped-netlist instance names the schematic and
+        // provenance map are keyed by.
+        cells: ['NOR2__a1b2c3', 'NOR2__d4e5f6'],
+        instanceCells: ['g0', 'g1'],
+        capacity: 2,
+        spare: 0,
+        rationale: '',
+      },
+      {
+        refdes: 'U2',
+        partNumber: '74AUP1G00',
+        cells: ['NAND2__99aabb'],
+        instanceCells: ['g2'],
+        capacity: 1,
+        spare: 0,
+        rationale: '',
+      },
+    ],
+  };
+}
+
+function verifyResult(): VerifyResult {
+  return {
+    checks: [
+      {
+        name: 'property p1',
+        kind: 'property',
+        status: 'failed',
+        durationMs: 1,
+        counterexample: {
+          steps: [{ state_A: '1' }, { state_B: '1' }],
+          pointers: ['design.yaml:5:states', 'design.yaml:12:properties'],
+        },
+      },
+      {
+        name: 'property p2',
+        kind: 'property',
+        status: 'passed',
+        durationMs: 1,
+      },
+    ],
+    allPassed: false,
+  };
+}
+
+describe('resolveSelection — package <-> cell', () => {
+  it('a package highlights exactly its instance cells (never its stable names)', () => {
+    const c = ctx({ packed: packedView() });
+    const h = resolveSelection({ kind: 'package', refdes: 'U1' }, c);
+    expect(h.cells).toEqual(['g0', 'g1']);
+    expect(h.packages).toEqual(['U1']);
+    // The name-space rule: a package's `cells` are STABLE names; a highlight
+    // set must carry only the instance names the netlist/provenance use.
+    expect(h.cells).not.toContain('NOR2__a1b2c3');
+    expect(h.cells).not.toContain('NOR2__d4e5f6');
+  });
+
+  it('a gate selects the package that holds it (the reverse direction)', () => {
+    const c = ctx({ packed: packedView() });
+    const h = resolveSelection({ kind: 'cell', name: 'g2' }, c);
+    expect(h.packages).toEqual(['U2']);
+  });
+
+  it('an unknown refdes is an honest empty set, not a fabricated one', () => {
+    const c = ctx({ packed: packedView() });
+    const h = resolveSelection({ kind: 'package', refdes: 'U99' }, c);
+    expect(h.cells).toEqual([]);
+    expect(h.packages).toEqual(['U99']);
+  });
+});
+
+describe('resolveSelection — property / counterexample step', () => {
+  const c = () =>
+    ctx({
+      provenance: {
+        entries: [{ pointer: 'design.yaml:5:states', nets: ['n1'], cells: ['$dff'], confidence: 'exact' }],
+        coverage: 0,
+      },
+      verify: verifyResult(),
+    });
+
+  it('a failing property highlights the constructs its counterexample pointers name', () => {
+    const h = resolveSelection({ kind: 'property', name: 'p1' }, c());
+    expect(h.pointers).toEqual(['design.yaml:12:properties', 'design.yaml:5:states']);
+    expect(h.states).toEqual(['A', 'B']);
+    expect(h.nets).toEqual(['n1']);
+    expect(h.cells).toEqual(['$dff']);
+    expect(h.confidence).toBe('exact');
+  });
+
+  it('a counterexample step highlights the same constructs its pointers name', () => {
+    const h = resolveSelection({ kind: 'cexStep', property: 'p1', cycle: 1 }, c());
+    expect(h.states).toEqual(['A', 'B']);
+    expect(h.nets).toEqual(['n1']);
+    expect(h.cells).toEqual(['$dff']);
+  });
+
+  it('a passed property (no counterexample) highlights nothing and says so', () => {
+    const h = resolveSelection({ kind: 'property', name: 'p2' }, c());
+    expect(h.states).toEqual([]);
+    expect(h.nets).toEqual([]);
+    expect(h.cells).toEqual([]);
+    expect(h.confidence).toBe('none');
+  });
+
+  it('a property that has not been verified is an honest empty set', () => {
+    const h = resolveSelection({ kind: 'property', name: 'p3' }, c());
+    expect(h.states).toEqual([]);
+    expect(h.confidence).toBe('none');
   });
 });

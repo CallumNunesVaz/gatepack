@@ -4,6 +4,8 @@ import { useProject } from '../state/project';
 import { useRevisionedTask } from '../hooks/useRevisionedTask';
 import { setPackingForceGroups } from '../design/model';
 import { parseWriteJson } from '../mapped/sim';
+import { useLinkContext } from '../selection/useLinkContext';
+import { useHighlights, useSelection } from '../selection/bus';
 import {
   buildGroups,
   groupsToForceGroups,
@@ -29,6 +31,9 @@ export function BomView() {
   const { model, specText, setSpecText, revision } = useProject();
   const api = useApi();
   const build = useRevisionedTask<BuildResult>(revision, (t) => api.build(t));
+  const ctx = useLinkContext();
+  const { setSelection } = useSelection();
+  const highlights = useHighlights(ctx);
 
   const [cells, setCells] = useState<PackingCell[] | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -173,7 +178,20 @@ export function BomView() {
                   </td>
                   <td>{line.quantity}</td>
                   <td>{line.package}</td>
-                  <td>{line.refdes.join(', ')}</td>
+                  <td>
+                    {line.refdes.map((ref) => (
+                      <button
+                        key={ref}
+                        type="button"
+                        className={highlights.packages.includes(ref) ? 'refdes refdes--highlight' : 'refdes'}
+                        data-refdes={ref}
+                        data-highlight={highlights.packages.includes(ref) || undefined}
+                        onClick={() => setSelection({ kind: 'package', refdes: ref })}
+                      >
+                        {ref}
+                      </button>
+                    ))}
+                  </td>
                   <td>{line.manufacturers.join('; ')}</td>
                 </tr>
               ))}
