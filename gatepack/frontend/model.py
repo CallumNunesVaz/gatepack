@@ -46,6 +46,7 @@ class CompiledDesign:
     expression_asts: dict[str, expr_mod.Expr]
     transition_guards: list[expr_mod.Expr]  # expanded to inputs; parallel to transitions
     output_asts: dict[str, expr_mod.Expr]
+    macro_enable_asts: list[expr_mod.Expr | None]  # parallel to design.macros
 
     input_names: list[str]
     input_sync: dict[str, bool]
@@ -174,6 +175,7 @@ def compile_design(
         output_asts[name] = ast
 
     # --- macros ------------------------------------------------------------------
+    macro_enable_asts: list[expr_mod.Expr | None] = []
     for macro in design.macros:
         if macro.cell not in M_CELL_FLOP_COUNTS:
             raise CompileError(
@@ -196,6 +198,15 @@ def compile_design(
                     f"macro {macro.instance!r} enable references unknown states "
                     f"{sorted(bad_states)!r}"
                 )
+            _check_expression_references(
+                f"macro {macro.instance!r} enable",
+                ast,
+                input_set,
+                set(design.expressions),
+            )
+            macro_enable_asts.append(ast)
+        else:
+            macro_enable_asts.append(None)
 
     # --- reachability ------------------------------------------------------------
     reachable = _reachable(design.states, design.initial, transition_pairs)
@@ -254,6 +265,7 @@ def compile_design(
         expression_asts=expression_asts,
         transition_guards=transition_guards,
         output_asts=output_asts,
+        macro_enable_asts=macro_enable_asts,
         input_names=input_names,
         input_sync=input_sync,
         output_names=output_names,

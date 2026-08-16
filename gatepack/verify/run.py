@@ -25,6 +25,7 @@ from gatepack.infra import (
 from gatepack.liberty.generator import generate as generate_liberty
 from gatepack.liberty.sim import generate as generate_sim
 from gatepack.macros import load_models as load_m_cell_models
+from gatepack.macros import load_spec_models as load_m_cell_spec_models
 from gatepack.parts import Part, load_parts
 from gatepack.synth.base import SynthConfig
 from gatepack.synth.synchronous import SynchronousBackend
@@ -175,6 +176,7 @@ def run_verify(
 
     cells_lib = build_dir / "cells.lib"
     cells_sim_v = build_dir / "cells_sim.v"
+    cells_spec_v = build_dir / "cells_spec.v"
     premap_json = build_dir / "premap.json"
     mapped_json = build_dir / "mapped.json"
     mapped_v = build_dir / "mapped.v"
@@ -184,6 +186,7 @@ def run_verify(
 
     cells_lib.write_text(liberty.text)
     cells_sim_v.write_text(sim_text)
+    cells_spec_v.write_text(load_m_cell_spec_models())
 
     flop_cells = tuple(sorted(p.cell for p in parts if p.tier == "F" and p.cell in liberty.cells))
     synth_config = SynthConfig(
@@ -207,6 +210,7 @@ def run_verify(
         properties_sv=str(properties_sv),
         cells_lib=str(cells_lib),
         cells_sim_v=str(cells_sim_v),
+        cells_spec_v=str(cells_spec_v),
         premap_json=str(premap_json),
         mapped_json=str(mapped_json),
         mapped_v=str(mapped_v),
@@ -242,6 +246,7 @@ def run_verify(
             "properties_sv": properties_sv,
             "cells_lib": cells_lib,
             "cells_sim": cells_sim_v,
+            "cells_spec": cells_spec_v,
             "yosys_script": yosys_script_path,
             "manifest": manifest_path,
         },
