@@ -23,7 +23,7 @@ tool closes, the only evidence that counts is that tool closing.
 | M11b | Provenance coverage measured and reported on every golden | **met** (2026-08-16) |
 | M12 | Project opens; core invoked; §5.2 posture verified | **met** |
 | M13–M16 | Spec editor, truth table, schematic, linked selection | **unaudited** |
-| M17 | C13 packing override, C14 dashboard, C15 tri-state | **met** (2026-08-16) |
+| M17 | C13 packing override, C14 dashboard, C15 tri-state | **partial** — override does not round-trip |
 | M18 | Signed installers; worked example; CI green | **partial** — packaging builds, licence defects open, core does not ship |
 
 ## M5 — met (2026-08-16)
@@ -234,7 +234,27 @@ the renderer, not by the renderer's 147 passing tests.
 
 Being audited now (`deepseek/gui2`).
 
-## M17 — met (2026-08-16)
+## M17 — partial
+
+**Corrected the same day it was marked met, which was premature.** The
+drag-to-regroup persists **instance** names into `packing.force_groups`, and
+the packer resolves that field against **stable** names — so every override the
+view writes is refused on the next build with "unknown cell".
+
+I added `BuildResult.stableCellNames` to the contract precisely so the renderer
+could translate, then marked the milestone met without checking that the
+renderer used it. It does not: `stableCellNames` appears nowhere in
+`app/renderer/` except a test fixture. Adding the mechanism is not the same as
+closing the loop, and that is the identical mistake this audit exists to catch
+in others.
+
+The delegation that built the view said as much in its own notes — "the cell
+list and grouping cards have only ever rendered against a hand-written
+`write_json` fixture, never a real `mapped.json` with the actual instance names
+the packer's `force_groups` would need". It was right, and I marked it met
+anyway.
+
+What *is* done:
 
 C13 renders package cards with drag-to-regroup persisting to
 `packing.force_groups` in `design.yaml`; C14 renders metrics against the
