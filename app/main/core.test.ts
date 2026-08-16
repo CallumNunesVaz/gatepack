@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { CancelRegistry, CancelledError } from './cancel.cjs';
 import { binaryName, locateCore, runEnvelope, spawnCore, type CoreLocation } from './core.cjs';
-import { CompileResultSchema } from './envelope.cjs';
+import { CompileResultSchema, VerifyResultSchema } from './envelope.cjs';
 
 const COMPILE_ENVELOPE = JSON.stringify({
   ok: true,
@@ -18,6 +18,36 @@ const COMPILE_ENVELOPE = JSON.stringify({
     stateCount: 3,
     encoding: 'one_hot',
     johnsonSuggestion: null,
+  },
+  warnings: [],
+});
+
+// A `verify` envelope as the real core emits it when the toolchain is absent:
+// `ok: true` (the command ran and this is its answer) but `allPassed: false`
+// with `not_run` checks naming the missing tool — and exit code 1, because the
+// answer is not all-green. This is the exact shape the renderer must receive.
+const VERIFY_NOT_RUN_ENVELOPE = JSON.stringify({
+  ok: true,
+  command: 'verify',
+  schema: 1,
+  data: {
+    allPassed: false,
+    checks: [
+      {
+        name: 'equivalence',
+        kind: 'equivalence',
+        status: 'not_run',
+        skippedReason: 'yosys not installed (logic synthesis, §C3)',
+        durationMs: 0,
+      },
+      {
+        name: 'exhaustive simulation',
+        kind: 'simulation',
+        status: 'not_run',
+        skippedReason: 'iverilog not installed (Icarus — compiles the simulation testbench)',
+        durationMs: 0,
+      },
+    ],
   },
   warnings: [],
 });
@@ -118,12 +148,41 @@ describe('runEnvelope', () => {
     if (env.ok) expect(env.data.flopCount).toBe(2);
   });
 
-  it('surfaces a non-zero exit that claimed ok as an error envelope', async () => {
-    const fake = writeFakeCore(tmp, `printf '%s\\n' '${COMPILE_ENVELOPE}'\nexit 1`);
+  it('passes a valid ok envelope through even when the core exits non-zero', async () => {
+    // `verify` legitimately exits 1 with `ok: true` when checks did not run or
+    // pass. The envelope is the answer; the exit code is the shell's all-green
+    // signal. Main must not discard it — the renderer needs the check list.
+    const fake = writeFakeCore(tmp, `printf '%s\\n' '${VERIFY_NOT_RUN_ENVELOPE}'\nexit 1`);
     const location: CoreLocation = { executable: fake, prefixArgs: [], source: 'test' };
-    const env = await runEnvelope(location, CompileResultSchema, 'compile', [], {});
+    const env = await runEnvelope(location, VerifyResultSchema, 'verify', [], {});
+    expect(env.ok).toBe(true);
+    if (env.ok) {
+      expect(env.data.allPassed).toBe(false);
+      expect(env.data.checks.some((c) => c.status === 'not_run')).toBe(true);
+    }
+  });
+
+  it('a non-zero exit with no envelope surfaces a visible error, never a silent empty result', async () => {
+    const fake = writeFakeCore(tmp, `exit 1`);
+    const location: CoreLocation = { executable: fake, prefixArgs: [], source: 'test' };
+    const env = await runEnvelope(location, VerifyResultSchema, 'verify', [], {});
     expect(env.ok).toBe(false);
-    if (!env.ok) expect(env.error.code).toBe('GP9004');
+    if (!env.ok) {
+      expect(env.error.code).toBe('GP9002');
+      expect(env.error.message).toContain('core exited 1');
+    }
+  });
+
+  it('a truncated envelope with a non-zero exit surfaces a visible error', async () => {
+    const truncated = '{"ok": true, "command": "verify", "schema": 1, "data": {"checks": [], "allPassed"';
+    const fake = writeFakeCore(tmp, `printf '%s' '${truncated}'\nexit 1`);
+    const location: CoreLocation = { executable: fake, prefixArgs: [], source: 'test' };
+    const env = await runEnvelope(location, VerifyResultSchema, 'verify', [], {});
+    expect(env.ok).toBe(false);
+    if (!env.ok) {
+      expect(env.error.code).toBe('GP9002');
+      expect(env.error.message).toContain('core exited 1');
+    }
   });
 
   it('rejects when the executable cannot be spawned', async () => {
