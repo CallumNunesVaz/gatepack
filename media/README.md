@@ -54,8 +54,14 @@ knowing before editing them, because both fail silently rather than loudly:
 - **`--` is illegal inside an XML comment.** A decorative `---- rule ----` in a
   comment makes the file unparseable.
 
-## Not yet wired up
+## Where these are used
 
-The application still uses its default icon. Wiring these into the Electron
-build (`app/electron-builder.yml` `icon:`, and the renderer favicon) is
-outstanding.
+| copy | consumer |
+|---|---|
+| `app/build/icon.png`, `app/build/icon.ico` | electron-builder, by its `buildResources` convention |
+| `app/renderer/public/favicon.{png,ico}` | the renderer window, via `index.html` |
+
+They are copies, not symlinks, because electron-builder and vite both expect
+real files in those locations. **If you change the mark, re-run
+`scripts/make_media.py` and copy the four files again.** Nothing checks that
+they are in sync, which is a gap worth closing if the mark changes often.

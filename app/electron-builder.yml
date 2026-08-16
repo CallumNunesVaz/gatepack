@@ -30,6 +30,9 @@ copyright: "GPL-3.0-or-later"
 directories:
   # Keep build artefacts out of app/dist (the compiled app lives there).
   output: ../.gpout/dist
+  # electron-builder takes the application icon from here by convention:
+  # build/icon.png (Linux/macOS) and build/icon.ico (Windows). Both are copies
+  # of the assets in media/ — see media/README.md for how they are generated.
   buildResources: build
 
 files:
