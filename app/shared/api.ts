@@ -155,6 +155,23 @@ export interface BomLine {
   gatesPerPackage: number;
 }
 
+/** §C12 packed layer — package boundaries drawn over the logical netlist. */
+export interface PackedView {
+  /** Yosys `write_json`, exactly as `mappedNetlist()` returns it. */
+  netlist: unknown;
+  packages: Array<{
+    refdes: string;
+    partNumber: string;
+    /** Stable cone-hash names — what `packing.force_groups` records. */
+    cells: string[];
+    /** Instance names in `netlist`, for hit-testing the rendered SVG. */
+    instanceCells: string[];
+    capacity: number;
+    spare: number;
+    rationale: string;
+  }>;
+}
+
 /** §C14 dashboard metrics, each against its §10.2 constraint. */
 export interface AnalysisSummary {
   metrics: Metric[];
@@ -278,6 +295,21 @@ export interface GatepackApi {
   simulate(token?: string): Promise<Envelope<SimulationTable>>;
   /** Yosys `write_json` output for C12/netlistsvg. */
   mappedNetlist(): Promise<Envelope<unknown>>;
+  /**
+   * §C12's packed layer: the same netlist, plus the package boundaries to draw
+   * around it.
+   *
+   * Deliberately not a second netlist. netlistsvg renders the logical netlist;
+   * the packages here are an overlay keyed by the cell names in it, so the
+   * renderer never holds two representations of one circuit that could
+   * disagree.
+   *
+   * `cells` are STABLE names; `instanceCells` are the mapped-netlist instance
+   * names the same package holds, because that is what the rendered netlist is
+   * keyed by. Both are given so the renderer never has to guess which space a
+   * name is in — confusing the two has caused four separate defects here.
+   */
+  packedNetlist(): Promise<Envelope<PackedView>>;
   /** Cancel an in-flight call started with this token (§16.1). */
   cancel(token: string): Promise<void>;
 
