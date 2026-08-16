@@ -9,7 +9,7 @@ capacitance and is not a budget.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Sequence
+from typing import Mapping, Sequence
 
 from gatepack.analysis.clock import TimingReport
 from gatepack.analysis.cpld import blockers_summary, cpld_alternative_flow
@@ -20,6 +20,7 @@ from gatepack.diagnostic import Diagnostic
 from gatepack.emit.bom import BomRow
 from gatepack.emit.refdes import RefdesDelta
 from gatepack.pack.packer import PackingStats
+from gatepack.provenance.coverage import CoverageReport
 
 
 @dataclass
@@ -39,6 +40,8 @@ class ReportInputs:
     cpld_blockers: Sequence[Diagnostic] = field(default_factory=list)
     scoap: ScoapReport | None = None
     faults: FaultReport | None = None
+    provenance: CoverageReport | None = None
+    cell_refdes: Mapping[str, str] | None = None
 
 
 def _fmt(value: float) -> str:
@@ -127,7 +130,7 @@ def emit_report(inp: ReportInputs) -> str:
         lines.append(f"- worst-case combinational depth: {t.combinational_depth} levels")
         lines.append(f"- cumulative tPD: {_fmt(t.cumulative_tpd_ns)} ns")
         if t.worst_path:
-            lines.append(f"- worst path: {' -> '.join(t.worst_path)}")
+            lines.append(f"- worst path: {_timing_path(t.worst_path, inp.cell_refdes)}")
         lines.append(f"- note: {t.note}")
         lines.append("")
     else:
@@ -146,6 +149,55 @@ def emit_report(inp: ReportInputs) -> str:
             lines.append("")
             for pkg_id, old, new in d.renumbered:
                 lines.append(f"  - {pkg_id}: {old} -> {new}")
+        lines.append("")
+
+    lines.append("## Provenance (§15.1, M11b)")
+    lines.append("")
+    if inp.provenance is not None:
+        p = inp.provenance
+        lines.append(
+            "_Measured from premap.json vs mapped.json. `exact` = the construct's "
+            "`gp_src` attribute survives into the final netlist; `inferred` = it "
+            "survived `abc` but was dropped by `opt_clean` (recovered from a "
+            "post-`abc`, pre-`opt_clean` capture, and not resolvable onto specific "
+            "gates — M0-FINDINGS §4a); `absent` = no link at all, reported by name "
+            "below rather than as a bare percentage._"
+        )
+        lines.append("")
+        lines.append("By carrier:")
+        lines.append("")
+        lines.append("| carrier | total | exact | inferred | absent |")
+        lines.append("|---|---|---|---|---|")
+        lines.append(_provenance_carrier_row("net", p.net))
+        lines.append(_provenance_carrier_row("cell", p.cell))
+        lines.append("")
+        lines.append("By construct kind:")
+        lines.append("")
+        lines.append("| kind | total | exact | inferred | absent |")
+        lines.append("|---|---|---|---|---|")
+        for kind in _provenance_kinds(p):
+            k = p.by_kind[kind]
+            lines.append(
+                f"| {kind} | {k.total} | {k.exact} | {k.inferred} | {k.absent} |"
+            )
+        lines.append("")
+        unlinked = _provenance_unlinked(p)
+        if unlinked:
+            lines.append(f"Constructs with no link: {', '.join(unlinked)}")
+        else:
+            lines.append("Constructs with no link: none.")
+        lines.append("")
+        lines.append(
+            f"_Aggregate coverage {_fmt(p.coverage * 100)}% of constructs linked; "
+            "the per-kind table above is the figure that matters — the aggregate "
+            "conceals a weak axis such as transitions at 2/5 (§20 M11b)._"
+        )
+        lines.append("")
+    else:
+        lines.append(
+            "- provenance not computed (no provenance map passed to the report "
+            "generator; premap.json/mapped.json required)."
+        )
         lines.append("")
 
     lines.append("## Testability (SCOAP, §13.1)")
@@ -226,3 +278,36 @@ def _row(label: str, stats: PackingStats) -> str:
         f"| {label} | {stats.package_count} | {stats.spare_count} | "
         f"{_fmt(stats.package_cost)} | {_fmt(stats.pack_cost)} |\n"
     )
+
+
+def _timing_path(
+    path: Sequence[str], cell_refdes: Mapping[str, str] | None
+) -> str:
+    """Render a worst-path cell list as refdes (``U6 -> U19 -> U2``) when known.
+
+    ABC's internal node names (``$abc$148$...``) are unreadable; the reader wants
+    refdes.  ``cell_refdes`` maps a mapped cell name to its reference designator
+    (from ``refdes.json``); where it is absent the raw name is kept rather than
+    guessed at.
+    """
+    if cell_refdes is None:
+        return " -> ".join(path)
+    return " -> ".join(cell_refdes.get(name, name) for name in path)
+
+
+def _provenance_carrier_row(label: str, cov) -> str:
+    return f"| {label} | {cov.total} | {cov.exact} | {cov.inferred} | {cov.absent} |"
+
+
+def _provenance_kinds(p: CoverageReport) -> tuple[str, ...]:
+    order = ("states", "transitions", "output_logic", "inputs", "reset")
+    present = [k for k in order if k in p.by_kind]
+    rest = sorted(k for k in p.by_kind if k not in order)
+    return tuple(present + rest)
+
+
+def _provenance_unlinked(p: CoverageReport) -> list[str]:
+    unlinked: list[str] = []
+    for kind in _provenance_kinds(p):
+        unlinked.extend(p.by_kind[kind].unlinked)
+    return unlinked

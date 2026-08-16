@@ -1,0 +1,729 @@
+{
+  "creator": "Yosys 0.23 (git sha1 7ce5011c24b)",
+  "modules": {
+    "traffic_light": {
+      "attributes": {
+        "gp_src": "traffic_light.yaml:1:name",
+        "top": "00000000000000000000000000000001",
+        "src": ".gpout/traffic_light/generated.v:5.1-114.10"
+      },
+      "ports": {
+        "clk": {
+          "direction": "input",
+          "bits": [ 2 ]
+        },
+        "rst_n": {
+          "direction": "input",
+          "bits": [ 3 ]
+        },
+        "go": {
+          "direction": "input",
+          "bits": [ 4 ]
+        },
+        "emergency": {
+          "direction": "input",
+          "bits": [ 5 ]
+        },
+        "red": {
+          "direction": "output",
+          "bits": [ 6 ]
+        },
+        "green": {
+          "direction": "output",
+          "bits": [ 7 ]
+        },
+        "amber": {
+          "direction": "output",
+          "bits": [ 8 ]
+        }
+      },
+      "cells": {
+        "$abc$139$auto$blifparse.cc:386:parse_blif$140": {
+          "hide_name": 1,
+          "type": "INV",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A": [ 9 ],
+            "Y": [ 10 ]
+          }
+        },
+        "$abc$139$auto$blifparse.cc:386:parse_blif$141": {
+          "hide_name": 1,
+          "type": "INV",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A": [ 6 ],
+            "Y": [ 11 ]
+          }
+        },
+        "$abc$139$auto$blifparse.cc:386:parse_blif$142": {
+          "hide_name": 1,
+          "type": "NOR2",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A": [ 12 ],
+            "B": [ 9 ],
+            "Y": [ 13 ]
+          }
+        },
+        "$abc$139$auto$blifparse.cc:386:parse_blif$143": {
+          "hide_name": 1,
+          "type": "OR2",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A": [ 12 ],
+            "B": [ 9 ],
+            "Y": [ 14 ]
+          }
+        },
+        "$abc$139$auto$blifparse.cc:386:parse_blif$144": {
+          "hide_name": 1,
+          "type": "AND2",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A": [ 7 ],
+            "B": [ 14 ],
+            "Y": [ 15 ]
+          }
+        },
+        "$abc$139$auto$blifparse.cc:386:parse_blif$145": {
+          "hide_name": 1,
+          "type": "NAND3",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A": [ 12 ],
+            "B": [ 10 ],
+            "C": [ 6 ],
+            "Y": [ 16 ]
+          }
+        },
+        "$abc$139$auto$blifparse.cc:386:parse_blif$146": {
+          "hide_name": 1,
+          "type": "NAND2",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A": [ 7 ],
+            "B": [ 13 ],
+            "Y": [ 17 ]
+          }
+        },
+        "$abc$139$auto$blifparse.cc:386:parse_blif$147": {
+          "hide_name": 1,
+          "type": "NAND2",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A": [ 16 ],
+            "B": [ 17 ],
+            "Y": [ 18 ]
+          }
+        },
+        "$abc$139$auto$blifparse.cc:386:parse_blif$148": {
+          "hide_name": 1,
+          "type": "NAND2",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A": [ 11 ],
+            "B": [ 7 ],
+            "Y": [ 19 ]
+          }
+        },
+        "$abc$139$auto$blifparse.cc:386:parse_blif$149": {
+          "hide_name": 1,
+          "type": "AND2",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A": [ 16 ],
+            "B": [ 19 ],
+            "Y": [ 20 ]
+          }
+        },
+        "$abc$139$auto$blifparse.cc:386:parse_blif$150": {
+          "hide_name": 1,
+          "type": "OR2",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A": [ 8 ],
+            "B": [ 20 ],
+            "Y": [ 21 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$130": {
+          "hide_name": 1,
+          "type": "DFF_R",
+          "parameters": {
+          },
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:89.3-99.6"
+          },
+          "connections": {
+            "CK": [ 2 ],
+            "D": [ 21 ],
+            "Q": [ 6 ],
+            "RST_N": [ 22 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$131": {
+          "hide_name": 1,
+          "type": "DFF_R",
+          "parameters": {
+          },
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:89.3-99.6"
+          },
+          "connections": {
+            "CK": [ 2 ],
+            "D": [ 18 ],
+            "Q": [ 7 ],
+            "RST_N": [ 22 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$132": {
+          "hide_name": 1,
+          "type": "DFF_R",
+          "parameters": {
+          },
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:89.3-99.6"
+          },
+          "connections": {
+            "CK": [ 2 ],
+            "D": [ 15 ],
+            "Q": [ 8 ],
+            "RST_N": [ 22 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$133": {
+          "hide_name": 1,
+          "type": "DFF_R",
+          "parameters": {
+          },
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:51.3-59.6"
+          },
+          "connections": {
+            "CK": [ 2 ],
+            "D": [ "1" ],
+            "Q": [ 23 ],
+            "RST_N": [ 3 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$134": {
+          "hide_name": 1,
+          "type": "DFF_R",
+          "parameters": {
+          },
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:51.3-59.6"
+          },
+          "connections": {
+            "CK": [ 2 ],
+            "D": [ 23 ],
+            "Q": [ 22 ],
+            "RST_N": [ 3 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$135": {
+          "hide_name": 1,
+          "type": "DFF_R",
+          "parameters": {
+          },
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:35.3-43.6"
+          },
+          "connections": {
+            "CK": [ 2 ],
+            "D": [ 5 ],
+            "Q": [ 24 ],
+            "RST_N": [ 3 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$136": {
+          "hide_name": 1,
+          "type": "DFF_R",
+          "parameters": {
+          },
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:35.3-43.6"
+          },
+          "connections": {
+            "CK": [ 2 ],
+            "D": [ 24 ],
+            "Q": [ 9 ],
+            "RST_N": [ 3 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$137": {
+          "hide_name": 1,
+          "type": "DFF_R",
+          "parameters": {
+          },
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:20.3-28.6"
+          },
+          "connections": {
+            "CK": [ 2 ],
+            "D": [ 4 ],
+            "Q": [ 25 ],
+            "RST_N": [ 3 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$138": {
+          "hide_name": 1,
+          "type": "DFF_R",
+          "parameters": {
+          },
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:20.3-28.6"
+          },
+          "connections": {
+            "CK": [ 2 ],
+            "D": [ 25 ],
+            "Q": [ 12 ],
+            "RST_N": [ 3 ]
+          }
+        }
+      },
+      "netnames": {
+        "$0\\state_RED[0:0]": {
+          "hide_name": 1,
+          "bits": [ 21 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:89.3-99.6"
+          }
+        },
+        "$abc$139$0\\state_RED[0:0]": {
+          "hide_name": 1,
+          "bits": [ 21 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:89.3-99.6"
+          }
+        },
+        "$abc$139$emergency_s2": {
+          "hide_name": 1,
+          "bits": [ 9 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:34.7-34.19"
+          }
+        },
+        "$abc$139$go_s2": {
+          "hide_name": 1,
+          "bits": [ 12 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:19.7-19.12"
+          }
+        },
+        "$abc$139$new_n10_": {
+          "hide_name": 1,
+          "bits": [ 11 ],
+          "attributes": {
+          }
+        },
+        "$abc$139$new_n11_": {
+          "hide_name": 1,
+          "bits": [ 13 ],
+          "attributes": {
+          }
+        },
+        "$abc$139$new_n12_": {
+          "hide_name": 1,
+          "bits": [ 14 ],
+          "attributes": {
+          }
+        },
+        "$abc$139$new_n14_": {
+          "hide_name": 1,
+          "bits": [ 16 ],
+          "attributes": {
+          }
+        },
+        "$abc$139$new_n15_": {
+          "hide_name": 1,
+          "bits": [ 17 ],
+          "attributes": {
+          }
+        },
+        "$abc$139$new_n17_": {
+          "hide_name": 1,
+          "bits": [ 19 ],
+          "attributes": {
+          }
+        },
+        "$abc$139$new_n18_": {
+          "hide_name": 1,
+          "bits": [ 20 ],
+          "attributes": {
+          }
+        },
+        "$abc$139$new_n9_": {
+          "hide_name": 1,
+          "bits": [ 10 ],
+          "attributes": {
+          }
+        },
+        "$abc$139$next_AMBER": {
+          "hide_name": 1,
+          "bits": [ 15 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:84.8-84.18"
+          }
+        },
+        "$abc$139$next_GREEN": {
+          "hide_name": 1,
+          "bits": [ 18 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:82.8-82.18"
+          }
+        },
+        "$abc$139$state_AMBER": {
+          "hide_name": 1,
+          "bits": [ 8 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:68.7-68.18"
+          }
+        },
+        "$abc$139$state_GREEN": {
+          "hide_name": 1,
+          "bits": [ 7 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:66.7-66.18"
+          }
+        },
+        "$abc$139$state_RED": {
+          "hide_name": 1,
+          "bits": [ 6 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:64.7-64.16"
+          }
+        },
+        "$and$.gpout/traffic_light/generated.v:70$8_Y": {
+          "hide_name": 1,
+          "bits": [ 26 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:70.28-70.49"
+          }
+        },
+        "$and$.gpout/traffic_light/generated.v:76$17_Y": {
+          "hide_name": 1,
+          "bits": [ 27 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:76.30-76.54"
+          }
+        },
+        "$not$.gpout/traffic_light/generated.v:70$7_Y": {
+          "hide_name": 1,
+          "bits": [ 28 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:70.36-70.48"
+          }
+        },
+        "$not$.gpout/traffic_light/generated.v:72$10_Y": {
+          "hide_name": 1,
+          "bits": [ 29 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:72.29-72.34"
+          }
+        },
+        "$or$.gpout/traffic_light/generated.v:72$11_Y": {
+          "hide_name": 1,
+          "bits": [ 30 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:72.28-72.49"
+          }
+        },
+        "$or$.gpout/traffic_light/generated.v:74$13_Y": {
+          "hide_name": 1,
+          "bits": [ 31 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:74.30-74.48"
+          }
+        },
+        "$or$.gpout/traffic_light/generated.v:86$22_Y": {
+          "hide_name": 1,
+          "bits": [ 32 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:86.24-86.47"
+          }
+        },
+        "amber": {
+          "hide_name": 0,
+          "bits": [ 8 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:12.15-12.20"
+          }
+        },
+        "amber_int": {
+          "hide_name": 0,
+          "bits": [ 8 ],
+          "attributes": {
+            "gp_src": "traffic_light.yaml:30:output_logic.amber",
+            "src": ".gpout/traffic_light/generated.v:108.8-108.17"
+          }
+        },
+        "clk": {
+          "hide_name": 0,
+          "bits": [ 2 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:6.14-6.17"
+          }
+        },
+        "emergency": {
+          "hide_name": 0,
+          "bits": [ 5 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:9.14-9.23"
+          }
+        },
+        "emergency_i": {
+          "hide_name": 0,
+          "bits": [ 9 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:44.8-44.19"
+          }
+        },
+        "emergency_s1": {
+          "hide_name": 0,
+          "bits": [ 24 ],
+          "attributes": {
+            "gp_src": "traffic_light.yaml:13:inputs[1]",
+            "src": ".gpout/traffic_light/generated.v:32.7-32.19"
+          }
+        },
+        "emergency_s2": {
+          "hide_name": 0,
+          "bits": [ 9 ],
+          "attributes": {
+            "gp_src": "traffic_light.yaml:13:inputs[1]",
+            "src": ".gpout/traffic_light/generated.v:34.7-34.19"
+          }
+        },
+        "go": {
+          "hide_name": 0,
+          "bits": [ 4 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:8.14-8.16"
+          }
+        },
+        "go_i": {
+          "hide_name": 0,
+          "bits": [ 12 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:29.8-29.12"
+          }
+        },
+        "go_s1": {
+          "hide_name": 0,
+          "bits": [ 25 ],
+          "attributes": {
+            "gp_src": "traffic_light.yaml:12:inputs[0]",
+            "src": ".gpout/traffic_light/generated.v:17.7-17.12"
+          }
+        },
+        "go_s2": {
+          "hide_name": 0,
+          "bits": [ 12 ],
+          "attributes": {
+            "gp_src": "traffic_light.yaml:12:inputs[0]",
+            "src": ".gpout/traffic_light/generated.v:19.7-19.12"
+          }
+        },
+        "green": {
+          "hide_name": 0,
+          "bits": [ 7 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:11.15-11.20"
+          }
+        },
+        "green_int": {
+          "hide_name": 0,
+          "bits": [ 7 ],
+          "attributes": {
+            "gp_src": "traffic_light.yaml:29:output_logic.green",
+            "src": ".gpout/traffic_light/generated.v:105.8-105.17"
+          }
+        },
+        "next_AMBER": {
+          "hide_name": 0,
+          "bits": [ 15 ],
+          "attributes": {
+            "gp_src": "traffic_light.yaml:19:states",
+            "src": ".gpout/traffic_light/generated.v:84.8-84.18"
+          }
+        },
+        "next_GREEN": {
+          "hide_name": 0,
+          "bits": [ 18 ],
+          "attributes": {
+            "gp_src": "traffic_light.yaml:19:states",
+            "src": ".gpout/traffic_light/generated.v:82.8-82.18"
+          }
+        },
+        "next_RED": {
+          "hide_name": 0,
+          "bits": [ 33 ],
+          "attributes": {
+            "gp_src": "traffic_light.yaml:19:states",
+            "src": ".gpout/traffic_light/generated.v:80.8-80.16"
+          }
+        },
+        "red": {
+          "hide_name": 0,
+          "bits": [ 6 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:10.15-10.18"
+          }
+        },
+        "red_int": {
+          "hide_name": 0,
+          "bits": [ 6 ],
+          "attributes": {
+            "gp_src": "traffic_light.yaml:28:output_logic.red",
+            "src": ".gpout/traffic_light/generated.v:102.8-102.15"
+          }
+        },
+        "rst_n": {
+          "hide_name": 0,
+          "bits": [ 3 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:7.14-7.19"
+          }
+        },
+        "rst_n_i": {
+          "hide_name": 0,
+          "bits": [ 22 ],
+          "attributes": {
+            "src": ".gpout/traffic_light/generated.v:60.8-60.15"
+          }
+        },
+        "rst_n_s1": {
+          "hide_name": 0,
+          "bits": [ 23 ],
+          "attributes": {
+            "gp_src": "traffic_light.yaml:5:reset",
+            "src": ".gpout/traffic_light/generated.v:48.7-48.15"
+          }
+        },
+        "rst_n_s2": {
+          "hide_name": 0,
+          "bits": [ 22 ],
+          "attributes": {
+            "gp_src": "traffic_light.yaml:5:reset",
+            "src": ".gpout/traffic_light/generated.v:50.7-50.15"
+          }
+        },
+        "set_feedback": {
+          "hide_name": 0,
+          "bits": [ 34 ],
+          "attributes": {
+            "gp_src": "traffic_light.yaml:19:states",
+            "src": ".gpout/traffic_light/generated.v:88.8-88.20"
+          }
+        },
+        "state_AMBER": {
+          "hide_name": 0,
+          "bits": [ 8 ],
+          "attributes": {
+            "gp_src": "traffic_light.yaml:19:states",
+            "src": ".gpout/traffic_light/generated.v:68.7-68.18"
+          }
+        },
+        "state_GREEN": {
+          "hide_name": 0,
+          "bits": [ 7 ],
+          "attributes": {
+            "gp_src": "traffic_light.yaml:19:states",
+            "src": ".gpout/traffic_light/generated.v:66.7-66.18"
+          }
+        },
+        "state_RED": {
+          "hide_name": 0,
+          "bits": [ 6 ],
+          "attributes": {
+            "gp_src": "traffic_light.yaml:19:states",
+            "src": ".gpout/traffic_light/generated.v:64.7-64.16"
+          }
+        },
+        "state_active": {
+          "hide_name": 0,
+          "bits": [ 35 ],
+          "attributes": {
+            "gp_src": "traffic_light.yaml:19:states",
+            "src": ".gpout/traffic_light/generated.v:86.8-86.20"
+          }
+        },
+        "t_0": {
+          "hide_name": 0,
+          "bits": [ 36 ],
+          "attributes": {
+            "gp_src": "traffic_light.yaml:22:transitions[0]",
+            "src": ".gpout/traffic_light/generated.v:70.8-70.11"
+          }
+        },
+        "t_1": {
+          "hide_name": 0,
+          "bits": [ 37 ],
+          "attributes": {
+            "gp_src": "traffic_light.yaml:23:transitions[1]",
+            "src": ".gpout/traffic_light/generated.v:72.8-72.11"
+          }
+        },
+        "t_2": {
+          "hide_name": 0,
+          "bits": [ 15 ],
+          "attributes": {
+            "gp_src": "traffic_light.yaml:24:transitions[2]",
+            "src": ".gpout/traffic_light/generated.v:74.8-74.11"
+          }
+        },
+        "t_3": {
+          "hide_name": 0,
+          "bits": [ 38 ],
+          "attributes": {
+            "gp_src": "traffic_light.yaml:25:transitions[3]",
+            "src": ".gpout/traffic_light/generated.v:76.8-76.11"
+          }
+        },
+        "t_4": {
+          "hide_name": 0,
+          "bits": [ 8 ],
+          "attributes": {
+            "gp_src": "traffic_light.yaml:26:transitions[4]",
+            "src": ".gpout/traffic_light/generated.v:78.8-78.11"
+          }
+        }
+      }
+    }
+  }
+}

@@ -99,3 +99,92 @@ def test_report_degrades_honestly_without_netlist():
     assert "fault analysis not computed (no mapped netlist)" in text
     # never zeros presented as a measurement
     assert "detected: 0" not in text
+
+
+def test_report_renders_provenance_section():
+    from pathlib import Path
+
+    from gatepack.provenance.capture import read_netlist_json
+    from gatepack.provenance.coverage import measure_coverage
+
+    fix = Path(__file__).resolve().parents[1] / "fixtures" / "provenance" / "traffic_light"
+    report = measure_coverage(
+        read_netlist_json(fix / "premap.json"),
+        read_netlist_json(fix / "mapped.json"),
+    )
+    inp = ReportInputs(
+        design="traffic_light",
+        timing_model="synchronous",
+        packed_stats=_stats(),
+        unpacked_stats=_stats(),
+        provenance=report,
+    )
+    text = emit_report(inp)
+    assert "## Provenance (§15.1, M11b)" in text
+    # carrier split, exact/inferred/absent, never a bare number
+    assert "| net | 22 | 16 | 0 | 6 |" in text
+    # construct-kind split names the weak axis
+    assert "| transitions | 5 | 2 | 0 | 3 |" in text
+    assert "| output_logic | 3 | 3 | 0 | 0 |" in text
+    # the unlinked constructs are named, not a percentage
+    assert "transitions[0]" in text
+    assert "transitions[3]" in text
+    # the assumption is stated inline
+    assert "survives into the final netlist" in text
+
+
+def test_report_provenance_degrades_honestly():
+    inp = ReportInputs(
+        design="demo",
+        timing_model="synchronous",
+        packed_stats=_stats(),
+        unpacked_stats=_stats(),
+    )
+    text = emit_report(inp)
+    assert "## Provenance (§15.1, M11b)" in text
+    assert "provenance not computed" in text
+
+
+def test_report_timing_worst_path_uses_refdes():
+    from gatepack.analysis.clock import TimingReport
+
+    abc_names = (
+        "$abc$148$auto$blifparse.cc:386:parse_blif$149",
+        "$abc$148$auto$blifparse.cc:386:parse_blif$150",
+    )
+    inp = ReportInputs(
+        design="demo",
+        timing_model="synchronous",
+        packed_stats=_stats(),
+        unpacked_stats=_stats(),
+        timing=TimingReport(
+            combinational_depth=2,
+            cumulative_tpd_ns=10.0,
+            worst_path=abc_names,
+            note="not STA",
+        ),
+        cell_refdes={abc_names[0]: "U6", abc_names[1]: "U19"},
+    )
+    text = emit_report(inp)
+    assert "worst path: U6 -> U19" in text
+    assert "$abc$" not in text.split("worst path:")[1].split("\n")[0]
+
+
+def test_report_timing_worst_path_falls_back_to_names():
+    from gatepack.analysis.clock import TimingReport
+
+    abc_names = ("$abc$149", "$abc$150")
+    inp = ReportInputs(
+        design="demo",
+        timing_model="synchronous",
+        packed_stats=_stats(),
+        unpacked_stats=_stats(),
+        timing=TimingReport(
+            combinational_depth=2,
+            cumulative_tpd_ns=10.0,
+            worst_path=abc_names,
+            note="not STA",
+        ),
+    )
+    text = emit_report(inp)
+    assert "worst path: $abc$149 -> $abc$150" in text
