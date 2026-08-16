@@ -406,6 +406,15 @@ Still open: **no signing credentials exist**, so macOS and Windows installers
 build unsigned and will trip Gatekeeper and SmartScreen. Nothing here fabricates
 an identity.
 
+Also open, found in review 2026-08-16: **`scripts/licence_audit.py` does not see
+the bundled core.** It audits the npm dependency tree only, and the app now
+ships a PyInstaller binary embedding CPython, pydantic and PyInstaller's
+bootloader. On inspection those are PSF, MIT, and GPL-2.0-with-bootloader-
+exception respectively — all GPL-3.0-compatible, so there is no known defect —
+but that is a hand check, and the audit exists precisely so licence questions
+are not settled by hand. The CI job would not notice a future dependency that
+is incompatible. Extending the audit over the bundle's contents is the fix.
+
 `electron-builder` config exists and `--linux dir` builds an app that launches.
 `scripts/version_check.py` prevents pyproject/package.json drift. The licence
 audit now walks the full installed npm tree instead of a 16-entry manifest, and
