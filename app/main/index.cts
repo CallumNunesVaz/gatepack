@@ -249,7 +249,12 @@ async function bootstrap(): Promise<void> {
 
   const appRoot = app.getAppPath();
   const projectRoot = path.dirname(appRoot);
-  const location = locateCore({ appRoot, projectRoot, env: process.env });
+  const location = locateCore({
+    appRoot,
+    projectRoot,
+    env: process.env,
+    resourcesPath: process.resourcesPath,
+  });
   const registry = new CancelRegistry();
   const sessionDir = sessionDirFromEnv() ?? app.getPath('userData');
   const examplesRoot = findExamplesRoot(appRoot, projectRoot);

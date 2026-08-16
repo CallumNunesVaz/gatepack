@@ -348,7 +348,10 @@ def _synthesize(compiled, parts, out: Path) -> tuple[MappedNetlist | None, str |
     from gatepack.synth.synchronous import SynchronousBackend
 
     if not shutil.which("yosys"):
-        return None, "yosys is not on PATH"
+        return None, (
+            "yosys is not on PATH (logic synthesis: behavioural Verilog -> "
+            "mapped netlist)"
+        )
 
     vcc = compiled.design.constraints.vcc
     liberty = generate_liberty(parts, library_name="gatepack", project_vcc=vcc)

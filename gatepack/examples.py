@@ -14,10 +14,25 @@ is fixed.
 from __future__ import annotations
 
 import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parent.parent / "examples"
+
+def _examples_root() -> Path:
+    """The ``examples/`` directory, wherever it actually lives.
+
+    From source it is the sibling of the ``gatepack`` package.  In a frozen
+    (PyInstaller) build the package is extracted into a scratch directory and
+    ``__file__`` points *there*, so the sibling lookup would silently miss the
+    examples; PyInstaller places collected data under ``sys._MEIPASS`` instead.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS) / "examples"
+    return Path(__file__).resolve().parent.parent / "examples"
+
+
+_ROOT = _examples_root()
 
 #: The project opened on first launch when there is no prior session (§18.1).
 SHOWCASE = "pelican"

@@ -43,6 +43,7 @@ from gatepack.project import (
     library_divergence,
     load_project,
 )
+from gatepack.doctor import run_doctor
 from gatepack.verify.base import CheckStatus
 from gatepack.verify.run import run_verify
 
@@ -250,6 +251,14 @@ def _build_parser() -> argparse.ArgumentParser:
     extract_p.add_argument("name", help="example name (see `gatepack examples list`)")
     extract_p.add_argument("-o", "--output", required=True, help="target directory")
 
+    doctor_p = sub.add_parser(
+        "doctor",
+        help="report external-toolchain and bundled-resource status",
+    )
+    doctor_p.add_argument(
+        "--json", action="store_true", help="emit one machine-readable JSON object to stdout"
+    )
+
     project = sub.add_parser(
         "project", help="single-file project format (§10.4)"
     )
@@ -299,6 +308,8 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_examples_list(args)
         if args.examples_command == "extract":
             return _cmd_examples_extract(args)
+    if args.command == "doctor":
+        return _cmd_doctor(args)
     if args.command == "project":
         if args.project_command == "bundle":
             return _cmd_project_bundle(args)
@@ -798,6 +809,35 @@ def _cmd_lib_check_gpk(gpk_path: Path) -> int:
         return EXIT_OK
     print(f"error: {detail}", file=sys.stderr)
     return EXIT_ERROR
+
+
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    """Report toolchain + bundled-resource status. A report, never a gate: a
+    missing tool is a visible "missing" entry and ``allToolsPresent: false``,
+    and the exit code stays 0 so the bundled core's self-test can always read a
+    valid envelope regardless of what the host has."""
+    payload = run_doctor()
+    if args.json:
+        _json_ok("doctor", payload)
+        return EXIT_OK
+
+    print(f"gatepack {payload['version']}")
+    for tool in payload["tools"]:
+        if tool["found"]:
+            version = f" ({tool['version']})" if tool.get("version") else ""
+            print(f"  {tool['name']:<10} found{version}")
+        else:
+            print(f"  {tool['name']:<10} MISSING")
+        print(f"            {tool['purpose']}")
+    resources = payload["resources"]
+    print(
+        "bundled resources: "
+        f"common_frontend.ys={'ok' if resources['commonFrontendYs'] else 'MISSING'}, "
+        f"M-cell models={'ok' if resources['mcellModels'] else 'MISSING'} "
+        f"({resources['mcellCount']})"
+    )
+    print(f"all required tools present: {payload['allToolsPresent']}")
+    return EXIT_OK
 
 
 def _cmd_examples_list(args: argparse.Namespace) -> int:

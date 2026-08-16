@@ -17,11 +17,12 @@
 #     excluded wholesale.  This is also what scripts/licence_audit.py audits as
 #     the "shipped" set.
 #   * `resources/bin/` — §17's reserved location for the bundled Python core and
-#     the native toolchain (yosys, sby, espresso, iverilog).  It does NOT exist
-#     yet and nothing here fabricates it: see docs/RELEASING.md "The core does
-#     not ship yet".  The extraResources/asarUnpack entries below become live
-#     the moment a maintainer populates `resources/`; until then they are inert
-#     because the source directory is absent.
+#     the native toolchain (yosys, sby, espresso, iverilog).  The Python core is
+#     produced by `scripts/bundle_core.py` (a PyInstaller onefile binary), which
+#     makes the extraResources/asarUnpack entries below live.  The native
+#     toolchain is NOT bundled yet — see docs/RELEASING.md "The native
+#     toolchain" — so a packaged app without a host toolchain still reports each
+#     missing tool legibly (`gatepack doctor`, `gatepack build`).
 
 appId: org.gatepack.desktop # placeholder — replace with the real reverse-DNS id
 productName: gatepack
@@ -127,8 +128,9 @@ asarUnpack:
   - resources/bin/**
 
 extraResources:
-  # Reserved for the bundled core + toolchain (§17: app/resources/bin/).
-  # Inert until a maintainer creates app/resources/.
+  # The bundled Python core (§17: app/resources/bin/gatepack), produced by
+  # scripts/bundle_core.py.  Native binaries must live outside the asar to be
+  # executable, hence the matching asarUnpack entry.
   - from: resources
     to: resources
     filter:

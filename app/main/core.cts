@@ -37,6 +37,13 @@ export interface LocateOptions {
   appRoot: string;
   projectRoot: string;
   env: NodeJS.ProcessEnv;
+  /**
+   * `process.resourcesPath` — the directory electron-builder's
+   * `extraResources` (from: resources, to: resources) lands in.  Only the
+   * packaged app sets this; in dev it is undefined and the source-tree
+   * location under `appRoot` is used instead.
+   */
+  resourcesPath?: string;
 }
 
 function isExecutable(p: string): boolean {
@@ -53,16 +60,27 @@ function isExecutable(p: string): boolean {
  * the caller must surface a visible error envelope when this returns null.
  */
 export function locateCore(opts: LocateOptions): CoreLocation | null {
-  const { appRoot, projectRoot, env } = opts;
+  const { appRoot, projectRoot, env, resourcesPath } = opts;
 
   const override = env.GATEPACK_CORE;
   if (override && override.length > 0 && isExecutable(override)) {
     return { executable: override, prefixArgs: [], source: 'GATEPACK_CORE' };
   }
 
-  const bundled = path.join(appRoot, 'resources', 'bin', 'gatepack');
-  if (isExecutable(bundled)) {
-    return { executable: bundled, prefixArgs: [], source: bundled };
+  // §17's reserved location for the bundled core, in two shapes:
+  //   * dev (appRoot is the app source dir): `app/resources/bin/gatepack`;
+  //   * packaged (extraResources `to: resources`): `<resources>/resources/bin/gatepack`.
+  // Both are checked because the packaged app's `appRoot` points inside the
+  // asar (`…/resources/app.asar`), so the source-tree shape cannot resolve
+  // there and the packaged shape does not exist in dev.
+  const bundledCandidates = [path.join(appRoot, 'resources', 'bin', 'gatepack')];
+  if (resourcesPath !== undefined && resourcesPath !== appRoot) {
+    bundledCandidates.push(path.join(resourcesPath, 'resources', 'bin', 'gatepack'));
+  }
+  for (const bundled of bundledCandidates) {
+    if (isExecutable(bundled)) {
+      return { executable: bundled, prefixArgs: [], source: bundled };
+    }
   }
 
   const venvScript = path.join(projectRoot, '.venv', 'bin', 'gatepack');

@@ -412,7 +412,7 @@ def test_run_properties_without_sby_is_not_run(tmp_path):
     ]
     for check in checks:
         assert check.status is CheckStatus.NOT_RUN
-        assert check.detail == "sby not found on PATH"
+        assert check.detail.startswith("sby not found on PATH")
         assert check.kind == "property"
 
 

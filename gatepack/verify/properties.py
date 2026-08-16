@@ -23,7 +23,8 @@ pure functions over strings, unit-tested against fixtures in the **measured**
 sby output format (docs/M6-FINDINGS.md §3–4), and the generated script has been
 run against real sby: the traffic-light mutex proves and the property-violating
 golden fails.  When ``sby`` is absent every property check is reported as
-``not_run`` with ``skippedReason: "sby not found on PATH"`` — visibly, never
+``not_run`` with ``skippedReason: "sby not found on PATH (SymbiYosys — runs the
+§11 formal property checks)"`` — visibly, never
 silently as a pass.
 """
 
@@ -49,7 +50,9 @@ from gatepack.verify.base import (
     VerifyConfig,
 )
 
-SBY_MISSING_REASON = "sby not found on PATH"
+SBY_MISSING_REASON = (
+    "sby not found on PATH (SymbiYosys — runs the §11 formal property checks)"
+)
 
 # §21.5: default k = max(2 * state count, 64).
 def default_depth(state_count: int) -> int:
@@ -450,7 +453,7 @@ def _combine_property(
     if assert_task is not None:
         ar = results.get(assert_task.label)
         if ar is None:
-            return CheckResult(name, CheckStatus.NOT_RUN, "sby not found on PATH", kind="property")
+            return CheckResult(name, CheckStatus.NOT_RUN, SBY_MISSING_REASON, kind="property")
         if ar.status == "failed":
             return CheckResult(name, CheckStatus.FAILED, ar.detail, kind="property")
         if ar.status == "bounded":

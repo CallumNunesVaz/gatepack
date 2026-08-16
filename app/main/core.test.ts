@@ -59,6 +59,25 @@ describe('locateCore', () => {
     expect(loc?.executable).toBe(fake);
     expect(loc?.source).toBe('GATEPACK_CORE');
   });
+
+  it('finds the bundled core at the packaged resources location', () => {
+    // extraResources `to: resources` lands the core at
+    // <resourcesPath>/resources/bin/gatepack in the packaged app.
+    const resourcesPath = path.join(tmp, 'resources');
+    const bundled = path.join(resourcesPath, 'resources', 'bin', 'gatepack');
+    fs.mkdirSync(path.dirname(bundled), { recursive: true });
+    fs.writeFileSync(bundled, '#!/bin/sh\nexit 0\n');
+    fs.chmodSync(bundled, 0o755);
+
+    const loc = locateCore({
+      appRoot: path.join(resourcesPath, 'app.asar'),
+      projectRoot: tmp,
+      env: { GATEPACK_CORE: undefined, PATH: '' },
+      resourcesPath,
+    });
+    expect(loc?.executable).toBe(bundled);
+    expect(loc?.source).toBe(bundled);
+  });
 });
 
 describe('runEnvelope', () => {
