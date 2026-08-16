@@ -140,15 +140,34 @@ conflicts found. Rejected: `tinylogic` (onsemi/Fairchild trademark),
 | Espresso (maintained fork) | BSD-style (UC Berkeley) | bundled binary |
 | Icarus Verilog | GPL-2.0+ | child process |
 | netlistsvg | MIT | npm dependency |
-| elkjs | EPL-2.0 | transitive via netlistsvg |
+| elkjs (top level) | EPL-2.0 | direct npm dependency, 0.9.3 |
+| elkjs (nested) | **EPL-1.0** | `netlistsvg/node_modules/elkjs` 0.3.0 — **see below** |
 | React Flow | MIT | npm (core only — verify no Pro features used) |
 | Electron | MIT | application shell |
 | KiCad | GPL-3.0+ | file interchange only |
 | Digital (hneemann) | GPL-3.0 | **no code or data linked** — optional file interchange and cross-check only (§24) |
 
 EPL-2.0 (elkjs) is weak-copyleft at file scope, consumed unmodified as a
-library, so it does not constrain the GPL-3.0 choice. Confirm by licence audit
-at M11 rather than assuming.
+library, so it does not constrain the GPL-3.0 choice.
+
+**[M18-1] Measured 2026-08-16, and this table was wrong.** The full installed
+npm tree carries **two** copies of elkjs: the declared 0.9.3 at EPL-2.0, and
+`netlistsvg`'s own bundled `elkjs@0.3.0` at **EPL-1.0**. The paragraph above
+rests on EPL-2.0's *secondary licences* provision, which permits recipients to
+take the code under the GPL. **EPL-1.0 has no such provision**, and the FSF
+considers it GPL-incompatible. The argument therefore does not extend to the
+nested copy, and recording "elkjs, EPL-2.0" while shipping an EPL-1.0 copy was
+the defect underneath the finding.
+
+**[M18-2] `spdx-exceptions` (CC-BY-3.0) ships inside the asar**, reached
+transitively through `netlistsvg`'s `yargs` CLI subtree. CC-BY-3.0 is not
+GPL-compatible.
+
+Both were invisible until the audit walked the installed tree rather than a
+hand-maintained manifest of 16 entries — which is the general lesson: a
+dependency list someone writes down is a statement of intent, and only the
+tree on disk says what ships. `scripts/licence_audit.py --require-node-tree`
+is now the check that matters, and CI fails on it.
 
 ---
 
