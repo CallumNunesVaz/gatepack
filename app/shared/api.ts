@@ -120,6 +120,17 @@ export interface BuildResult {
   packCost: number;
   bom: BomLine[];
   analysis: AnalysisSummary;
+  /**
+   * Mapped-netlist instance name -> stable cell name.
+   *
+   * A packing override (`packing.force_groups` in `design.yaml`) is resolved
+   * against the **stable** names. The names the renderer sees from
+   * `mappedNetlist()` are ABC's instance names (`$abc$148$...$154`), which are
+   * renumbered by every synthesis — persisting one is refused by the packer
+   * today, and would silently point at a different gate tomorrow if it were
+   * not. Translate through this map before writing an override.
+   */
+  stableCellNames: Record<string, string>;
 }
 
 export interface BomLine {

@@ -74,6 +74,13 @@ class BuildResult:
     # resolved package/refdes list, the compiled design, the behavioural Verilog
     # text, the resolved netlist, and the §24.1 CPLD blocker lint result.
     assigned: list = field(default_factory=list)
+    #: write_json instance name -> stable cell name. The application needs it
+    #: to persist a packing override: `force_groups` is resolved against the
+    #: STABLE names, while everything the renderer can see (`mappedNetlist()`)
+    #: uses ABC's instance names, which are not stable across runs. Writing
+    #: `$abc$148$...$154` into design.yaml is refused now and would be wrong
+    #: even if accepted, because the next synthesis renumbers it.
+    stable_names: dict = field(default_factory=dict)
     compiled: CompiledDesign | None = None
     verilog: str | None = None
     netlist: MappedNetlist | None = None
@@ -173,6 +180,7 @@ def assemble(
         scoap=scoap,
         faults=faults,
         cpld_blockers=cpld_blockers,
+        stable_names=dict(names),
     )
 
 

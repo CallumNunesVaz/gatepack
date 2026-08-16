@@ -103,7 +103,12 @@ def pack(
     """
     cfg = config or PackerConfig()
     names = dict(stable_names or {c.name: c.name for c in cells})
-    by_name = {c.name: c for c in cells}
+    # Keyed by STABLE name, because that is what `force_groups` uses and what
+    # `known` below validates against. It was keyed by the mapped-netlist
+    # instance name, so every override passed validation and then raised
+    # KeyError on lookup — `force_groups` had never once worked, and M9's
+    # "override works" exit criterion had never been exercised.
+    by_name = {names[c.name]: c for c in cells}
 
     options_by_key: dict[tuple[str, str], list[Part]] = {}
     for p in parts:

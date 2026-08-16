@@ -157,7 +157,7 @@ def test_build_json_envelope(tmp_path):
     data = _envelope(proc)["data"]
     assert set(data) == {
         "bomPath", "netlistPath", "reportPath", "mappedJsonPath",
-        "packageCount", "spareCount", "packCost", "bom", "analysis",
+        "packageCount", "spareCount", "packCost", "bom", "analysis", "stableCellNames",
     }
     assert data["packageCount"] == 1
     assert data["spareCount"] == 0

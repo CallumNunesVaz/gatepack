@@ -268,6 +268,11 @@ def build_payload(result, paths: Mapping[str, Path], mapped_json_path: str | Pat
         "packCost": result.packed_stats.pack_cost,
         "bom": [bomline(r) for r in bom_rows],
         "analysis": analysis_summary(result.compiled, result, result.cpld_blockers),
+        # §C13: the application persists packing overrides as `force_groups`,
+        # which the packer resolves against STABLE names. Everything the
+        # renderer can see uses ABC's instance names, which change between
+        # runs, so it needs this map to write an override that survives.
+        "stableCellNames": dict(getattr(result, "stable_names", {}) or {}),
     }
 
 

@@ -122,6 +122,7 @@ export const BuildResultSchema = z.object({
   packCost: z.number(),
   bom: z.array(BomLineSchema),
   analysis: AnalysisSummarySchema,
+  stableCellNames: z.record(z.string()),
 });
 
 export const ProvenanceMapSchema = z.object({
