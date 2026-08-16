@@ -1,11 +1,15 @@
 # electron-builder configuration for the gatepack desktop application (§17).
 #
-# This config is deliberately signing-free: no identity, no certificate, no
-# notarisation credentials are present, because none have been provisioned and
-# this project never fabricates values it cannot verify.  Every signing field a
-# maintainer must supply is documented in docs/RELEASING.md; until they are,
-# the targets build *unsigned* (and macOS/Windows installers are produced but
-# will trip Gatekeeper / SmartScreen until signed).
+# This config is deliberately credential-free: no identity, no certificate, no
+# notarisation credential is present, because none has been provisioned and this
+# project never fabricates values it cannot verify.  Signing is *wired* below —
+# hardened runtime, entitlements, `notarize: true`, and the Authenticode path —
+# and driven entirely by the environment secrets documented in
+# docs/RELEASING.md (`CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`,
+# `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`).  Absent those secrets the
+# targets build *unsigned* and the build logs say so; until they are supplied,
+# macOS/Windows installers are produced but will trip Gatekeeper / SmartScreen.
+#
 #
 # What ships and how (§17, §4):
 #   * `dist/` — the compiled main (tsc), preload (tsc) and renderer (vite)
@@ -147,15 +151,47 @@ mac:
   category: public.app-category.developer-tools
   target:
     - target: dmg
-      arch:
-        - arm64
-        - x64
-  # No identity is configured: builds are unsigned until a maintainer supplies
-  # one (see docs/RELEASING.md).  notarize is intentionally absent.
+  # No `arch` is listed here: electron-builder builds the *host* architecture
+  # by default, and PyInstaller does not cross-compile either, so each macOS
+  # architecture is a separate release-matrix runner — arm64 on macos-14,
+  # x64 on macos-13 (see .github/workflows/release.yml).  Listing both arches
+  # here would ask one runner to build for a foreign arch, which is exactly the
+  # "clever flag instead of a build matrix" trap the release avoids.
+  # Signing is *configured but not populated* — there is no identity, cert or
+  # notarisation credential in this tree, and none is fabricated.  Every value
+  # is driven by environment secrets at build time; absent them the build
+  # succeeds *unsigned* and says so in its output, never failing obscurely and
+  # never silently skipping:
+  #
+  #   * `CSC_LINK` / `CSC_KEY_PASSWORD` — a Developer ID Application cert
+  #     (base64-encoded .p12 + its password).  electron-builder imports it and
+  #     codesigns the .app with the hardened runtime below.  Absent, it logs
+  #     "skipped macOS application code signing" and continues.
+  #   * `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` — the
+  #     notarytool credentials.  `notarize: true` below is safe to leave set:
+  #     electron-builder only submits when these three are all present, and
+  #     logs "skipped macOS notarization" otherwise (verified against
+  #     app-builder-lib's getNotarizeOptions).
+  #
+  # `identity` is deliberately *unset* (not `null`): `null` would hard-disable
+  # signing even when CSC_LINK is present, and the whole point is that signing
+  # becomes a pure secrets-supply step.  Auto-discovery (`CSC_IDENTITY_AUTO_DISCOVERY`)
+  # is the mechanism; the release workflow sets it `false` on the unsigned path
+  # to avoid keychain scanning, and leaves it unset on the signed path.
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: signing/entitlements.mac.plist
+  entitlementsInherit: signing/entitlements.mac.plist
+  notarize: true
 
 win:
   target:
     - target: nsis
+  # Authenticode signing is driven entirely by the same `CSC_LINK` /
+  # `CSC_KEY_PASSWORD` secrets (electron-builder reads `WIN_CSC_LINK` with a
+  # `CSC_LINK` fallback).  Absent them it logs "no signing info identified,
+  # signing is skipped" and produces an unsigned installer; present, it signs
+  # with signtool (sha1+sha256).  Nothing here fabricates a certificate.
 
 nsis:
   oneClick: false

@@ -1,0 +1,195 @@
+# Release workflow — gatepack (M18, the "everything up to the credential" half).
+#
+# Triggered by a tag push (`v*`).  Builds the self-contained Python core
+# bundle and the platform installer on *each* OS/arch in a matrix — PyInstaller
+# does not cross-compile, so this is a build matrix, not a clever flag — runs
+# the bundle's own acceptance test on each, and uploads the artefacts.  A final
+# job assembles SHA-256 checksums, a CycloneDX SBOM per platform, and the
+# release notes, and publishes the GitHub release.
+#
+# Signing is *wired but unpopulated*: every build is either SIGNED (secrets
+# present) or UNSIGNED (secrets absent), and which one it is is printed by the
+# build, written to a per-platform SIGNING-STATUS.txt, and carried into the
+# checksums file and the release notes.  Absent secrets the build must
+# *succeed* and say so — never fail obscurely, never silently skip.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build (${{ matrix.platform }}-${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            eb_platform: --linux
+            eb_targets: AppImage deb
+          - os: macos-13
+            platform: macos
+            arch: x64
+            eb_platform: --mac
+            eb_targets: dmg
+          - os: macos-14
+            platform: macos
+            arch: arm64
+            eb_platform: --mac
+            eb_targets: dmg
+          - os: windows-latest
+            platform: windows
+            arch: x64
+            eb_platform: --win
+            eb_targets: nsis
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install core + bundler (Python)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . pyinstaller pytest
+
+      - name: Install app dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Version consistency (core vs app vs tag)
+        run: python scripts/version_check.py --tag "${{ github.ref_name }}"
+
+      - name: Build the bundled core (PyInstaller)
+        run: python scripts/bundle_core.py
+
+      - name: Bundled-core acceptance test (must not skip)
+        run: python -m pytest tests/toolchain/test_core_bundle.py -q
+
+      - name: Licence audit over the bundle
+        run: python scripts/licence_audit.py --require-bundle
+
+      - name: Build the application
+        working-directory: app
+        run: npm run build
+
+      - name: Detect signing credentials
+        id: signing
+        shell: bash
+        run: |
+          if [ -n "$CSC_LINK" ]; then
+            echo "SIGNING_MODE=signed" >> "$GITHUB_ENV"
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "SIGNING_MODE=unsigned" >> "$GITHUB_ENV"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+
+      - name: Build installer (UNSIGNED — no signing credentials provisioned)
+        if: steps.signing.outputs.present == 'false'
+        shell: bash
+        working-directory: app
+        run: |
+          echo "=== UNSIGNED build: no code-signing credentials are provisioned ==="
+          echo "=== this repository never fabricates an identity; the installer ==="
+          echo "=== will trip Gatekeeper / SmartScreen, and that is the truth. ==="
+          npx electron-builder ${{ matrix.eb_platform }} ${{ matrix.eb_targets }} --${{ matrix.arch }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Build installer (signed + notarized)
+        if: steps.signing.outputs.present == 'true'
+        shell: bash
+        working-directory: app
+        run: |
+          echo "=== SIGNED build: code-signing credentials present ==="
+          npx electron-builder ${{ matrix.eb_platform }} ${{ matrix.eb_targets }} --${{ matrix.arch }}
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Generate the SBOM (npm tree + bundled core)
+        run: python scripts/sbom.py --require-node-tree --require-bundle -o ".gpout/staging/sbom-${{ matrix.platform }}-${{ matrix.arch }}.json"
+
+      - name: Stage artefacts for upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p .gpout/staging
+          case "${{ matrix.platform }}" in
+            linux)
+              for f in .gpout/dist/*.AppImage; do cp "$f" ".gpout/staging/gatepack-${VERSION}-linux-x64.AppImage"; done
+              for f in .gpout/dist/*.deb;      do cp "$f" ".gpout/staging/gatepack-${VERSION}-linux-x64.deb";      done
+              cp app/resources/bin/gatepack ".gpout/staging/gatepack-core-linux-x64"
+              ;;
+            macos)
+              for f in .gpout/dist/*.dmg; do cp "$f" ".gpout/staging/gatepack-${VERSION}-macos-${{ matrix.arch }}.dmg"; done
+              cp app/resources/bin/gatepack ".gpout/staging/gatepack-core-macos-${{ matrix.arch }}"
+              ;;
+            windows)
+              for f in .gpout/dist/*.exe; do cp "$f" ".gpout/staging/gatepack-${VERSION}-windows-x64-setup.exe"; done
+              cp app/resources/bin/gatepack.exe ".gpout/staging/gatepack-core-windows-x64.exe"
+              ;;
+          esac
+          echo "$SIGNING_MODE" > .gpout/staging/SIGNING-STATUS.txt
+          ls -la .gpout/staging
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gatepack-${{ matrix.platform }}-${{ matrix.arch }}
+          path: .gpout/staging
+          if-no-files-found: error
+
+  publish:
+    name: assemble + publish release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Assemble checksums and release notes
+        shell: bash
+        run: |
+          python scripts/assemble_release.py release-assets .gpout/release --version "${GITHUB_REF_NAME#v}"
+
+      - name: Publish the GitHub release
+        shell: bash
+        run: |
+          cd .gpout/release
+          gh release create "$GITHUB_REF_NAME" \
+            --title "gatepack ${GITHUB_REF_NAME#v}" \
+            --notes-file RELEASE-NOTES.md \
+            $(find . -maxdepth 1 -type f ! -name 'RELEASE-NOTES.md' -printf '%f\n' | sort)
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Standard Electron hardened-runtime entitlements (matching the
+       electron-builder / Electron-forge templates).  They permit the V8 JIT
+       and the way Electron maps executable memory; without them a
+       hardened-runtime signed app crashes on launch. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+  <!-- If the bundled PyInstaller core refuses to launch under hardened
+       runtime, add `com.apple.security.cs.disable-library-validation` here.
+       It relaxes the requirement that every loaded library be signed by the
+       same Team ID.  Leave it out until it is demonstrably needed: it is a
+       real relaxation, not a default. -->
+</dict>
+</plist>

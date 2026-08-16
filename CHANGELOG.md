@@ -68,17 +68,29 @@ are stated rather than papered over.
   list.
 - A reproducible toolchain container (`Dockerfile` / `Dockerfile.probe`) with
   Yosys 0.23, ABC, Icarus, SymbiYosys and z3.
+- A tag-triggered release workflow (`.github/workflows/release.yml`) that builds
+  the core bundle and the installer in a per-OS/arch matrix (PyInstaller does
+  not cross-compile), runs the bundle acceptance test on each, and publishes
+  `SHA256SUMS` checksums, a per-platform CycloneDX SBOM, and release notes.
+  Signing is wired but unpopulated: builds are signed when credentials are
+  supplied and unsigned otherwise, and the unsigned state is stated, not hidden.
 
 ### Known limitations
 
 - **Installers are unsigned.** No signing identities have been provisioned, and
   none are fabricated: macOS and Windows installers will trip Gatekeeper /
-  SmartScreen until a maintainer supplies credentials.
+  SmartScreen until a maintainer supplies credentials. The build machinery is
+  wired (`docs/RELEASING.md`) and an unsigned build announces itself in the
+  release notes and `SHA256SUMS.txt` rather than hiding it.
 - **The native toolchain is not bundled.** The Python core ships; yosys, sby,
   iverilog and z3 are still host tools (or the provided container), and
   `gatepack doctor` reports them honestly when they are missing.
-- **"KiCad import clean" is unverified.** The netlist is emitted; no one has
-  yet imported it into KiCad.
-- **Library electrical values are placeholders pending datasheet citation.**
-  `gatepack lib check` enforces the citations; until they are filled in, the
-  BOM is a shape, not a purchasable part list.
+- **"KiCad import clean" is unverified** — deferred out of scope. The netlist is
+  emitted; no one has yet imported it into KiCad.
+- **16 of 22 library cells carry placeholder electrical data.** `gatepack lib
+  check` enforces the citations; until they are filled in, the BOM is a shape,
+  not a purchasable part list.
+- **Multi-gate `gates_per_pkg` values are unverified.** A wrong value yields a
+  netlist that physically cannot be built (a part whose true gate count differs
+  from what the packer assumed), which is a worse failure than a wrong tPD; it
+  is called out separately in `libraries/74aup.refs.md`.

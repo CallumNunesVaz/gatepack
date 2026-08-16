@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { CancelRegistry, CancelledError } from './cancel.cjs';
-import { locateCore, runEnvelope, spawnCore, type CoreLocation } from './core.cjs';
+import { binaryName, locateCore, runEnvelope, spawnCore, type CoreLocation } from './core.cjs';
 import { CompileResultSchema } from './envelope.cjs';
 
 const COMPILE_ENVELOPE = JSON.stringify({
@@ -77,6 +77,35 @@ describe('locateCore', () => {
     });
     expect(loc?.executable).toBe(bundled);
     expect(loc?.source).toBe(bundled);
+  });
+
+  it('resolves gatepack.exe for the bundled core on Windows', () => {
+    // The PyInstaller onefile is `gatepack.exe` on Windows; the locator must
+    // resolve that name or a packaged Windows app never finds its core.
+    const resourcesPath = path.join(tmp, 'resources');
+    const bundled = path.join(resourcesPath, 'resources', 'bin', 'gatepack.exe');
+    fs.mkdirSync(path.dirname(bundled), { recursive: true });
+    fs.writeFileSync(bundled, 'mz');
+    fs.chmodSync(bundled, 0o755);
+
+    const loc = locateCore({
+      appRoot: path.join(resourcesPath, 'app.asar'),
+      projectRoot: tmp,
+      env: { GATEPACK_CORE: undefined, PATH: '' },
+      resourcesPath,
+      platform: 'win32',
+    });
+    expect(loc?.executable).toBe(bundled);
+    expect(loc?.source).toBe(bundled);
+  });
+});
+
+describe('binaryName', () => {
+  it('adds .exe only on win32', () => {
+    expect(binaryName('gatepack')).toBe('gatepack');
+    expect(binaryName('gatepack', 'win32')).toBe('gatepack.exe');
+    expect(binaryName('gatepack', 'linux')).toBe('gatepack');
+    expect(binaryName('gatepack', 'darwin')).toBe('gatepack');
   });
 });
 

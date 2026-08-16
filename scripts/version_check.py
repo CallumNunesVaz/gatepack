@@ -40,6 +40,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="check pyproject.toml and app/package.json versions agree")
     parser.add_argument("--pyproject", default=str(DEFAULT_PYPROJECT))
     parser.add_argument("--package-json", default=str(DEFAULT_PACKAGE_JSON))
+    parser.add_argument(
+        "--tag",
+        default=None,
+        help="release tag (e.g. v0.1.0); assert it matches the agreed version "
+        "so a tag-triggered release cannot be cut from a tree whose version "
+        "disagrees with the tag",
+    )
     args = parser.parse_args(argv)
 
     pyproject = Path(args.pyproject)
@@ -70,7 +77,18 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
+    if args.tag:
+        tag_version = args.tag.lstrip("vV")
+        if tag_version != py:
+            print(
+                f"tag/version mismatch: tag={args.tag!r} != version={py!r}",
+                file=sys.stderr,
+            )
+            return 1
+
     print(f"versions agree: {py} (pyproject.toml == app/package.json)")
+    if args.tag:
+        print(f"tag agrees: {args.tag}")
     return 0
 
 

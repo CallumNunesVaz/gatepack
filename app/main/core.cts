@@ -44,6 +44,21 @@ export interface LocateOptions {
    * location under `appRoot` is used instead.
    */
   resourcesPath?: string;
+  /**
+   * Platform used to resolve executable names (``gatepack`` vs
+   * ``gatepack.exe``).  Defaults to ``process.platform``; a test passes
+   * ``'win32'`` to exercise the Windows name on a POSIX host.
+   */
+  platform?: NodeJS.Platform;
+}
+
+/**
+ * The on-disk executable name for ``base`` on ``platform``: Windows binaries
+ * carry a ``.exe`` suffix, POSIX ones do not.  Kept as a pure function so the
+ * Windows branch is testable without a Windows host.
+ */
+export function binaryName(base: string, platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' ? `${base}.exe` : base;
 }
 
 function isExecutable(p: string): boolean {
@@ -61,6 +76,7 @@ function isExecutable(p: string): boolean {
  */
 export function locateCore(opts: LocateOptions): CoreLocation | null {
   const { appRoot, projectRoot, env, resourcesPath } = opts;
+  const platform = opts.platform ?? process.platform;
 
   const override = env.GATEPACK_CORE;
   if (override && override.length > 0 && isExecutable(override)) {
@@ -72,10 +88,12 @@ export function locateCore(opts: LocateOptions): CoreLocation | null {
   //   * packaged (extraResources `to: resources`): `<resources>/resources/bin/gatepack`.
   // Both are checked because the packaged app's `appRoot` points inside the
   // asar (`…/resources/app.asar`), so the source-tree shape cannot resolve
-  // there and the packaged shape does not exist in dev.
-  const bundledCandidates = [path.join(appRoot, 'resources', 'bin', 'gatepack')];
+  // there and the packaged shape does not exist in dev.  The name is the
+  // platform's (`gatepack.exe` on Windows — PyInstaller appends the suffix).
+  const coreName = binaryName('gatepack', platform);
+  const bundledCandidates = [path.join(appRoot, 'resources', 'bin', coreName)];
   if (resourcesPath !== undefined && resourcesPath !== appRoot) {
-    bundledCandidates.push(path.join(resourcesPath, 'resources', 'bin', 'gatepack'));
+    bundledCandidates.push(path.join(resourcesPath, 'resources', 'bin', coreName));
   }
   for (const bundled of bundledCandidates) {
     if (isExecutable(bundled)) {
@@ -103,7 +121,7 @@ export function locateCore(opts: LocateOptions): CoreLocation | null {
     };
   }
 
-  const pathGatepack = findOnPath('gatepack', env.PATH);
+  const pathGatepack = findOnPath('gatepack', env.PATH, platform);
   if (pathGatepack !== null) {
     return { executable: pathGatepack, prefixArgs: [], source: pathGatepack };
   }
@@ -111,12 +129,16 @@ export function locateCore(opts: LocateOptions): CoreLocation | null {
   return null;
 }
 
-function findOnPath(name: string, searchPath: string | undefined): string | null {
+function findOnPath(
+  name: string,
+  searchPath: string | undefined,
+  platform: NodeJS.Platform = process.platform,
+): string | null {
   if (!searchPath) return null;
-  const isWin = process.platform === 'win32';
+  const exeName = binaryName(name, platform);
   for (const dir of searchPath.split(path.delimiter)) {
     if (dir === '') continue;
-    const candidate = path.join(dir, isWin ? `${name}.exe` : name);
+    const candidate = path.join(dir, exeName);
     if (isExecutable(candidate)) return candidate;
   }
   return null;

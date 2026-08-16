@@ -25,7 +25,8 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-BUNDLE = REPO / "app" / "resources" / "bin" / "gatepack"
+CORE_NAME = "gatepack.exe" if os.name == "nt" else "gatepack"
+BUNDLE = REPO / "app" / "resources" / "bin" / CORE_NAME
 BUNDLER = REPO / "scripts" / "bundle_core.py"
 
 
@@ -38,8 +39,18 @@ def _pyinstaller_available() -> bool:
         return False
 
 
+def _has(directory: Path, name: str) -> bool:
+    """True when ``directory`` contains ``name`` or its ``.exe`` variant.
+
+    A Windows host has ``python.exe``/``gatepack.exe``, not ``python3``/
+    ``gatepack``; a scrub that checks only the bare name leaks a host
+    interpreter through and this test measures nothing.
+    """
+    return (directory / name).exists() or (directory / (name + ".exe")).exists()
+
+
 def _scrubbed_env() -> dict[str, str]:
-    """PATH with every ``gatepack``/``python3`` directory removed; no override."""
+    """PATH with every ``gatepack``/``python`` directory removed; no override."""
     env = {
         k: v
         for k, v in os.environ.items()
@@ -50,7 +61,7 @@ def _scrubbed_env() -> dict[str, str]:
         if not directory:
             continue
         d = Path(directory)
-        if d.is_dir() and ((d / "gatepack").exists() or (d / "python3").exists()):
+        if d.is_dir() and any(_has(d, n) for n in ("gatepack", "python3", "python")):
             continue
         kept.append(directory)
     env["PATH"] = os.pathsep.join(kept)
@@ -66,7 +77,7 @@ def _env_with_bundle_dir() -> dict[str, str]:
 def _run(cwd: Path, env: dict[str, str], *args: str) -> subprocess.CompletedProcess:
     # invoked by bare name: only the scrubbed PATH can resolve it
     return subprocess.run(
-        ["gatepack", *args],
+        [CORE_NAME, *args],
         cwd=str(cwd),
         env=env,
         capture_output=True,
@@ -147,7 +158,7 @@ def test_bundled_core_lists_and_extracts_examples(bundled_core, tmp_path):
 
 
 def test_scrub_is_scrubbing(bundled_core, tmp_path):
-    hidden = BUNDLE.with_name("gatepack.hidden")
+    hidden = BUNDLE.with_suffix(".hidden")
     shutil.move(str(BUNDLE), str(hidden))
     try:
         env = _env_with_bundle_dir()
