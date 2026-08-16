@@ -201,6 +201,10 @@ def bomline(row) -> dict:
         # How many gates this package holds. The packing view needs it to know
         # whether grouping can achieve anything, instead of hardcoding a claim.
         "gatesPerPackage": row.gates_per_pkg,
+        # Whether this row's electrical figures rest on unverified/placeholder
+        # data rather than a datasheet citation. The renderer must be able to
+        # mark it without re-reading parts.csv.
+        "unverified": row.unverified,
     }
 
 

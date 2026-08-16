@@ -54,13 +54,20 @@ class MCellSpec:
     enable_pin: str | None
     q_pin: str
     width: int
+    kind: str = "counter"  # "counter" | "shift_register"
     step: int = 1
     reset_value: int = 0
+    serial_in_pin: str | None = None
     description: str = ""
 
     @property
     def period(self) -> int:
         return 1 << self.width
+
+    @property
+    def flops(self) -> int:
+        """Internal flop count, used by the §6 flop-count / clock-fanout metrics."""
+        return self.width
 
     def port(self, name: str) -> MCellPort:
         for p in self.ports:
@@ -91,7 +98,31 @@ CNT4_SPEC = MCellSpec(
     ),
 )
 
-_SPECS: dict[str, MCellSpec] = {s.cell: s for s in (CNT4_SPEC,)}
+SR4_SPEC = MCellSpec(
+    cell="SR4",
+    kind="shift_register",
+    ports=(
+        MCellPort("CLK", "input", 1),
+        MCellPort("RST_N", "input", 1),
+        MCellPort("EN", "input", 1),
+        MCellPort("SI", "input", 1),
+        MCellPort("Q", "output", 4),
+    ),
+    clock_pin="CLK",
+    reset_pin="RST_N",
+    reset_active="low",
+    enable_pin="EN",
+    q_pin="Q",
+    serial_in_pin="SI",
+    width=4,
+    reset_value=0,
+    description=(
+        "4-bit serial-in parallel-out shift register: shifts SI into the least "
+        "significant bit while enabled, asynchronous active-low reset to 0."
+    ),
+)
+
+_SPECS: dict[str, MCellSpec] = {s.cell: s for s in (CNT4_SPEC, SR4_SPEC)}
 
 
 def known_spec_cells() -> tuple[str, ...]:
@@ -122,15 +153,10 @@ def spec_model(cell: str) -> str:
     reset_cond = f"!{spec.reset_pin}" if spec.reset_active == "low" else spec.reset_pin
     q = spec.q_pin
     width = spec.width
-    step = spec.step
 
     ports = ",\n".join(_port_decl(spec, p, reg_output=True) for p in spec.ports)
 
-    if spec.enable_pin is not None:
-        advance = f"    else if ({spec.enable_pin})\n      {q} <= {q} + {width}'d{step};"
-    else:
-        advance = f"    else\n      {q} <= {q} + {width}'d{step};"
-
+    advance = _advance_expression(spec)
     return "\n".join(
         [
             f"// {spec.cell} — specification model (§9.4 M8).",
@@ -154,6 +180,26 @@ def spec_model(cell: str) -> str:
             "",
         ]
     )
+
+
+def _advance_expression(spec: MCellSpec) -> str:
+    """The ``else`` advance line(s) for ``spec``, keyed by its ``kind``.
+
+    A counter adds ``step``; a shift register shifts the serial input into the
+    low bit.  The two are written from different semantics so the spec side does
+    not accidentally reproduce a defect shared with the implementation model.
+    """
+    q = spec.q_pin
+    width = spec.width
+    if spec.enable_pin is not None:
+        guard = f"    else if ({spec.enable_pin})\n"
+    else:
+        guard = "    else\n"
+    if spec.kind == "shift_register":
+        body = f"      {q} <= {{{q}[{width - 2}:0], {spec.serial_in_pin}}};"
+    else:
+        body = f"      {q} <= {q} + {width}'d{spec.step};"
+    return guard + body
 
 
 def blackbox_module(cell: str) -> str:
@@ -189,6 +235,7 @@ __all__ = [
     "MCellPort",
     "MCellSpec",
     "CNT4_SPEC",
+    "SR4_SPEC",
     "blackbox_module",
     "get_spec",
     "known_spec_cells",

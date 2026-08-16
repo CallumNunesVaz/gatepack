@@ -29,6 +29,21 @@ TIERS = ("G", "F", "M", "S")
 
 DEFAULT_VCC = 3.3
 
+
+class Verification(str, Enum):
+    """Whether a part's electrical values are verified or placeholders (§1.3, §23).
+
+    A *placeholder* value is a different thing from a *verified* one, so a code
+    path that consumes an electrical quantity has to acknowledge which it has.
+    Every part defaults to :data:`PLACEHOLDER` — the fail-closed choice — and is
+    promoted to :data:`VERIFIED` only when a real, pinned datasheet citation
+    backs its values (see ``<name>.refs.md``).
+    """
+
+    VERIFIED = "verified"
+    PLACEHOLDER = "placeholder"
+
+
 REQUIRED_COLUMNS = (
     "cell",
     "tier",
@@ -94,6 +109,10 @@ class Part(BaseModel):
     area: float
     tpd_ns: float | None = None
     iq_ua: float | None = None
+    #: Whether this row's electrical values (vcc/tpd/iq/area/gates_per_pkg) are
+    #: cited in a real datasheet or are placeholders.  Defaults to placeholder —
+    #: a value without a citation must never read as verified.
+    verification: Verification = Verification.PLACEHOLDER
 
     @field_validator("tier")
     @classmethod
@@ -176,6 +195,11 @@ class Part(BaseModel):
     @property
     def is_second_sourced(self) -> bool:
         return self.second_source_count >= 2
+
+    @property
+    def is_verified(self) -> bool:
+        """True when this row's electrical values are backed by a citation."""
+        return self.verification is Verification.VERIFIED
 
     def vcc_compatible(self, project_vcc: float) -> bool:
         return self.vcc_min <= project_vcc <= self.vcc_max
@@ -328,6 +352,58 @@ def _format_validation_error(exc: ValidationError) -> str:
         msg = first.get("msg", "validation error")
         return f"{loc}: {msg}" if loc else msg
     return str(exc)
+
+
+def verification_from_citation(status: str | None) -> Verification:
+    """Map a ``<name>.refs.md`` electrical-status text to a :class:`Verification`.
+
+    ``None`` (no citation at all) and any text carrying ``unverified`` or
+    ``placeholder`` are placeholders; a citation that names a real document is
+    verified.  This is the *only* place the status words are interpreted.
+    """
+    if status is None:
+        return Verification.PLACEHOLDER
+    lowered = status.lower()
+    if "unverified" in lowered or "placeholder" in lowered:
+        return Verification.PLACEHOLDER
+    return Verification.VERIFIED
+
+
+def mark_verification(parts: Sequence[Part], citations: Mapping[str, str]) -> None:
+    """Attach each part's verification status from its refs citation (in place)."""
+    for part in parts:
+        part.verification = verification_from_citation(citations.get(part.cell))
+
+
+class UnverifiedGatesPerPackageError(PartError):
+    """The build refuses to ship parts whose ``gates_per_pkg`` is unverified.
+
+    ``gates_per_pkg`` decides how many physical packages the board needs and
+    which gates share a die; a wrong value produces a netlist that physically
+    cannot be built — worse than a wrong propagation delay.  Subclasses
+    :class:`PartError` so the CLI maps it to the library error code.
+    """
+
+    def __init__(self, cells: Sequence[str], message: str) -> None:
+        self.cells = list(cells)
+        super().__init__(", ".join(self.cells), message)
+
+
+def unverified_multi_gate_parts(parts: Sequence[Part]) -> list[Part]:
+    """Parts whose ``gates_per_pkg > 1`` rests on unverified electrical data.
+
+    A multi-gate package claim is the sharp case of §10.1: it determines package
+    count and die-sharing, so a wrong one yields an unbuildable netlist.  A
+    single-gate claim (``gates_per_pkg == 1``) is still a placeholder but is
+    surfaced (marked) rather than gated — its failure mode is a wrong count, not
+    a physically impossible netlist.
+    """
+    return [p for p in parts if p.gates_per_pkg > 1 and not p.is_verified]
+
+
+def unverified_placeholder_cells(parts: Sequence[Part]) -> list[str]:
+    """Sorted cell names whose electrical values are placeholders (for `doctor`)."""
+    return sorted({p.cell for p in parts if not p.is_verified})
 
 
 def load_parts(path: str | Path) -> list[Part]:

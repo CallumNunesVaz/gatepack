@@ -30,6 +30,7 @@ BOM_COLUMNS = (
     "refdes",
     "tier",
     "unit_price",
+    "unverified",
 )
 
 
@@ -49,6 +50,10 @@ class BomRow:
     #: a UI that claims otherwise (or hardcodes "inert" when it is not) is
     #: telling the user something false about their own design.
     gates_per_pkg: int = 1
+    #: True when this part's electrical values (package, gates_per_pkg, tpd,
+    #: iq, vcc) rest on placeholder data rather than a datasheet citation.  A
+    #: reader of the BOM must not have to go back to parts.csv to find out.
+    unverified: bool = False
 
 
 def _refdes_key(ref: str) -> tuple[str, int, str]:
@@ -80,6 +85,7 @@ def collect_bom(assigned: Sequence[tuple[str, PackageGroup]]) -> list[BomRow]:
                 "tier": group.part.tier,
                 "unit_price": "",
                 "gates_per_pkg": group.part.gates_per_pkg,
+                "unverified": not group.part.is_verified,
             }
             order.append(pn)
         by_part[pn]["refdes"].append(ref)
@@ -94,6 +100,7 @@ def collect_bom(assigned: Sequence[tuple[str, PackageGroup]]) -> list[BomRow]:
             refdes=tuple(sorted(by_part[pn]["refdes"], key=_refdes_key)),
             tier=by_part[pn]["tier"],
             unit_price="",
+            unverified=by_part[pn]["unverified"],
         )
         for pn in order
     ]
@@ -118,6 +125,7 @@ def emit_bom(assigned: Sequence[tuple[str, PackageGroup]]) -> str:
                 ";".join(r.refdes),
                 r.tier,
                 r.unit_price,
+                "yes" if r.unverified else "",
             ]
         )
     return buf.getvalue()

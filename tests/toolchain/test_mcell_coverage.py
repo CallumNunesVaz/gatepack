@@ -76,7 +76,7 @@ def test_mcell_model_is_shared_between_equivalence_and_simulation():
     from gatepack.verify.simulation import build_compile_command
 
     paths = model_files()
-    assert [Path(p).name for p in paths] == ["CNT4.v"]
+    assert [Path(p).name for p in paths] == ["CNT4.v", "SR4.v"]
 
     models = load_models()
     assert models.count("module CNT4") == 1
@@ -213,5 +213,79 @@ def test_wrong_mcell_model_is_caught_by_equivalence(tmp_path: Path) -> None:
     assert "successfully proven" not in combined, (
         "the wrong CNT4 model was NOT caught: the golden and gate sides must "
         "have read the same model file again. The M-cell mutation path is "
+        f"unverified.\n{combined}"
+    )
+
+
+@requires_toolchain
+def test_wrong_sr4_model_is_caught_by_equivalence(tmp_path: Path) -> None:
+    """The second M-cell's mutation test (M8): a wrong SR4 model fails equivalence.
+
+    A shift register's failure mode differs from a binary counter's — it corrupts
+    *shifting*, not counting — so this demonstrates the spec/impl independence
+    more than once, on a structurally different macro.
+    """
+    from gatepack.macros import load_spec_models
+    from gatepack.verify.base import VerifyConfig
+    from gatepack.verify.equivalence import EquivStep, build_equivalence_script
+
+    top = (
+        "module sr_top(input wire clk, input wire rst_n, input wire en, "
+        "input wire si, output wire [3:0] q);\n"
+        "  SR4 s0 (.CLK(clk), .RST_N(rst_n), .EN(en), .SI(si), .Q(q));\n"
+        "endmodule\n"
+    )
+    blackbox = (
+        "(* blackbox *)\n"
+        "module SR4 (input wire CLK, input wire RST_N, input wire EN, "
+        "input wire SI, output wire [3:0] Q);\n"
+        "endmodule\n"
+    )
+    (tmp_path / "generated.v").write_text(blackbox + "\n" + top)
+    (tmp_path / "mapped.v").write_text(top)
+    (tmp_path / "cells_spec.v").write_text(load_spec_models())
+
+    config = VerifyConfig(
+        top="sr_top",
+        generated_v="generated.v",
+        mapped_v="mapped.v",
+        gate_v="mapped.v",
+        gold_v="gold.v",
+        golden_json="golden.json",
+        cells_sim_v="cells_sim.v",
+        cells_spec_v="cells_spec.v",
+    )
+    script = build_equivalence_script(
+        config, step=EquivStep.EQUIV_INDUCT, induction_steps=16
+    )
+
+    def run() -> subprocess.CompletedProcess[str]:
+        return _run_yosys(tmp_path, script)
+
+    def write_model(body: str) -> None:
+        (tmp_path / "cells_sim.v").write_text(
+            "module SR4 (input wire CLK, input wire RST_N, input wire EN, "
+            "input wire SI, output reg [3:0] Q);\n"
+            "  always @(posedge CLK or negedge RST_N) begin\n"
+            "    if (!RST_N) Q <= 4'd0;\n"
+            f"    else if (EN) Q <= {body};\n"
+            "  end\n"
+            "endmodule\n"
+        )
+
+    write_model("{Q[2:0], SI}")
+    correct = run()
+    assert "successfully proven" in (correct.stdout + correct.stderr).lower(), (
+        correct.stdout + correct.stderr
+    )
+
+    # The deliberately wrong model: shifts in 0 instead of SI.  The spec still
+    # requires shifting in SI, so the check must fail.
+    write_model("{Q[2:0], 1'b0}")
+    mutated = run()
+    combined = (mutated.stdout + mutated.stderr).lower()
+    assert "successfully proven" not in combined, (
+        "the wrong SR4 model was NOT caught: the golden and gate sides must "
+        "have read the same model file again. The SR4 mutation path is "
         f"unverified.\n{combined}"
     )
