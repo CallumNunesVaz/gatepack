@@ -14,6 +14,7 @@ Exit code is non-zero on validation failure (malformed data or a missing
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -239,6 +240,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="emit one machine-readable JSON object to stdout"
     )
 
+    packed_p = sub.add_parser(
+        "packed-netlist",
+        help="emit the packed view (package boundaries) for the schematic's packed layer",
+    )
+    packed_p.add_argument("dir", help="build/out directory containing packed.json")
+    packed_p.add_argument(
+        "--json", action="store_true", help="emit one machine-readable JSON object to stdout"
+    )
+
     examples_p = sub.add_parser(
         "examples", help="bundled example projects (§18.1)"
     )
@@ -294,6 +304,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_provenance(args)
     if args.command == "mapped-netlist":
         return _cmd_mapped_netlist(args)
+    if args.command == "packed-netlist":
+        return _cmd_packed_netlist(args)
     if args.command == "examples":
         if args.examples_command == "list":
             return _cmd_examples_list(args)
@@ -625,6 +637,22 @@ def _cmd_build(args: argparse.Namespace) -> int:
             print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
 
+    # §C12: persist the packed view alongside the other artefacts so
+    # `packed-netlist` can hand it to the renderer without re-deriving the
+    # packing (and without a second representation that can disagree).  The
+    # renderer keys its SVG by instance name, so `instanceCells` is computed
+    # here through `CellNames.to_instance`, the one conversion that exists.
+    if result.stable_names is not None:
+        packed_path = Path(args.out) / "packed.json"
+        packed_path.write_text(
+            json.dumps(
+                api.packed_view_payload(result.assigned, result.stable_names),
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        )
+
     if args.json:
         mapped_json_path = args.mapped if args.mapped else str(Path(args.out) / "mapped.json")
         _json_ok("build", api.build_payload(result, paths, mapped_json_path))
@@ -716,6 +744,46 @@ def _cmd_mapped_netlist(args: argparse.Namespace) -> int:
 
     modules = list(netlist.get("modules", {}))
     print(f"mapped netlist: {path} ({', '.join(modules) or 'no modules'})")
+    return EXIT_OK
+
+
+def _cmd_packed_netlist(args: argparse.Namespace) -> int:
+    """The §C12 packed layer: package boundaries over the mapped netlist.
+
+    ``gatepack build`` writes ``packed.json`` (the ``PackedView`` payload, keyed
+    by the same instance names the renderer gets from ``mappedNetlist()``), so
+    this hands that file through unchanged rather than re-deriving the packing —
+    the renderer must not be given a second, divergent view of the packages.
+    """
+    import json as _json
+
+    path = Path(args.dir) / "packed.json"
+    if not path.exists():
+        message = (
+            f"no packed view at {path}: run `gatepack build` first "
+            "(never faked here)"
+        )
+        if args.json:
+            _json_err("packed-netlist", error(GP_IO, message))
+        else:
+            print(f"error: {message}", file=sys.stderr)
+        return EXIT_ERROR
+
+    try:
+        payload = _json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        if args.json:
+            _json_err("packed-netlist", _command_error(exc))
+        else:
+            print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    if args.json:
+        _json_ok("packed-netlist", payload)
+        return EXIT_OK
+
+    packages = payload.get("packages", [])
+    print(f"packed view: {path} ({len(packages)} package(s))")
     return EXIT_OK
 
 

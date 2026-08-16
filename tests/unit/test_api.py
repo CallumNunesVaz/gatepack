@@ -8,6 +8,8 @@ single-source marker, and the §C14 violated metric.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from gatepack import api
 from gatepack.diagnostic import Diagnostic, GP_CPLD_BLOCKER
 from gatepack.emit.bom import BomRow
@@ -159,3 +161,63 @@ def test_analysis_summary_cpld_blockers_serialized():
     assert summary["faults"] == {"detected": 0, "undetected": 0, "redundant": 0, "untestable": 0}
     assert len(summary["cpldBlockers"]) == 1
     assert summary["cpldBlockers"][0]["code"] == GP_CPLD_BLOCKER
+
+
+def test_packed_view_payload_separates_stable_and_instance_names():
+    from gatepack.netlist import CellNames
+    from gatepack.pack.packer import PackageGroup
+
+    part = SimpleNamespace(
+        part_number="74AUP2G02", cell="NOR2", package="VSSOP-8"
+    )
+    names = CellNames(
+        {
+            "$abc$1$inst$100": "NOR2__aaaa",
+            "$abc$1$inst$101": "NOR2__bbbb",
+        }
+    )
+    assigned = [
+        (
+            "U1",
+            PackageGroup(
+                part=part,
+                cells=("NOR2__aaaa", "NOR2__bbbb"),
+                capacity=2,
+                spare=0,
+                rationale="function group: NOR2 holds 2 gate(s)",
+            ),
+        )
+    ]
+
+    payload = api.packed_view_payload(assigned, names)
+    (pkg,) = payload["packages"]
+    # `cells` are the STABLE names `force_groups` records; `instanceCells` are
+    # the mapped-netlist instance names the SVG is keyed by.
+    assert pkg["cells"] == ["NOR2__aaaa", "NOR2__bbbb"]
+    assert pkg["instanceCells"] == ["$abc$1$inst$100", "$abc$1$inst$101"]
+    assert pkg["refdes"] == "U1"
+    assert pkg["partNumber"] == "74AUP2G02"
+    assert pkg["capacity"] == 2
+    assert pkg["spare"] == 0
+
+
+def test_packed_view_payload_falls_back_to_cell_when_no_part_number():
+    from gatepack.netlist import CellNames
+    from gatepack.pack.packer import PackageGroup
+
+    names = CellNames({"$1": "INV__eeee"})
+    assigned = [
+        (
+            "U1",
+            PackageGroup(
+                part=SimpleNamespace(part_number="", cell="INV"),
+                cells=("INV__eeee",),
+                capacity=1,
+                spare=0,
+                rationale="function group: INV holds 1 gate(s)",
+            ),
+        )
+    ]
+    (pkg,) = api.packed_view_payload(assigned, names)["packages"]
+    assert pkg["partNumber"] == "INV"
+    assert pkg["instanceCells"] == ["$1"]
