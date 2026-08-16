@@ -69,6 +69,20 @@ export function AnalysisView() {
         <div className="stale-note">Stale — the source has changed.</div>
       ) : null}
 
+      {estimate.state.status === 'error' ? (
+        <div className="error-note" data-testid="estimate-error" role="alert">
+          <Icon name="error" decorative />
+          <span>{estimate.state.error?.message}</span>
+        </div>
+      ) : null}
+
+      {analysis.state.status === 'error' ? (
+        <div className="error-note" data-testid="analysis-error" role="alert">
+          <Icon name="error" decorative />
+          <span>{analysis.state.error?.message}</span>
+        </div>
+      ) : null}
+
       {verdict ? (
         <div className="analysis__verdict">
           <span className={VERDICT_CLASS[verdict.verdict]} data-testid="verdict" data-verdict={verdict.verdict}>

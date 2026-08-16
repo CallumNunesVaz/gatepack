@@ -16,6 +16,7 @@ import {
   matchesChord,
   type CommandDef,
 } from './registry';
+import { PANEL_COMMANDS } from '../panels';
 
 describe('shortcut registry', () => {
   it('has no conflicting chords or duplicate ids', () => {
@@ -103,5 +104,29 @@ describe('shortcut registry', () => {
   it('looks a command up by id', () => {
     expect(commandById('run.build')?.title).toBe('Build');
     expect(commandById('nope')).toBeUndefined();
+  });
+
+  /**
+   * The sufficiency half of CLI parity. The reachability check above only proves
+   * that a command *entry* exists for each CLI subcommand — a necessary
+   * condition that says nothing about whether the command does anything. A
+   * command tagged `cli` that dispatches to nothing is a lie to the user, so
+   * every panel command (`inspect.*`, `project.examples`) must also map to a
+   * component the shell's `PanelHost` mounts. `PanelHost.test.tsx` proves those
+   * handlers are actually registered; this test proves the registry and the
+   * handler table cannot drift apart.
+   */
+  it('resolves every panel command to a mounted handler, and only to real commands', () => {
+    const panelIds = new Set(PANEL_COMMANDS.map((p) => p.id));
+    const targets = COMMANDS.filter(
+      (c) => c.group === 'inspect' || c.id === 'project.examples',
+    );
+    expect(targets.length, 'there are panel commands to wire').toBeGreaterThan(0);
+    for (const c of targets) {
+      expect(panelIds.has(c.id), `${c.id} must map to a mounted panel handler`).toBe(true);
+    }
+    for (const id of panelIds) {
+      expect(commandById(id), `panel handler ${id} must have a registry entry`).toBeTruthy();
+    }
   });
 });

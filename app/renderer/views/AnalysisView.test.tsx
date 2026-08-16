@@ -140,4 +140,37 @@ describe('AnalysisView — C14 dashboard', () => {
     expect(screen.getByTestId('metric-package count')).toHaveTextContent('violated');
     expect(screen.getByTestId('metric-flop count')).toHaveTextContent('met');
   });
+
+  it('surfaces a failing estimate as an error naming the tool, never an empty panel', async () => {
+    const fake = new FakeGatepack();
+    fake.setOk('analyse', summary({}));
+    fake.setError('estimate', {
+      severity: 'error',
+      code: 'GP9003',
+      message: 'synthesis unavailable: yosys is not installed',
+    });
+
+    renderAnalysis(fake);
+    fireEvent.click(screen.getByText('Run analysis'));
+
+    await waitFor(() => expect(screen.getByTestId('estimate-error')).toBeTruthy());
+    expect(screen.getByTestId('estimate-error').textContent).toContain('yosys');
+    expect(screen.getByTestId('estimate-error')).toHaveAttribute('role', 'alert');
+  });
+
+  it('surfaces a failing analyse as an error naming the tool', async () => {
+    const fake = new FakeGatepack();
+    fake.setError('analyse', {
+      severity: 'error',
+      code: 'GP9003',
+      message: 'yosys is not available',
+    });
+    fake.setOk('estimate', estimateResult('green'));
+
+    renderAnalysis(fake);
+    fireEvent.click(screen.getByText('Run analysis'));
+
+    await waitFor(() => expect(screen.getByTestId('analysis-error')).toBeTruthy());
+    expect(screen.getByTestId('analysis-error').textContent).toContain('yosys');
+  });
 });
