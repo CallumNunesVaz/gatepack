@@ -28,3 +28,19 @@ node_modules
 # scratch build output for real-toolchain runs (kept inside the repo:
 # anything under /tmp is outside the sandbox and is auto-rejected)
 .gpout/
+
+# Verification and build scratch. `gatepack verify --build X` and
+# `build --out X` write here, and running them from the repo root with an
+# ad-hoc name is how 1590 generated files once got committed by a `git add -A`.
+# Use .gpout/ for scratch; these patterns catch the habit anyway.
+/vb_*/
+/fv_*/
+/fin_*/
+/g_*/
+/f3_*/
+/realbuild*/
+/dualout/
+/dv*/
+/sp/
+/pv/
+/vx/

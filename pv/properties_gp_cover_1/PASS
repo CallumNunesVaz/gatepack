@@ -1,7 +1,0 @@
-Elapsed clock time [H:MM:SS (secs)]: 0:00:00 (0)
-Elapsed process time [H:MM:SS (secs)]: 0:00:00 (0)
-engine_0 (smtbmc z3) returned pass
-trace: /repo/pv/properties_gp_cover_1/engine_0/trace0.vcd
-trace: /repo/pv/properties_gp_cover_1/engine_0/trace1.vcd
-trace: /repo/pv/properties_gp_cover_1/engine_0/trace2.vcd
-trace: /repo/pv/properties_gp_cover_1/engine_0/trace3.vcd

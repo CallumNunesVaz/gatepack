@@ -1,8 +1,0 @@
-# running in /repo/fv_vacuous_mutex/properties_gp_assert_0/src/
-read_verilog -sv -formal -DGP_FORMAL -DGP_PROVE generated.v
-prep -top vacuous_mutex
-async2sync
-
-hierarchy -smtcheck
-write_jny -no-connections ../model/design.json
-write_rtlil ../model/design.il
