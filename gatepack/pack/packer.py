@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping, Sequence
 
-from gatepack.netlist import MappedCell
+from gatepack.netlist import CellNames, MappedCell
 from gatepack.parts import Part
 
 DEFAULT_SPARE_LEAKAGE_WEIGHT = 2.0
@@ -93,22 +93,21 @@ def pack(
     cells: Sequence[MappedCell],
     parts: Sequence[Part],
     config: PackerConfig | None = None,
-    stable_names: Mapping[str, str] | None = None,
+    stable_names: CellNames | None = None,
 ) -> PackingResult:
     """Pack ``cells`` into physical packages and return both views.
 
     ``cells`` must already carry resolved parts (``cell.part is not None``).
     ``parts`` is the full library, used to find packaging options (e.g. a
     2-gate 74AUP2G02 alongside a 1-gate 74AUP1G02 for the same function).
+
+    ``stable_names`` is a :class:`CellNames` mapping instance -> stable; when
+    omitted the stable name is the instance name (identity).  ``force_groups``
+    are resolved against the **stable** names only.
     """
     cfg = config or PackerConfig()
-    names = dict(stable_names or {c.name: c.name for c in cells})
-    # Keyed by STABLE name, because that is what `force_groups` uses and what
-    # `known` below validates against. It was keyed by the mapped-netlist
-    # instance name, so every override passed validation and then raised
-    # KeyError on lookup — `force_groups` had never once worked, and M9's
-    # "override works" exit criterion had never been exercised.
-    by_name = {names[c.name]: c for c in cells}
+    names = stable_names or CellNames.identity(cells)
+    cells_by_instance = {c.name: c for c in cells}
 
     options_by_key: dict[tuple[str, str], list[Part]] = {}
     for p in parts:
@@ -122,15 +121,17 @@ def pack(
             raise PackError(f"cell {c.name!r} has no resolved part")
         groups.setdefault(_pack_key(c.part), []).append(c)
 
-    forced = _collect_forced(cells, names, cfg.force_groups, by_name)
+    forced = _collect_forced(names, cfg.force_groups, cells_by_instance)
 
     packed: list[PackageGroup] = []
     for key in sorted(groups):
-        members = sorted(groups[key], key=lambda c: names[c.name])
+        members = sorted(groups[key], key=lambda c: names.stable_of(c))
         opts = options_by_key.get(key)
         if opts is None:
             opts = [members[0].part]  # type: ignore[list-item]
-        free = [c for c in members if c.name not in forced["cells"]]
+        # `forced["cells"]` holds STABLE names; compare like-for-like so a
+        # forced cell is not packed twice (once here and once by `_pack_forced`).
+        free = [c for c in members if names.stable_of(c) not in forced["cells"]]
         if free:
             packed.extend(_pack_group(free, opts, cfg, names))
         for unit in forced["units"].get(key, []):
@@ -148,12 +149,10 @@ def pack(
 
 
 def _collect_forced(
-    cells: Sequence[MappedCell],
-    names: Mapping[str, str],
+    names: CellNames,
     force_groups: Sequence[Sequence[str]],
-    by_name: Mapping[str, MappedCell],
+    cells_by_instance: Mapping[str, MappedCell],
 ) -> dict:
-    known = set(names.values())
     units: dict[tuple[str, str], list[list[MappedCell]]] = {}
     forced_cells: set[str] = set()
     seen: set[str] = set()
@@ -161,12 +160,16 @@ def _collect_forced(
         members: list[MappedCell] = []
         key: tuple[str, str] | None = None
         for n in group:
-            if n not in known:
-                raise PackError(f"force_groups references unknown cell {n!r}")
             if n in seen:
                 raise PackError(f"cell {n!r} appears in more than one force_group")
             seen.add(n)
-            cell = by_name[n]
+            # `n` is a STABLE name. `to_instance` hard-errors on anything else —
+            # including an ABC instance name, which would otherwise be silently
+            # accepted and then point at a different gate after the next synthesis.
+            try:
+                cell = cells_by_instance[names.to_instance(n)]
+            except KeyError:
+                raise PackError(f"force_groups references unknown cell {n!r}") from None
             k = _pack_key(cell.part)  # type: ignore[arg-type]
             if key is None:
                 key = k
@@ -185,11 +188,11 @@ def _pack_forced(
     members: Sequence[MappedCell],
     opts: Sequence[Part],
     cfg: PackerConfig,
-    names: Mapping[str, str],
+    names: CellNames,
 ) -> list[PackageGroup]:
     part = _best_part(len(members), opts, cfg)
     spare = part.gates_per_pkg - len(members)
-    cell_names = tuple(sorted(names[m.name] for m in members))
+    cell_names = tuple(sorted(names.stable_of(m) for m in members))
     return [
         PackageGroup(
             part=part,
@@ -219,7 +222,7 @@ def _pack_group(
     members: Sequence[MappedCell],
     opts: Sequence[Part],
     cfg: PackerConfig,
-    names: Mapping[str, str],
+    names: CellNames,
 ) -> list[PackageGroup]:
     n = len(members)
     counts, _package_cost, _spare = _solve(n, opts, cfg.spare_leakage_weight)
@@ -230,7 +233,7 @@ def _pack_group(
         for _ in range(count):
             take = members[cursor : cursor + part.gates_per_pkg]
             cursor += part.gates_per_pkg
-            cell_names = tuple(sorted(names[m.name] for m in take))
+            cell_names = tuple(sorted(names.stable_of(m) for m in take))
             spare_slots = part.gates_per_pkg - len(take)
             result.append(
                 PackageGroup(
@@ -305,17 +308,17 @@ def _solve(
 
 
 def _unpacked(
-    cells: Sequence[MappedCell], names: Mapping[str, str]
+    cells: Sequence[MappedCell], names: CellNames
 ) -> list[PackageGroup]:
     """One package per cell (no multi-gate sharing)."""
     groups: list[PackageGroup] = []
-    for c in sorted(cells, key=lambda c: names[c.name]):
+    for c in sorted(cells, key=lambda c: names.stable_of(c)):
         part = c.part  # type: ignore[assignment]
         spare = part.gates_per_pkg - 1
         groups.append(
             PackageGroup(
                 part=part,
-                cells=(names[c.name],),
+                cells=(names.stable_of(c),),
                 capacity=part.gates_per_pkg,
                 spare=spare,
                 rationale=f"unpacked: one {part.cell} per package",

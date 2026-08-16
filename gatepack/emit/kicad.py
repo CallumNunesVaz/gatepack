@@ -23,7 +23,7 @@ from __future__ import annotations
 from typing import Mapping, Sequence
 
 from gatepack import pins
-from gatepack.netlist import MappedCell, MappedNetlist
+from gatepack.netlist import CellNames, MappedCell, MappedNetlist
 from gatepack.pack.packer import PackageGroup
 
 LIB_NAME = "gatepack"
@@ -75,7 +75,8 @@ def _package_pins(part) -> list[tuple[str, str]]:
 
 def _build_nets(
     assigned: Sequence[tuple[str, PackageGroup]],
-    stable_to_cell: Mapping[str, MappedCell],
+    names: CellNames,
+    cells_by_instance: Mapping[str, MappedCell],
 ) -> tuple[dict[str, list[tuple[str, str]]], list[tuple[str, str]]]:
     """Collect ``net_name -> [(refdes, pin_number), ...]`` and no-connect pins."""
     nets: dict[str, list[tuple[str, str]]] = {}
@@ -91,7 +92,10 @@ def _build_nets(
         for slot in range(part.gates_per_pkg):
             prefix = f"{slot + 1}" if multi else ""
             if slot < len(group.cells):
-                cell = stable_to_cell[group.cells[slot]]
+                # `group.cells` holds STABLE names; cross back to the instance
+                # name through the one reverse lookup so connections are read
+                # off the right cell.
+                cell = cells_by_instance[names.to_instance(group.cells[slot])]
                 for pin_name in sorted(signal):
                     pkg_pin = prefix + pin_name
                     net = cell.connections.get(pin_name)
@@ -160,19 +164,17 @@ def _libparts(assigned: Sequence[tuple[str, PackageGroup]]) -> list[str]:
 def emit_netlist(
     netlist: MappedNetlist,
     assigned: Sequence[tuple[str, PackageGroup]],
-    stable_names: Mapping[str, str],
+    stable_names: CellNames,
 ) -> str:
     """Emit the KiCad ``.net`` s-expression for the *packed* netlist.
 
     ``assigned`` is the ``(refdes, PackageGroup)`` list from
-    :func:`gatepack.emit.refdes.assign_refdes`; ``stable_names`` maps each
-    mapped cell's original name to its stable name so package cell lists can be
-    resolved back to their connections.
+    :func:`gatepack.emit.refdes.assign_refdes`; ``stable_names`` is the
+    :class:`CellNames` instance -> stable mapping, used to resolve a package's
+    STABLE cell list back to its instance name (and therefore its connections).
     """
-    stable_to_cell = {
-        stable_names.get(c.name, c.name): c for c in netlist.cells
-    }
-    nets, no_connects = _build_nets(assigned, stable_to_cell)
+    cells_by_instance = {c.name: c for c in netlist.cells}
+    nets, no_connects = _build_nets(assigned, stable_names, cells_by_instance)
 
     lines: list[str] = [_sexp("export", "version", "gatepack-0.1.0")]
     lines.append(

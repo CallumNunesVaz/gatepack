@@ -272,7 +272,9 @@ def build_payload(result, paths: Mapping[str, Path], mapped_json_path: str | Pat
         # which the packer resolves against STABLE names. Everything the
         # renderer can see uses ABC's instance names, which change between
         # runs, so it needs this map to write an override that survives.
-        "stableCellNames": dict(getattr(result, "stable_names", {}) or {}),
+        # `stable_names` is a `CellNames` (instance -> stable); `dict()` of it
+        # is exactly the `Record<string, string>` the contract requires.
+        "stableCellNames": dict(result.stable_names) if result.stable_names else {},
     }
 
 
