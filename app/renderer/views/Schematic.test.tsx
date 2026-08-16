@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { render, waitFor, screen } from '@testing-library/react';
+import { fireEvent, render, waitFor, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ApiProvider } from '../bridge/context';
 import { ProjectProvider } from '../state/project';
-import { SelectionProvider } from '../selection/bus';
+import { SelectionProvider, useSelection } from '../selection/bus';
 import { setApi } from '../api';
 import { FakeGatepack } from '../bridge/fake';
 import { Schematic } from './Schematic';
@@ -198,6 +198,68 @@ describe('Schematic — packed layer', () => {
     await waitFor(() => {
       expect(container.querySelectorAll('[data-testid="packed-package"]')).toHaveLength(0);
     });
+  });
+});
+
+function SelectorHarness() {
+  const { setSelection } = useSelection();
+  return (
+    <button type="button" onClick={() => setSelection({ kind: 'cell', name: '$g1' })}>
+      select g1
+    </button>
+  );
+}
+
+function renderWithSelector(fake: FakeGatepack) {
+  setApi(fake);
+  return render(
+    <ApiProvider>
+      <ProjectProvider>
+        <SelectionProvider>
+          <SelectorHarness />
+          <Schematic />
+        </SelectionProvider>
+      </ProjectProvider>
+    </ApiProvider>,
+  );
+}
+
+describe('Schematic — §15.2 selection highlighting', () => {
+  it('marks the selected cell in the SVG with the selection class', async () => {
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setOk('mappedNetlist', TWO_GATE_NETLIST);
+    fake.setOk('packedNetlist', { packages: [] });
+    fake.setOk('analyse', analysis([]));
+
+    const { container } = renderWithSelector(fake);
+    await waitFor(() => expect(container.querySelector('g[id^="cell_"]')).toBeTruthy());
+
+    const cell = container.querySelector('g[id="cell_$g1"]');
+    expect(cell).toBeTruthy();
+    expect(cell).not.toHaveClass('gp-sel');
+
+    fireEvent.click(screen.getByText('select g1'));
+
+    await waitFor(() => expect(cell).toHaveClass('gp-sel'));
+  });
+});
+
+describe('Schematic — zoom controls', () => {
+  it('zooms in and out around the readout, clamped to the allowed range', async () => {
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setOk('mappedNetlist', TWO_GATE_NETLIST);
+    fake.setOk('packedNetlist', { packages: [] });
+    fake.setOk('analyse', analysis([]));
+
+    renderSchematic(fake);
+    await waitFor(() => expect(screen.getByTestId('schematic-zoom')).toBeTruthy());
+    expect(screen.getByTestId('schematic-zoom').textContent).toBe('100%');
+
+    fireEvent.click(screen.getByLabelText('Zoom in'));
+    await waitFor(() => expect(screen.getByTestId('schematic-zoom').textContent).toBe('125%'));
+
+    fireEvent.click(screen.getByLabelText('Zoom out'));
+    await waitFor(() => expect(screen.getByTestId('schematic-zoom').textContent).toBe('100%'));
   });
 });
 

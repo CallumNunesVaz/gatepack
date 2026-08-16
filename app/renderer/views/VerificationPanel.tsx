@@ -5,12 +5,24 @@ import { useRevisionedTask } from '../hooks/useRevisionedTask';
 import { StatusBadge } from '../components/StatusBadge';
 import { useSelection } from '../selection/bus';
 import { setVerifyResult } from '../selection/linkData';
+import { Icon } from '../ui';
+import { ActionButton, EmptyState } from './kit';
 import type { Check, Counterexample, VerifyResult } from '../../shared/api';
+import './views.css';
 
 /** The raw property name behind a `property <name>` check, or null if not one. */
 function propertyName(check: Check): string | null {
   if (check.kind !== 'property') return null;
   return check.name.startsWith('property ') ? check.name.slice('property '.length) : check.name;
+}
+
+function activateOnEnterOrSpace(handler: () => void) {
+  return (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handler();
+    }
+  };
 }
 
 function CounterexampleTrace({
@@ -41,12 +53,20 @@ function CounterexampleTrace({
           {cex.steps.map((step, i) => (
             <tr
               key={i}
+              tabIndex={0}
               className={selectedCycle === i ? 'cex-step--highlight' : ''}
               data-cycle={i}
               data-highlight={selectedCycle === i || undefined}
               onClick={(e) => {
                 e.stopPropagation();
                 onSelectStep(i);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onSelectStep(i);
+                }
               }}
             >
               <td>{i}</td>
@@ -78,19 +98,25 @@ function CheckRow({
   onSelectStep: (cycle: number) => void;
 }) {
   const name = propertyName(check);
+  const select = () => {
+    if (name) onSelectProperty(name);
+  };
   return (
     <li
       className={selected ? 'check-row check-row--highlight' : 'check-row'}
       data-check={check.name}
       data-highlight={selected || undefined}
-      onClick={() => {
-        if (name) onSelectProperty(name);
-      }}
+      onClick={select}
+      tabIndex={0}
+      onKeyDown={activateOnEnterOrSpace(select)}
+      aria-selected={selected}
     >
-      <StatusBadge status={check.status} bound={check.bound} skippedReason={check.skippedReason} />
-      <span className="check-name">{check.name}</span>
-      <span className="check-kind">{check.kind}</span>
-      <span className="check-duration">{check.durationMs} ms</span>
+      <div className="check-row__main">
+        <StatusBadge status={check.status} bound={check.bound} skippedReason={check.skippedReason} />
+        <span className="check-name">{check.name}</span>
+        <span className="check-kind">{check.kind}</span>
+        <span className="check-duration">{check.durationMs} ms</span>
+      </div>
       {check.counterexample && name ? (
         <CounterexampleTrace
           cex={check.counterexample}
@@ -123,9 +149,14 @@ export function VerificationPanel() {
     <section className="pane" data-testid="verification-panel">
       <header className="pane__header">
         <h2>Verification</h2>
-        <button onClick={run} disabled={state.status === 'running'}>
-          {state.status === 'running' ? 'Running…' : 'Run verification'}
-        </button>
+        <ActionButton
+          icon="verify"
+          label="Run verification"
+          busyLabel="Running"
+          busy={state.status === 'running'}
+          onClick={run}
+          primary
+        />
       </header>
 
       {isStale ? (
@@ -135,14 +166,16 @@ export function VerificationPanel() {
       ) : null}
 
       {state.status === 'error' ? (
-        <div className="error-note" data-testid="verification-error">
-          {state.error?.message}
+        <div className="error-note" data-testid="verification-error" role="alert">
+          <Icon name="error" decorative />
+          <span>{state.error?.message}</span>
         </div>
       ) : null}
 
       {state.status === 'success' && state.data ? (
         <div className="verify-summary" data-testid="verification-result">
           <div className={`verify-overall verify-overall--${state.data.allPassed ? 'pass' : 'not-pass'}`}>
+            <Icon name={state.data.allPassed ? 'check' : 'warning'} size={16} decorative />
             {state.data.allPassed ? 'All checks passed' : 'Not all checks passed'}
           </div>
           <ul className="check-list">
@@ -166,7 +199,12 @@ export function VerificationPanel() {
       ) : null}
 
       {state.status === 'idle' ? (
-        <p className="pane__empty">No verification has been run for the current source.</p>
+        <EmptyState
+          icon="verify"
+          title="No verification has been run for the current source."
+          hint="Run verification to see formal equivalence, property and exhaustive-simulation results."
+          testId="verification-empty"
+        />
       ) : null}
     </section>
   );

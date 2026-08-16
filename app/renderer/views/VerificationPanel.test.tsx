@@ -97,4 +97,25 @@ describe('VerificationPanel — property and counterexample selection', () => {
     renderPanel(fake);
     await waitFor(() => expect(screen.getByText(/No verification has been run/)).toBeTruthy());
   });
+
+  it('selects a counterexample step on Enter (keyboard navigability)', async () => {
+    const fake = new FakeGatepack();
+    fake.setOk('verify', verifyResult());
+
+    renderPanel(fake);
+    fireEvent.click(screen.getByText('Run verification'));
+    await waitFor(() => expect(screen.getByTestId('verification-result')).toBeTruthy());
+
+    const step0 = screen.getAllByRole('row').find((r) => r.getAttribute('data-cycle') === '0');
+    expect(step0).toBeTruthy();
+    expect(step0).toHaveAttribute('tabindex', '0');
+    expect(step0).not.toHaveAttribute('data-highlight', 'true');
+
+    fireEvent.keyDown(step0 as HTMLElement, { key: 'Enter' });
+    await waitFor(() => expect(step0).toHaveAttribute('data-highlight', 'true'));
+
+    // Selecting a step must not also select the property (the row is separate).
+    const row = screen.getByText('property p1').closest('li');
+    expect(row).not.toHaveAttribute('data-highlight', 'true');
+  });
 });

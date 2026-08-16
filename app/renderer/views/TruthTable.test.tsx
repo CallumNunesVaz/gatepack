@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { render, waitFor } from '@testing-library/react';
+import { fireEvent, render, waitFor } from '@testing-library/react';
 import { ApiProvider } from '../bridge/context';
 import { ProjectProvider } from '../state/project';
 import { SelectionProvider } from '../selection/bus';
@@ -118,5 +118,52 @@ describe('TruthTable — core divergence column', () => {
       expect(container.textContent).toContain('no simulation table');
     });
     expect(container.querySelectorAll('tbody tr').length).toBe(0);
+  });
+});
+
+describe('TruthTable — divergence is colour *and* icon', () => {
+  it('marks exactly the diverging rows with an icon, never a colour alone', async () => {
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setOk('simulate', divergingTable());
+    fake.setOk('estimate', estimateResult());
+
+    const { container } = renderTable(fake);
+
+    await waitFor(() => {
+      const flags = container.querySelectorAll(
+        'tr[data-divergent="true"] > td:first-child [role="img"][aria-label="diverges"]',
+      );
+      expect(flags.length).toBe(3);
+    });
+
+    // A non-divergent row carries no divergence icon.
+    const agreeing = container.querySelectorAll(
+      'tr[data-divergent="false"] > td:first-child [role="img"][aria-label="diverges"]',
+    );
+    expect(agreeing.length).toBe(0);
+  });
+});
+
+describe('TruthTable — keyboard navigability', () => {
+  it('makes every row focusable and selects it on Enter', async () => {
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setOk('simulate', agreeingTable());
+    fake.setOk('estimate', estimateResult());
+
+    const { container } = renderTable(fake);
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('tbody tr[role="row"]').length).toBe(4);
+    });
+
+    const row0 = container.querySelector('tbody tr[role="row"]') as HTMLElement;
+    expect(row0).toHaveAttribute('tabindex', '0');
+    expect(row0).not.toHaveAttribute('data-highlight', 'true');
+
+    fireEvent.keyDown(row0, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(row0).toHaveAttribute('data-highlight', 'true');
+    });
   });
 });

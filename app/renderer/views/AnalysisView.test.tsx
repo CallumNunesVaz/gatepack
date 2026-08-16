@@ -119,4 +119,25 @@ describe('AnalysisView — C14 dashboard', () => {
 
     await waitFor(() => expect(screen.getByText(/No SCOAP data/)).toBeTruthy());
   });
+
+  it('labels each metric band from the core violated flag, never a recomputed verdict', async () => {
+    const fake = new FakeGatepack();
+    fake.setOk(
+      'analyse',
+      summary({
+        metrics: [
+          { name: 'package count', value: 12, unit: 'packages', limit: 10, violated: true },
+          { name: 'flop count', value: 2, unit: 'flops', limit: 8, violated: false },
+        ],
+      }),
+    );
+    fake.setOk('estimate', estimateResult('green'));
+
+    renderAnalysis(fake);
+    fireEvent.click(screen.getByText('Run analysis'));
+
+    await waitFor(() => expect(screen.getByTestId('metric-package count')).toBeTruthy());
+    expect(screen.getByTestId('metric-package count')).toHaveTextContent('violated');
+    expect(screen.getByTestId('metric-flop count')).toHaveTextContent('met');
+  });
 });
