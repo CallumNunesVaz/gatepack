@@ -17,14 +17,14 @@
   that climb out of the worktree.
 - **Do not run `npm install`.** `app/node_modules` is already populated.
 - Run the tests and fix what you break. Python:
-  `.venv/bin/python -m pytest tests -q` (**532 pass, 4 skip** at baseline).
+  `.venv/bin/python -m pytest tests -q` (**557 pass, 5 skip** at baseline).
   From `app/`: `npx tsc --noEmit -p tsconfig.json`,
-  `npx tsc --noEmit -p tsconfig.main.json`, `npx vitest run` (**150 pass**),
+  `npx tsc --noEmit -p tsconfig.main.json`, `npx vitest run` (**180 pass**),
   and `DISPLAY=:1 npx playwright test --config playwright.config.cjs`
   (**12 pass**, after `npm run build:main && npx vite build`).
 - **A check that cannot fail is worth nothing.** For everything you add, build
   the input that makes it fail and keep that as a test. This project has now
-  shipped **eight** pieces of machinery that reported a status while measuring
+  shipped **nine** pieces of machinery that reported a status while measuring
   nothing, every one with a green suite, and four of them had tests that could
   not have failed.
 - **Never fake a tool result.** A missing binary is reported, never
