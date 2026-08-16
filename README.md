@@ -1,9 +1,8 @@
 # gatepack
 
 Compile a truth table or finite state machine into a **bill of materials and a
-schematic netlist built entirely from discrete single-gate logic packages** —
-74AUP-class parts, one gate per package — with formal verification on every
-build.
+schematic netlist built entirely from discrete logic packages** — 74AUP-class
+parts, one to three gates each — with formal verification on every build.
 
 You write a specification. gatepack produces the Verilog, maps it to real
 purchasable parts, proves the netlist is equivalent to what you specified,
@@ -25,13 +24,14 @@ properties:
 
 ```
 $ gatepack build examples/pelican/design.yaml --library libraries/74aup.csv --out out/
-packed: 23 package(s), 0 spare gate(s), pack_cost 23
+packed: 20 package(s), 3 spare gate(s), pack_cost 32
 ```
 
 ```csv
 part_number,manufacturers,package,quantity,refdes,tier
-74AUP1G08,TI;Nexperia,SOT-353,3,U3;U4;U5,G
-74AUP1G175,TI;Nexperia,SOT-353,11,U7;U8;U9;U10;U11;...,F
+74AUP1G175,TI;Nexperia,SOT-353,11,U3;U4;U5;U6;U7;...,F
+74AUP2G08,TI;Nexperia,VSSOP-8,2,U16;U17,G
+74AUP2G32,TI;Nexperia,VSSOP-8,3,U18;U19;U20,G
 ```
 
 ## Why
@@ -58,15 +58,16 @@ establish the proof is not vacuous.
 ## Status
 
 **Pre-release. Not yet v0.1.0.** The core pipeline runs end to end against a
-real toolchain, and the desktop application launches and renders, but several
-milestones are still open — including one where the verification claim above
-does not currently hold.
+real toolchain — every golden design verifies, the must-fail goldens fail, and
+two clean builds are byte-identical including the netlist and BOM. The desktop
+application launches and renders.
 
 `docs/MILESTONE-AUDIT.md` is the honest status of every milestone, checked by
 running things rather than by counting tests. Read it before relying on
-anything here. The short version: equivalence checking is under repair, SCOAP
-and stuck-at analysis do not exist yet, and provenance coverage is computed but
-not reported.
+anything here. Still open: provenance coverage is computed but not reported,
+packaging and signed installers do not exist, and the GUI milestones have not
+been audited the way the core was. "KiCad import clean" has never been tested
+by importing anything into KiCad.
 
 This project records what it has *measured* rather than what it assumes.
 `docs/M0-FINDINGS.md` and `docs/M6-FINDINGS.md` hold results from real Yosys and
@@ -119,6 +120,7 @@ reimplements core logic — everything it shows comes from invoking `gatepack`.
 | `gatepack compile` | specification → behavioural Verilog + properties |
 | `gatepack verify` | equivalence, exhaustive simulation, mutation, properties |
 | `gatepack build` | pack and emit BOM, KiCad netlist, report |
+| `gatepack simulate` | the exhaustive divergence table (spec vs mapped netlist) |
 | `gatepack lib check/gen` | cell-library citation audit and Liberty generation |
 | `gatepack project bundle/explode` | single-file `.gpk` project format |
 | `gatepack examples list/extract` | bundled example projects |
@@ -129,6 +131,11 @@ Every electrical value in `libraries/74aup.csv` must carry a datasheet citation
 with document revision and table or page — see `libraries/74aup.refs.md`.
 Values without one are marked as placeholders. **No electrical value in this
 project is ever invented**, and `gatepack lib check` enforces it.
+
+The multi-gate rows carry an extra unverified claim: a package and a gate
+count. A wrong `gates_per_pkg` yields a netlist that physically cannot be
+built, which is a worse failure than a wrong tPD — so confirm those before any
+of this reaches a real BOM.
 
 ## Licence
 
