@@ -1,0 +1,240 @@
+/*
+ * Design tokens — the single source of every colour, space and duration.
+ *
+ * Views must not hardcode a hex value or a pixel spacing. If something is
+ * missing here, add it here; a one-off literal in a view is how two panels end
+ * up almost the same colour, which reads as a rendering bug rather than a
+ * choice.
+ *
+ * The palette is the mark's: ENIG gold on solder-mask green (see media/README).
+ * It is a real board, and the accent is the same gold the logo uses, so the app
+ * and its icon are recognisably one product.
+ *
+ * Layout target is a nominal 1920x1080 window (§C9). The breakpoints below are
+ * the points at which the shell drops capability, not a mobile-first ladder —
+ * this is a desktop tool and there is no phone layout.
+ */
+
+:root {
+  /* --- brand ------------------------------------------------------------- */
+  --gp-green-900: #08301f;
+  --gp-green-800: #0a3a26;
+  --gp-green-700: #0f4a38;
+  --gp-green-600: #16624a;
+  --gp-gold-400: #f5cf66;
+  --gp-gold-500: #f2c75c;
+  --gp-gold-600: #c9962a;
+
+  /* --- surfaces (light) -------------------------------------------------- */
+  --gp-bg: #f6f7f5;
+  --gp-surface: #ffffff;
+  --gp-surface-2: #eef1ee;
+  --gp-surface-3: #e2e7e3;
+  --gp-border: #cdd5cf;
+  --gp-border-strong: #a9b5ad;
+
+  /* --- text -------------------------------------------------------------- */
+  --gp-text: #10211a;
+  --gp-text-muted: #4a6b5e;
+  --gp-text-faint: #7a8e85;
+  --gp-text-on-accent: #08301f;
+  --gp-text-inverse: #f6f7f5;
+
+  /* --- accent ------------------------------------------------------------ */
+  --gp-accent: var(--gp-green-700);
+  --gp-accent-hover: var(--gp-green-600);
+  --gp-accent-text: #ffffff;
+  --gp-focus: var(--gp-gold-600);
+
+  /* --- status ------------------------------------------------------------
+   * Four verification states (§C15) plus the three-band verdict (§6). Never
+   * colour alone: every status also carries an icon and a text label, because
+   * a red/green distinction is invisible to a substantial fraction of users.
+   */
+  --gp-ok: #1f7a4d;
+  --gp-ok-bg: #e4f4ea;
+  --gp-warn: #9a6a00;
+  --gp-warn-bg: #fdf3dc;
+  --gp-fail: #b3261e;
+  --gp-fail-bg: #fbe6e4;
+  --gp-unknown: #5c6b64;
+  --gp-unknown-bg: #eceeed;
+  --gp-info: #1d5b8f;
+  --gp-info-bg: #e4eff8;
+
+  /* --- selection (§15.2 cross-highlights) -------------------------------- */
+  --gp-select: var(--gp-gold-600);
+  --gp-select-bg: rgba(242, 199, 92, 0.28);
+  --gp-select-ring: rgba(201, 150, 42, 0.9);
+
+  /* --- space: a 4px base scale ------------------------------------------- */
+  --gp-space-1: 4px;
+  --gp-space-2: 8px;
+  --gp-space-3: 12px;
+  --gp-space-4: 16px;
+  --gp-space-5: 24px;
+  --gp-space-6: 32px;
+  --gp-space-7: 48px;
+
+  /* --- radii and elevation ----------------------------------------------- */
+  --gp-radius-sm: 3px;
+  --gp-radius: 6px;
+  --gp-radius-lg: 10px;
+  --gp-shadow-1: 0 1px 2px rgba(8, 48, 31, 0.08);
+  --gp-shadow-2: 0 4px 12px rgba(8, 48, 31, 0.12);
+  --gp-shadow-3: 0 12px 32px rgba(8, 48, 31, 0.18);
+
+  /* --- type -------------------------------------------------------------- */
+  --gp-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+    Arial, sans-serif;
+  /* Netlists, refdes and cell names are read character by character; they are
+   * always monospace, everywhere, without exception. */
+  --gp-font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas,
+    'Liberation Mono', monospace;
+  --gp-text-xs: 11px;
+  --gp-text-sm: 12px;
+  --gp-text-md: 13px;
+  --gp-text-lg: 15px;
+  --gp-text-xl: 18px;
+  --gp-text-2xl: 24px;
+  --gp-line: 1.5;
+
+  /* --- motion ------------------------------------------------------------
+   * Durations are short on purpose. This is an instrument: animation exists to
+   * show where a thing came from, never to make the user wait for it.
+   */
+  --gp-motion-fast: 90ms;
+  --gp-motion: 160ms;
+  --gp-motion-slow: 260ms;
+  --gp-ease: cubic-bezier(0.2, 0, 0.13, 1);
+  --gp-ease-out: cubic-bezier(0.05, 0.7, 0.1, 1);
+
+  /* --- layout ------------------------------------------------------------ */
+  --gp-topbar-h: 44px;
+  --gp-statusbar-h: 26px;
+  --gp-rail-w: 56px;
+  --gp-sidebar-w: 300px;
+  --gp-inspector-w: 340px;
+
+  /* --- z-index: declared centrally so stacking is a decision, not a race -- */
+  --gp-z-sticky: 10;
+  --gp-z-rail: 20;
+  --gp-z-tooltip: 60;
+  --gp-z-overlay: 70;
+  --gp-z-palette: 80;
+  --gp-z-toast: 90;
+}
+
+/*
+ * Dark theme. The renderer sets `data-theme` on <html>; with no explicit
+ * choice the OS preference decides. Both paths are defined, so a token can
+ * never be defined only inside a media query.
+ */
+:root[data-theme='dark'] {
+  --gp-bg: #0b1512;
+  --gp-surface: #12201b;
+  --gp-surface-2: #17291f;
+  --gp-surface-3: #1e3428;
+  --gp-border: #27402f;
+  --gp-border-strong: #3a5a45;
+
+  --gp-text: #e8efe9;
+  --gp-text-muted: #a3b8ab;
+  --gp-text-faint: #7a8e85;
+  --gp-text-inverse: #0b1512;
+
+  --gp-accent: var(--gp-gold-500);
+  --gp-accent-hover: var(--gp-gold-400);
+  --gp-accent-text: var(--gp-green-900);
+  --gp-focus: var(--gp-gold-400);
+
+  --gp-ok: #5fd08e;
+  --gp-ok-bg: #12301f;
+  --gp-warn: #e5b74b;
+  --gp-warn-bg: #33280c;
+  --gp-fail: #ff8a80;
+  --gp-fail-bg: #3a1a17;
+  --gp-unknown: #9aa8a1;
+  --gp-unknown-bg: #1c2723;
+  --gp-info: #7fb8e8;
+  --gp-info-bg: #12283a;
+
+  --gp-select-bg: rgba(242, 199, 92, 0.22);
+
+  --gp-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --gp-shadow-2: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --gp-shadow-3: 0 12px 32px rgba(0, 0, 0, 0.6);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --gp-bg: #0b1512;
+    --gp-surface: #12201b;
+    --gp-surface-2: #17291f;
+    --gp-surface-3: #1e3428;
+    --gp-border: #27402f;
+    --gp-border-strong: #3a5a45;
+
+    --gp-text: #e8efe9;
+    --gp-text-muted: #a3b8ab;
+    --gp-text-faint: #7a8e85;
+    --gp-text-inverse: #0b1512;
+
+    --gp-accent: var(--gp-gold-500);
+    --gp-accent-hover: var(--gp-gold-400);
+    --gp-accent-text: var(--gp-green-900);
+    --gp-focus: var(--gp-gold-400);
+
+    --gp-ok: #5fd08e;
+    --gp-ok-bg: #12301f;
+    --gp-warn: #e5b74b;
+    --gp-warn-bg: #33280c;
+    --gp-fail: #ff8a80;
+    --gp-fail-bg: #3a1a17;
+    --gp-unknown: #9aa8a1;
+    --gp-unknown-bg: #1c2723;
+    --gp-info: #7fb8e8;
+    --gp-info-bg: #12283a;
+
+    --gp-select-bg: rgba(242, 199, 92, 0.22);
+
+    --gp-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --gp-shadow-2: 0 4px 12px rgba(0, 0, 0, 0.5);
+    --gp-shadow-3: 0 12px 32px rgba(0, 0, 0, 0.6);
+  }
+}
+
+/*
+ * Density. The nominal window is 1920x1080; below that the shell sheds chrome
+ * rather than shrinking type past legibility. Views read these via the
+ * `[data-density]` attribute the shell sets, so a view never queries the
+ * viewport itself.
+ */
+@media (max-width: 1500px) {
+  :root {
+    --gp-sidebar-w: 240px;
+    --gp-inspector-w: 280px;
+  }
+}
+
+@media (max-width: 1200px) {
+  :root {
+    --gp-sidebar-w: 210px;
+    --gp-inspector-w: 250px;
+    --gp-space-5: 18px;
+    --gp-space-6: 24px;
+  }
+}
+
+/*
+ * Respect the OS setting. Everything animated must still be *readable* with
+ * motion off — an animation may never be the only thing that communicates a
+ * state change.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --gp-motion-fast: 1ms;
+    --gp-motion: 1ms;
+    --gp-motion-slow: 1ms;
+  }
+}

@@ -1,3 +1,13 @@
+/*
+ * Application styles.
+ *
+ * `ui/tokens.css` is imported first and owns every colour, space and duration.
+ * The legacy `--bg`/`--panel`/`--text` variables below are kept as aliases onto
+ * the tokens so views that have not been migrated still render, but nothing new
+ * may use them — add to tokens.css instead.
+ */
+@import './ui/tokens.css';
+
 :root {
   --bg: #1e1f24;
   --panel: #26272e;
