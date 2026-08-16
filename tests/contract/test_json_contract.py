@@ -167,8 +167,7 @@ def test_build_json_envelope(tmp_path):
     line = data["bom"][0]
     assert set(line) == {
         "partNumber", "manufacturers", "package", "quantity", "refdes",
-        "tier", "singleSourced", "gatesPerPackage",
-        "gatesPerPackage",
+        "tier", "singleSourced", "gatesPerPackage", "unverified",
     }
     assert isinstance(line["manufacturers"], list)
     assert isinstance(line["refdes"], list)

@@ -201,6 +201,11 @@ def emit_verilog(compiled: CompiledDesign) -> str:
                 conns.append(f".{port.name}({reset_name})")
             elif spec.enable_pin is not None and port.name == spec.enable_pin:
                 conns.append(f".{port.name}({_macro_enable(compiled, index, macro, var_map, state_map)})")
+            elif spec.serial_in_pin is not None and port.name == spec.serial_in_pin:
+                # A synthetic tie-off: design.yaml has no serial-data field, so
+                # the shift register shifts in a constant.  The macro remains a
+                # verification vehicle (§9.4 M8), not a placed physical part.
+                conns.append(f".{port.name}(1'b0)")
             elif port.name == spec.q_pin:
                 conns.append(f".{port.name}({q_wire})")
             else:

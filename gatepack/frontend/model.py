@@ -17,18 +17,7 @@ from gatepack.frontend import johnson
 from gatepack.frontend import sat
 from gatepack.frontend.errors import CompileError
 from gatepack.frontend.schema import Design
-
-# M-cell internal flop counts, used by §6 flop-count / clock-fanout metrics.
-# Each macro additionally presents a single clock input pin (one fanout load).
-M_CELL_FLOP_COUNTS: dict[str, int] = {
-    "CNT4": 4,
-    "CNT12": 12,
-    "SIPO8": 8,
-    "PISO8": 8,
-    "JOHN10": 10,
-    "DIV2N": 4,
-    "CELEM": 1,
-}
+from gatepack.macros import get_spec, known_m_cells
 
 
 @dataclass
@@ -67,9 +56,7 @@ class CompiledDesign:
 
     @property
     def macro_flops(self) -> int:
-        return sum(
-            M_CELL_FLOP_COUNTS.get(m.cell, 0) for m in self.design.macros
-        )
+        return sum(get_spec(m.cell).flops for m in self.design.macros)
 
     @property
     def flop_count(self) -> int:
@@ -177,10 +164,12 @@ def compile_design(
     # --- macros ------------------------------------------------------------------
     macro_enable_asts: list[expr_mod.Expr | None] = []
     for macro in design.macros:
-        if macro.cell not in M_CELL_FLOP_COUNTS:
+        if macro.cell not in known_m_cells():
             raise CompileError(
-                f"macro {macro.instance!r}: unknown M-cell {macro.cell!r} "
-                f"(known: {sorted(M_CELL_FLOP_COUNTS)})"
+                f"macro {macro.instance!r}: M-cell {macro.cell!r} has no "
+                "independent specification model (known: "
+                f"{sorted(known_m_cells())}); a macro without a specification "
+                "model cannot be verified (§9.4 M8)"
             )
         if design.clock is not None and macro.clock != design.clock.signal:
             raise CompileError(

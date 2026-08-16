@@ -48,7 +48,7 @@ def test_bom_columns_and_sorted_refdes():
     header = bom.splitlines()[0].split(",")
     assert header == [
         "part_number", "manufacturers", "equivalents", "package",
-        "quantity", "refdes", "tier", "unit_price",
+        "quantity", "refdes", "tier", "unit_price", "unverified",
     ]
     data = bom.splitlines()[1]
     assert data.startswith("74AUPNOR2")

@@ -58,6 +58,26 @@ def _run(*argv: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _build_package_count(out: str) -> int:
+    # The shipped library's multi-gate parts are placeholder data, so `build`
+    # refuses them by default; these tests measure packing, not the data gate,
+    # so they acknowledge the unverified gates-per-package explicitly.
+    proc = subprocess.run(
+        [
+            "docker", "run", "--rm", "-v", f"{REPO}:/repo", "-w", "/repo", IMAGE,
+            "python3", "-c",
+            "from gatepack.build import run_build; "
+            f"r, _ = run_build({DESIGN!r}, {LIBRARY!r}, out_dir={out!r}, "
+            "allow_unverified_gates_per_pkg=True); "
+            "print(r.packed_stats.package_count)",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stderr or proc.stdout
+    return int(proc.stdout.strip())
+
+
 def _rm(*paths: str) -> None:
     subprocess.run(
         ["docker", "run", "--rm", "-v", f"{REPO}:/repo", "-w", "/repo", IMAGE,
@@ -78,12 +98,11 @@ def test_estimate_package_count_agrees_with_build():
     out_dir = ".gpout/est_build_showcase"
     try:
         est = _data(_run("estimate", DESIGN, "--library", LIBRARY, "--build", est_dir, "--json"))
-        bld = _data(_run("build", DESIGN, "--library", LIBRARY, "--out", out_dir, "--json"))
+        build_packages = _build_package_count(out_dir)
     finally:
         _rm(est_dir, out_dir)
 
     estimate_packages = est["packageCount"]
-    build_packages = bld["packageCount"]
 
     assert build_packages > 0
     assert estimate_packages == build_packages, (

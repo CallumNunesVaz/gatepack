@@ -266,17 +266,24 @@ def run_build(
     out_dir: str | Path = "out",
     mapped_json: str | Path | None = None,
     spare_leakage_weight: float | None = None,
+    allow_unverified_gates_per_pkg: bool = False,
 ) -> tuple[BuildResult, dict[str, Path]]:
     """Full ``gatepack build``: front-end -> Liberty -> (Yosys|--mapped) -> C5..C8.
 
     Yosys is only invoked when no ``mapped_json`` is supplied and ``yosys`` is on
     ``PATH``; otherwise the mapped netlist is required.
+
+    The build refuses to ship a part whose ``gates_per_pkg > 1`` rests on
+    unverified/placeholder data (§10.1, §23): that value decides how many
+    physical packages the board needs and which gates share a die, so a wrong
+    one yields a netlist that physically cannot be built.  Pass
+    ``allow_unverified_gates_per_pkg=True`` to acknowledge the risk explicitly.
     """
     from gatepack.frontend.frontend import compile_design_file
     from gatepack.liberty.generator import generate as generate_liberty
     from gatepack.netlist import load_mapped_json
-    from gatepack.parts import load_parts
     from gatepack.estimate import check_vcc_compatibility, VccIncompatibleError
+    from gatepack.refs import load_parts_cited
 
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -285,7 +292,7 @@ def run_build(
     compiled = compiled_result.compiled
     design = compiled.design
 
-    parts = load_parts(library_csv)
+    parts = load_parts_cited(library_csv)
     vcc = design.constraints.vcc
     vcc_errors = check_vcc_compatibility(compiled, parts, vcc)
     if vcc_errors:
@@ -328,8 +335,49 @@ def run_build(
     )
     result.compiled = compiled
     result.verilog = compiled_result.verilog
+    _gate_unverified_gates_per_pkg(result.assigned, allow_unverified_gates_per_pkg)
     paths = write_build(out, result, previous)
     return result, paths
+
+
+def _gate_unverified_gates_per_pkg(
+    assigned: Sequence, allow: bool
+) -> None:
+    """Refuse to ship a multi-gate package whose ``gates_per_pkg`` is unverified.
+
+    ``assigned`` is the ``(refdes, PackageGroup)`` list that becomes the BOM and
+    netlist.  The gate fires only when more than one gate actually shares a die
+    based on an unverified multi-gate claim (``len(group.cells) > 1``): that is
+    the "which gates share a die" value a wrong number corrupts.  A single gate
+    placed in a nominally-multi-gate package is surfaced (marked in the
+    BOM/report) rather than gated — its failure mode is a wrong spare count, not
+    a netlist that cannot be built.
+    """
+    from gatepack.parts import UnverifiedGatesPerPackageError
+
+    offenders: dict[str, tuple[Part, int]] = {}
+    for _ref, group in assigned:
+        part = group.part
+        if not part.is_verified and part.gates_per_pkg > 1 and len(group.cells) > 1:
+            offenders.setdefault(
+                part.part_number or part.cell, (part, len(group.cells))
+            )
+    if not offenders or allow:
+        return
+    detail = "; ".join(
+        f"{pn} (gates_per_pkg={part.gates_per_pkg}, {n} gate(s) sharing a die)"
+        for pn, (part, n) in sorted(offenders.items())
+    )
+    raise UnverifiedGatesPerPackageError(
+        [part.cell for part, _n in offenders.values()],
+        "gates_per_pkg is unverified/placeholder for the multi-gate part(s) "
+        f"{detail}. This value decides which gates share a die and how many "
+        "physical packages the board needs — a wrong value produces a netlist "
+        "that physically cannot be built. Confirm the value against a pinned "
+        "datasheet citation in the refs file, or pass an explicit "
+        "acknowledgement (allow_unverified_gates_per_pkg=True) to proceed "
+        "anyway.",
+    )
 
 
 def _synthesize(compiled, parts, out: Path) -> tuple[MappedNetlist | None, str | None]:

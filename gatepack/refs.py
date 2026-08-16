@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from gatepack.parts import Part
+from gatepack.parts import Part, mark_verification, load_parts
 
 
 def find_refs_file(csv_path: str | Path) -> Path:
@@ -61,3 +61,33 @@ def check_citations(
     refs_path = find_refs_file(csv_path)
     citations = parse_refs(refs_path)
     return missing_citations(parts, citations), refs_path
+
+
+def load_parts_cited(csv_path: str | Path) -> list[Part]:
+    """Load ``parts.csv`` with each part's verification status attached.
+
+    The refs file is the citation source of truth; its electrical-status column
+    marks a part verified or placeholder.  Parts loaded without a refs entry
+    default to placeholder (fail-closed), so an uncited value is never mistaken
+    for a cited one.
+    """
+    parts = load_parts(csv_path)
+    citations = parse_refs(find_refs_file(csv_path))
+    mark_verification(parts, citations)
+    return parts
+
+
+def placeholder_summary(csv_path: str | Path) -> dict:
+    """The placeholder/unverified cell count for ``csv_path`` (for `doctor`).
+
+    Returns ``{"total": N, "unverified": M, "unverifiedCells": [...]}`` so the
+    count is visible without a separate `lib check` run.  Only the *data* lives
+    here; `gatepack/doctor.py` owns how it is surfaced in the doctor report.
+    """
+    parts = load_parts_cited(csv_path)
+    unverified = [p.cell for p in parts if not p.is_verified]
+    return {
+        "total": len(parts),
+        "unverified": len(unverified),
+        "unverifiedCells": sorted(unverified),
+    }

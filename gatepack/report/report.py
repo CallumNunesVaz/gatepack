@@ -76,14 +76,31 @@ def emit_report(inp: ReportInputs) -> str:
 
     lines.append("## Bill of materials")
     lines.append("")
-    lines.append("| part | manufacturers | package | qty | refdes | tier |")
-    lines.append("|---|---|---|---|---|---|")
+    lines.append("| part | manufacturers | package | qty | refdes | tier | electrical data |")
+    lines.append("|---|---|---|---|---|---|---|")
     for row in inp.packed_bom:
+        verification = "unverified" if row.unverified else "verified"
         lines.append(
             f"| {row.part_number} | {row.manufacturers} | {row.package} | "
-            f"{row.quantity} | {';'.join(row.refdes)} | {row.tier} |"
+            f"{row.quantity} | {';'.join(row.refdes)} | {row.tier} | {verification} |"
         )
     lines.append("")
+    unverified = [r for r in inp.packed_bom if r.unverified]
+    if unverified:
+        lines.append(
+            "_The BOM above marks parts whose electrical figures (package, "
+            "gates-per-package, tPD, leakage, supply range) rest on unverified/"
+            "placeholder data from `parts.csv`. These figures must not be used as "
+            "design data until a real, pinned datasheet citation backs them "
+            "(`libraries/74aup.refs.md`). A wrong `gates_per_pkg` on a multi-gate "
+            "part yields a netlist that physically cannot be built._"
+        )
+        lines.append("")
+        lines.append(
+            f"Unverified parts in this BOM: "
+            f"{', '.join(sorted({r.part_number for r in unverified}))}."
+        )
+        lines.append("")
 
     if inp.packages:
         lines.append("## Package grouping (per-package rationale)")

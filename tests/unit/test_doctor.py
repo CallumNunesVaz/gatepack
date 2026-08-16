@@ -36,7 +36,7 @@ def test_run_doctor_reports_every_tool_with_stable_shape():
     assert payload["resources"] == {
         "commonFrontendYs": True,
         "mcellModels": True,
-        "mcellCount": 1,
+        "mcellCount": 2,
     }
 
 

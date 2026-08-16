@@ -65,8 +65,10 @@ def _build_and_measure(design: str, design_path: str) -> tuple[str, CoverageRepo
     """
     out = f".gpout/prov_{design}"
     proc = _run(
-        f"python3 -m gatepack build {design_path} --library libraries/74aup.csv "
-        f"--out {out}"
+        "python3 -c "
+        f"\"from gatepack.build import run_build; "
+        f"run_build('{design_path}', 'libraries/74aup.csv', out_dir='{out}', "
+        f"allow_unverified_gates_per_pkg=True)\""
     )
     assert proc.returncode == 0, f"build failed for {design}:\n{proc.stderr or proc.stdout}"
 
