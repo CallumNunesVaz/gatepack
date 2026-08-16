@@ -24,8 +24,8 @@ tool closes, the only evidence that counts is that tool closing.
 | M12 | Project opens; core invoked; §5.2 posture verified | **met** |
 | M13 | C10 spec editor — three-way sync, positions in sidecar | **met** (sidecar is localStorage, not `design.layout.json`) |
 | M14 | C11 truth table — divergence highlighting | **met** (2026-08-16, was NOT met) |
-| M15 | C12 schematic — all layers | **NOT MET** — layers are text notices; `mappedNetlist()` calls a missing subcommand |
-| M16 | Linked selection — §15.2 cross-highlights | **NOT MET** — `provenance()`/`analyse()`/`mappedNetlist()` all call missing subcommands |
+| M15 | C12 schematic — all layers | **partial** — data paths fixed; packed layer not in the contract |
+| M16 | Linked selection — §15.2 cross-highlights | **partial** — provenance now reaches the renderer; package/property selections still map to nothing |
 | M17 | C13 packing override, C14 dashboard, C15 tri-state | **met** (2026-08-16) |
 | M18 | Signed installers; worked example; CI green | **partial** — packaging builds, licence defects open, core does not ship |
 
@@ -267,6 +267,22 @@ The headline: **three bridge methods call CLI subcommands that do not exist.**
 none of them are in `cli.py`. So `mappedNetlist()`, `provenance()` and
 `analyse()` have never returned data, which is why M15's layers and M16's
 cross-highlights cannot work at all.
+
+**The missing subcommands are now added** (`provenance`, `mapped-netlist`,
+and `analyse` from the same round), so all three bridge methods return real
+data and the audit's two intentionally-failing e2e specs now pass — 12 of 12.
+
+That fixed the **data paths**, not the rendering, and the distinction matters:
+
+- **M15 is partial, not met.** The netlistsvg layer can now obtain its input,
+  and the test-point/unobservable overlay can now reach `analyse()`. But the
+  **packed-netlist layer is not in the IPC contract at all** —
+  `mappedNetlist()` returns the logical netlist only — so it remains a text
+  notice rather than a render. "netlistsvg rendering all layers" needs the
+  packed netlist exposed and drawn.
+- **M16 is partial, not met.** `provenance()` now reaches the renderer, which
+  is what the cross-highlights consume. Package and property selections still
+  map to nothing.
 
 **M14 was the worst and is now fixed.** `simulate()` returned `actual: "x"` for
 every output of every design — including a two-input XOR — so `diverges` was

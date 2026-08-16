@@ -221,6 +221,24 @@ def _build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="emit one machine-readable JSON object to stdout"
     )
 
+    provenance_p = sub.add_parser(
+        "provenance",
+        help="§15.1 provenance map over an existing build directory (for the GUI)",
+    )
+    provenance_p.add_argument("dir", help="build/out directory containing premap.json + mapped.json")
+    provenance_p.add_argument(
+        "--json", action="store_true", help="emit one machine-readable JSON object to stdout"
+    )
+
+    mapped_p = sub.add_parser(
+        "mapped-netlist",
+        help="emit the mapped netlist (Yosys write_json) for the schematic view",
+    )
+    mapped_p.add_argument("dir", help="build/out directory containing mapped.json")
+    mapped_p.add_argument(
+        "--json", action="store_true", help="emit one machine-readable JSON object to stdout"
+    )
+
     examples_p = sub.add_parser(
         "examples", help="bundled example projects (§18.1)"
     )
@@ -272,6 +290,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_build(args)
     if args.command == "analyse":
         return _cmd_analyse(args)
+    if args.command == "provenance":
+        return _cmd_provenance(args)
+    if args.command == "mapped-netlist":
+        return _cmd_mapped_netlist(args)
     if args.command == "examples":
         if args.examples_command == "list":
             return _cmd_examples_list(args)
@@ -613,6 +635,87 @@ def _cmd_build(args: argparse.Namespace) -> int:
           f"pack_cost {s.pack_cost:g}")
     for name, path in sorted(paths.items()):
         print(f"wrote {path}")
+    return EXIT_OK
+
+
+def _cmd_provenance(args: argparse.Namespace) -> int:
+    """§15.1 provenance map, for the application's linked selection (§15.2).
+
+    The session manager has invoked `gatepack provenance <dir>` since M12; the
+    subcommand did not exist, so `provenance()` had never returned data and
+    M16's cross-highlights could not work at all.
+    """
+    from gatepack.provenance.coverage import (
+        measure_coverage_from_dir,
+        provenance_map_payload,
+    )
+
+    try:
+        report = measure_coverage_from_dir(args.dir)
+    except OSError as exc:
+        if args.json:
+            _json_err("provenance", _command_error(exc))
+        else:
+            print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    if report is None:
+        message = (
+            f"no captured netlists at {args.dir}: run `gatepack build` first "
+            "(provenance is never reported as empty when nothing was measured)"
+        )
+        if args.json:
+            _json_err("provenance", error(GP_IO, message))
+        else:
+            print(f"error: {message}", file=sys.stderr)
+        return EXIT_ERROR
+
+    payload = provenance_map_payload(report)
+    if args.json:
+        _json_ok("provenance", payload)
+        return EXIT_OK
+
+    print(f"provenance coverage: {payload['coverage'] * 100:.1f}% of constructs linked")
+    print(f"linked constructs: {len(payload['entries'])}")
+    return EXIT_OK
+
+
+def _cmd_mapped_netlist(args: argparse.Namespace) -> int:
+    """The mapped netlist as Yosys wrote it, for C12's schematic view.
+
+    netlistsvg consumes `write_json` output directly, so this hands the file
+    through unchanged rather than reshaping it — the renderer must not be given
+    a second, divergent representation of the netlist.
+    """
+    import json as _json
+
+    path = Path(args.dir) / "mapped.json"
+    if not path.exists():
+        message = (
+            f"no mapped netlist at {path}: run `gatepack build` first "
+            "(never faked here)"
+        )
+        if args.json:
+            _json_err("mapped-netlist", error(GP_IO, message))
+        else:
+            print(f"error: {message}", file=sys.stderr)
+        return EXIT_ERROR
+
+    try:
+        netlist = _json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        if args.json:
+            _json_err("mapped-netlist", _command_error(exc))
+        else:
+            print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    if args.json:
+        _json_ok("mapped-netlist", netlist)
+        return EXIT_OK
+
+    modules = list(netlist.get("modules", {}))
+    print(f"mapped netlist: {path} ({', '.join(modules) or 'no modules'})")
     return EXIT_OK
 
 
