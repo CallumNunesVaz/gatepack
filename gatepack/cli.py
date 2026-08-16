@@ -209,6 +209,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="§9.7 spare leakage weight (default: %(default)s)",
     )
     build.add_argument(
+        "--allow-unverified-gates-per-pkg",
+        action="store_true",
+        help=(
+            "proceed even though a multi-gate part's gates_per_pkg is a "
+            "placeholder; the resulting BOM may not be physically buildable"
+        ),
+    )
+    build.add_argument(
         "--json", action="store_true", help="emit one machine-readable JSON object to stdout"
     )
 
@@ -647,6 +655,7 @@ def _cmd_build(args: argparse.Namespace) -> int:
             out_dir=args.out,
             mapped_json=args.mapped,
             spare_leakage_weight=args.spare_weight,
+            allow_unverified_gates_per_pkg=args.allow_unverified_gates_per_pkg,
         )
     except RuntimeError as exc:
         if args.json:
