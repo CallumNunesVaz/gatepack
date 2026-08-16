@@ -15,7 +15,7 @@
  * module only uses it to decide which output nets to highlight.
  */
 
-import type { ProvenanceMap, SimulationRow } from '../../shared/api';
+import type { Check, PackedView, ProvenanceMap, SimulationRow, VerifyResult } from '../../shared/api';
 import type { DesignModel } from '../design/model';
 import type { ParsedNetlist } from '../mapped/sim';
 import { EMPTY_HIGHLIGHTS, type HighlightSet, type LinkConfidence, type LinkContext, type Selection } from './types';
@@ -134,7 +134,90 @@ function pathToSelections(path: string, model: DesignModel): Selection[] {
     const name = model.inputs[Number(input[1])]?.name;
     return name ? [{ kind: 'input', name }] : [];
   }
+  // A counterexample names the property list as a whole (`properties`), the same
+  // bare-token shape `states` uses — one pointer for every construct of the
+  // kind, so the reverse direction selects them all.
+  if (path === 'properties') {
+    return model.properties.map((p) => ({ kind: 'property', name: p.name }) as Selection);
+  }
   return [];
+}
+
+/* ------------------------------------------------------------------ */
+/* Package index (cell <-> refdes)                                     */
+/* ------------------------------------------------------------------ */
+
+interface PackageIndex {
+  /** refdes -> mapped-netlist instance names that package holds. */
+  byRefdes: Map<string, string[]>;
+  /** instance name -> refdes of every package holding it. */
+  byInstance: Map<string, string[]>;
+}
+
+/**
+ * Index `packedNetlist()` for the package <-> gate directions of §15.2.
+ *
+ * The name-space rule that has cost four defects here: a package's `cells` are
+ * STABLE cone-hash names, `instanceCells` are the mapped-netlist *instance*
+ * names. Everything the schematic and provenance map are keyed by is an
+ * instance name, so this index reads `instanceCells` and NEVER `cells`. A
+ * stable name leaking into a highlight set would name a gate that does not
+ * exist in the rendered netlist.
+ */
+function indexPacked(packed: PackedView | null): PackageIndex {
+  const byRefdes = new Map<string, string[]>();
+  const byInstance = new Map<string, string[]>();
+  if (!packed) return { byRefdes, byInstance };
+  for (const pkg of packed.packages) {
+    const instances = [...new Set(pkg.instanceCells)].sort();
+    byRefdes.set(pkg.refdes, instances);
+    for (const instance of instances) {
+      const refdes = byInstance.get(instance) ?? [];
+      refdes.push(pkg.refdes);
+      byInstance.set(instance, refdes);
+    }
+  }
+  return { byRefdes, byInstance };
+}
+
+/* ------------------------------------------------------------------ */
+/* Property / counterexample                                           */
+/* ------------------------------------------------------------------ */
+
+/** The `Check` that verifies a property, matched by its `kind` + name. */
+function propertyCheck(verify: VerifyResult | null, name: string): Check | undefined {
+  if (!verify) return undefined;
+  return verify.checks.find(
+    (c) => c.kind === 'property' && (c.name === name || c.name === `property ${name}`),
+  );
+}
+
+/**
+ * Resolve a failing property (or one of its counterexample steps) to the spec
+ * constructs and gates its counterexample implicates. `Check.counterexample`
+ * carries `steps` and `pointers` for exactly this: the pointers name the spec
+ * constructs, provenance resolves those to nets/cells, and the pointer paths
+ * resolve to FSM states/transitions.
+ */
+function propertyHighlights(name: string, ctx: LinkContext): HighlightSet {
+  const index = indexProvenance(ctx.provenance);
+  const check = propertyCheck(ctx.verify, name);
+  const pointers = check?.counterexample?.pointers ?? [];
+  const paths = pointers.map((p) => parsePointer(p).path);
+  const { nets, cells } = provenanceHighlights(index, paths);
+  const selections = paths.flatMap((p) => pathToSelections(p, ctx.model));
+  return {
+    pointers: [...new Set(pointers)].sort(),
+    nets,
+    cells,
+    minterms: [],
+    states: statesFrom(selections),
+    transitions: selections
+      .filter((s): s is Extract<Selection, { kind: 'transition' }> => s.kind === 'transition')
+      .flatMap((s) => transitionIndices(ctx.model, s.from, s.to)),
+    packages: [],
+    confidence: linkConfidence(index, paths),
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -250,6 +333,7 @@ function statesFrom(selections: Selection[]): string[] {
 export function resolveSelection(selection: Selection, ctx: LinkContext): HighlightSet {
   const index = indexProvenance(ctx.provenance);
   const model = ctx.model;
+  const pkgs = indexPacked(ctx.packed);
 
   if (selection.kind === 'transition') {
     const paths = selectionPaths(selection, model);
@@ -261,6 +345,7 @@ export function resolveSelection(selection: Selection, ctx: LinkContext): Highli
       minterms: [],
       states: [selection.from, selection.to],
       transitions: transitionIndices(model, selection.from, selection.to),
+      packages: [],
       confidence: linkConfidence(index, paths),
     };
   }
@@ -268,20 +353,20 @@ export function resolveSelection(selection: Selection, ctx: LinkContext): Highli
   if (selection.kind === 'state') {
     const paths = selectionPaths(selection, model);
     const { pointers, nets, cells } = provenanceHighlights(index, paths);
-    return { pointers, nets, cells, minterms: [], states: [selection.id], transitions: [], confidence: linkConfidence(index, paths) };
+    return { pointers, nets, cells, minterms: [], states: [selection.id], transitions: [], packages: [], confidence: linkConfidence(index, paths) };
   }
 
   if (selection.kind === 'input') {
     const paths = selectionPaths(selection, model);
     const { pointers, nets, cells } = provenanceHighlights(index, paths);
-    return { pointers, nets, cells, minterms: [], states: [], transitions: [], confidence: linkConfidence(index, paths) };
+    return { pointers, nets, cells, minterms: [], states: [], transitions: [], packages: [], confidence: linkConfidence(index, paths) };
   }
 
   if (selection.kind === 'minterm') {
     const { nets, cells } = mintermHighlights(selection.index, ctx);
     const row = ctx.simulation?.rows[selection.index];
     const states = row?.state ? [row.state] : [];
-    return { pointers: [], nets, cells, minterms: [selection.index], states, transitions: [], confidence: 'none' };
+    return { pointers: [], nets, cells, minterms: [selection.index], states, transitions: [], packages: [], confidence: 'none' };
   }
 
   if (selection.kind === 'cell') {
@@ -299,6 +384,7 @@ export function resolveSelection(selection: Selection, ctx: LinkContext): Highli
       transitions: selections
         .filter((s): s is Extract<Selection, { kind: 'transition' }> => s.kind === 'transition')
         .flatMap((s) => transitionIndices(model, s.from, s.to)),
+      packages: [...(pkgs.byInstance.get(selection.name) ?? [])].sort(),
       confidence,
     };
   }
@@ -317,13 +403,38 @@ export function resolveSelection(selection: Selection, ctx: LinkContext): Highli
       transitions: selections
         .filter((s): s is Extract<Selection, { kind: 'transition' }> => s.kind === 'transition')
         .flatMap((s) => transitionIndices(model, s.from, s.to)),
+      packages: [],
       confidence,
     };
   }
 
-  // package / property: the IPC contract does not expose a cell->refdes map or
-  // the counterexample pointers outside `verify()`, so these map to nothing
-  // rather than a false highlight (§15.2 "never imply a false one-to-one").
+  if (selection.kind === 'package') {
+    // The gates a package holds are its mapped-netlist *instance* cells
+    // (`instanceCells`), never the stable cone-hash names — see `indexPacked`.
+    const cells = pkgs.byRefdes.get(selection.refdes) ?? [];
+    return {
+      pointers: [],
+      nets: cells.flatMap((c) => outputNetOf(ctx.netlist, c) ?? []),
+      cells,
+      minterms: [],
+      states: [],
+      transitions: [],
+      packages: [selection.refdes],
+      confidence: 'none',
+    };
+  }
+
+  if (selection.kind === 'property') {
+    return propertyHighlights(selection.name, ctx);
+  }
+
+  if (selection.kind === 'cexStep') {
+    return propertyHighlights(selection.property, ctx);
+  }
+
+  // A selection kind with no counterpart anywhere (an unknown refdes, an
+  // unverified property) resolves to the honest empty set rather than a guessed
+  // highlight.
   return EMPTY_HIGHLIGHTS;
 }
 

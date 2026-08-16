@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ApiProvider } from '../bridge/context';
 import { ProjectProvider } from '../state/project';
+import { SelectionProvider } from '../selection/bus';
 import { setApi } from '../api';
 import { FakeGatepack } from '../bridge/fake';
 import { BomView } from './BomView';
-import type { BuildResult } from '../../shared/api';
+import type { BuildResult, PackedView } from '../../shared/api';
 
 function mappedJson(): Record<string, unknown> {
   const cell = (type: string) => ({
@@ -70,6 +71,31 @@ function buildResult(): BuildResult {
   };
 }
 
+function packedView(): PackedView {
+  return {
+    packages: [
+      {
+        refdes: 'U1',
+        partNumber: '74AUP1G02',
+        cells: ['NOR2__a1b2c3', 'NOR2__d4e5f6'],
+        instanceCells: ['g0', 'g1'],
+        capacity: 2,
+        spare: 0,
+        rationale: '',
+      },
+      {
+        refdes: 'U2',
+        partNumber: '74AUP1G02',
+        cells: ['NOR2__a1b2c3'],
+        instanceCells: ['g2'],
+        capacity: 1,
+        spare: 0,
+        rationale: '',
+      },
+    ],
+  };
+}
+
 function fakeDataTransfer(cellName: string) {
   return {
     effectAllowed: 'move',
@@ -86,7 +112,9 @@ function renderBom(fake: FakeGatepack) {
   return render(
     <ApiProvider>
       <ProjectProvider>
-        <BomView />
+        <SelectionProvider>
+          <BomView />
+        </SelectionProvider>
       </ProjectProvider>
     </ApiProvider>,
   );
@@ -218,5 +246,25 @@ describe('BomView — C13 packing and BOM', () => {
     expect(screen.getByTestId('packing-refusal').textContent).toMatch(/run a build/i);
     expect(fake.specText).not.toContain('force_groups');
     expect(fake.specText).not.toContain('g0');
+  });
+
+  it('selecting a package refdes highlights it (and it resolves to its cells)', async () => {
+    const fake = new FakeGatepack();
+    fake.setOk('mappedNetlist', mappedJson());
+    fake.setOk('build', buildResult());
+    fake.setOk('packedNetlist', packedView());
+
+    renderBom(fake);
+    fireEvent.click(screen.getByText('Run build'));
+    await waitFor(() => expect(screen.getByTestId('single-source-marker')).toBeTruthy());
+
+    const u1 = screen.getByText('U1');
+    expect(u1).not.toHaveAttribute('data-highlight', 'true');
+
+    fireEvent.click(u1);
+    await waitFor(() => expect(u1).toHaveAttribute('data-highlight', 'true'));
+    // The selection is a refdes token, not a cell: the highlight comes back as
+    // the package itself, and the schematic's cells are the instance cells g0/g1.
+    expect(u1).toHaveAttribute('data-refdes', 'U1');
   });
 });

@@ -65,7 +65,7 @@ test('the §5.2 posture holds inside the renderer', async () => {
   expect(posture.gatepackKeys).toEqual([
     'analyse', 'build', 'cancel', 'closeProject', 'compile', 'estimate',
     'mappedNetlist', 'onFileChanged', 'onProgress', 'onProjectChanged',
-    'openProject', 'openProjectPath', 'provenance', 'readSpec', 'saveProject',
+    'openProject', 'openProjectPath', 'packedNetlist', 'provenance', 'readSpec', 'saveProject',
     'saveProjectAs', 'simulate', 'verify', 'writeSpec',
   ]);
 });
