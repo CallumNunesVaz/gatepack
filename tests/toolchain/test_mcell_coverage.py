@@ -1,20 +1,19 @@
 """M-cell coverage (§9.4, M8, §19 R25) against the real toolchain.
 
-Two things are established here, both of which the existing green suite does not
+Three things are established here, each of which the pure-Python suite does not
 measure:
 
-1. The M-cell behavioural model is genuinely *shared* between C4's equivalence
-   and its exhaustive simulation (R25) — one ``CNT4.v`` under
-   ``gatepack/macros/models/``, appended to ``cells_sim.v``, read by both checks.
-2. A **deliberately wrong** M-cell model is caught.
-
-The second is the finding.  The equivalence script reads ``cells_sim.v`` on *both*
-the golden and the mapped side when a macro is a black box, so a wrong model
-cancels itself out — mutation of ``CNT4.v`` changes both sides identically and
-the equivalence check still reports "successfully proven".  The M-cell mutation
-path is therefore **unverified**: R25's "one shared file" control satisfies only
-the trivial no-drift half of the requirement, not the "a wrong model is caught"
-half.
+1. The M-cell *implementation* model is genuinely shared between C4's gate-side
+   equivalence and its exhaustive simulation (R25) — one ``CNT4.v`` under
+   ``gatepack/macros/models/``, appended to ``cells_sim.v``, read by both.
+2. The M-cell *specification* side is independent: C1 emits a spec model
+   (``cells_spec.v``) derived from the cell's declared semantics, and the golden
+   side of equivalence reads that while the gate side keeps reading
+   ``cells_sim.v``.  Reading the same implementation file on *both* sides is what
+   made a wrong model cancel itself out (the R25 risk).
+3. A **deliberately wrong** M-cell model is caught: mutating the implementation
+   model to count by two while the spec still requires counting by one makes
+   equivalence fail.
 """
 
 from __future__ import annotations
@@ -68,12 +67,13 @@ def _run_cli(*argv: str) -> subprocess.CompletedProcess[str]:
 
 
 def test_mcell_model_is_shared_between_equivalence_and_simulation():
-    # R25 (structural): there is exactly one model file per M-cell, and it is the
-    # same text appended to cells_sim.v that both C4 checks read.
-    from gatepack.macros import load_models, model_files
+    # R25 (structural): there is exactly one implementation model file per
+    # M-cell, and it is the same text appended to cells_sim.v that both C4's
+    # gate-side equivalence and its exhaustive simulation read.
+    from gatepack.macros import load_models, load_spec_models, model_files
+    from gatepack.verify.base import VerifyConfig
     from gatepack.verify.equivalence import build_equivalence_script
     from gatepack.verify.simulation import build_compile_command
-    from gatepack.verify.base import VerifyConfig
 
     paths = model_files()
     assert [Path(p).name for p in paths] == ["CNT4.v"]
@@ -83,36 +83,51 @@ def test_mcell_model_is_shared_between_equivalence_and_simulation():
 
     config = VerifyConfig(top="t")
     script = build_equivalence_script(config)
-    assert config.cells_sim_v in script  # equivalence reads cells_sim.v
+    assert config.cells_sim_v in script  # the gate side reads the impl model
+    assert config.cells_spec_v in script  # the golden side reads the spec model
     compile_cmd = build_compile_command(config, "out.vvp")
-    assert config.cells_sim_v in compile_cmd  # simulation reads the same file
+    assert config.cells_sim_v in compile_cmd  # simulation reads the same impl file
+
+    # The two sides read *different* model files, or a wrong impl model would
+    # change both sides identically and cancel itself out (the R25 risk, M8).
+    golden_read = script.index(f"read_verilog {config.gold_v} {config.cells_spec_v}")
+    gate_read = script.index(f"read_verilog {config.gate_v} {config.cells_sim_v}")
+    assert golden_read < gate_read
+
+    # The spec model exists and is generated from semantics (count by one), not
+    # copied from the implementation model.
+    assert load_spec_models().count("module CNT4") == 1
+    assert "Q <= Q + 4'd1;" in load_spec_models()
 
 
 @requires_toolchain
-def test_verify_on_macro_design_fails_before_reaching_the_model():
-    """`gatepack verify` on a macro design fails at C3, before C4 can run.
+def test_verify_on_macro_design_reaches_c4():
+    """`gatepack verify` on a macro design now reaches C4 instead of dying at C3.
 
-    The front-end emits the macro as a dangling `(* gp_src *)` attribute with no
-    instantiation (only a comment), so Yosys rejects ``generated.v`` with
-    "syntax error, unexpected TOK_ENDMODULE".  The M-cell path cannot even reach
-    synthesis — the shared model is never exercised by a real design.
+    The front-end used to emit the macro as a dangling `(* gp_src *)` attribute
+    with no instantiation, so Yosys rejected ``generated.v`` with "syntax error,
+    unexpected TOK_ENDMODULE".  Now it emits a real `CNT4 dwell (...)` instance
+    (plus a `(* blackbox *)` stub), so the design elaborates, synthesises, and the
+    equivalence + exhaustive-simulation checks run and pass.
     """
     build_dir = ".gpout/mcell_verify"
     try:
         proc = _run_cli(
             "verify",
-            str(DESIGNS / "cnt4_macro.yaml"),
+            "tests/golden/designs/cnt4_macro.yaml",
             "--library", "libraries/74aup.csv",
             "--build", build_dir,
         )
-        # The build must fail (Yosys rejects the dangling attribute); if it ever
-        # succeeds, this test's message is the loud part of the finding.
-        assert proc.returncode == 1, (
-            "verify unexpectedly passed on the macro golden. If the front-end now "
-            "instantiates CNT4, this test must be replaced with one that asserts the "
-            "macro IS exercised — see the mutation experiment below.\n"
-            f"{proc.stdout}\n{proc.stderr}"
-        )
+        combined = proc.stdout + proc.stderr
+        # The old failure mode was a C3 syntax error; that must be gone.
+        assert "syntax error" not in combined.lower(), combined
+        assert "equivalence:               passed" in proc.stdout, combined
+        assert "exhaustive simulation:     passed" in proc.stdout, combined
+
+        generated = (REPO / build_dir / "generated.v").read_text()
+        assert "CNT4 dwell (" in generated, "the macro is not instantiated"
+        assert "(* blackbox *)" in generated
+        assert ".EN(state_COUNT)" in generated
     finally:
         subprocess.run(
             ["docker", "run", "--rm", "-v", f"{REPO}:/repo", "-w", "/repo", IMAGE,
@@ -123,43 +138,55 @@ def test_verify_on_macro_design_fails_before_reaching_the_model():
 
 
 @requires_toolchain
-def test_wrong_mcell_model_is_not_caught_by_equivalence(tmp_path: Path) -> None:
-    """The R25 finding, measured: a wrong CNT4 model still proves equivalent.
+def test_wrong_mcell_model_is_caught_by_equivalence(tmp_path: Path) -> None:
+    """The R25 finding, inverted: a wrong CNT4 model now fails equivalence.
 
-    Both equivalence sides read the same ``cells_sim.v``, so mutating the CNT4
-    model changes them identically and the mutation cancels out.  This is not a
-    green tick — it is the M-cell mutation path being unverified, stated as a
-    test so a future independent reference model flips it.
+    The golden side reads ``cells_spec.v`` (the specification model: count by
+    one); the gate side reads ``cells_sim.v`` (the implementation model).  A
+    mutation to ``cells_sim.v`` changes only the gate side, so the check fails —
+    exactly what R25's "one shared file" alone could not establish.
     """
+    from gatepack.macros import load_spec_models
+    from gatepack.verify.base import VerifyConfig
+    from gatepack.verify.equivalence import EquivStep, build_equivalence_script
+
+    # A top module that *observes* the counter's Q, so the miter cannot optimize
+    # it away.  The blackbox stub is what C1 emits; it lets `hierarchy -check`
+    # pass in the shared front end.
     top = (
         "module cnt_top(input wire clk, input wire rst_n, input wire en, "
         "output wire [3:0] q);\n"
         "  CNT4 c0 (.CLK(clk), .RST_N(rst_n), .EN(en), .Q(q));\n"
         "endmodule\n"
     )
-    (tmp_path / "cnt_top.v").write_text(top)
+    blackbox = (
+        "(* blackbox *)\n"
+        "module CNT4 (input wire CLK, input wire RST_N, input wire EN, "
+        "output wire [3:0] Q);\n"
+        "endmodule\n"
+    )
+    (tmp_path / "generated.v").write_text(blackbox + "\n" + top)
+    # mapped.v is the write_verilog output: the instantiation survives, the
+    # blackbox stub does not (so reading the impl model next to it is clean).
+    (tmp_path / "mapped.v").write_text(top)
+    (tmp_path / "cells_spec.v").write_text(load_spec_models())
 
-    script = "\n".join(
-        [
-            "read_verilog cnt_top.v cells_sim.v",
-            "proc; flatten; opt; async2sync; opt",
-            "design -stash goldstash",
-            "read_verilog cnt_top.v cells_sim.v",
-            "proc; flatten; opt; async2sync; opt",
-            "design -stash gatestash",
-            "design -copy-from goldstash -as golden cnt_top",
-            "design -copy-from gatestash -as mapped cnt_top",
-            "equiv_make golden mapped equiv",
-            "prep -top equiv",
-            "equiv_simple",
-            "equiv_induct -seq 16 equiv",
-            "equiv_status -assert",
-        ]
+    config = VerifyConfig(
+        top="cnt_top",
+        generated_v="generated.v",
+        mapped_v="mapped.v",
+        gate_v="mapped.v",
+        gold_v="gold.v",
+        golden_json="golden.json",
+        cells_sim_v="cells_sim.v",
+        cells_spec_v="cells_spec.v",
+    )
+    script = build_equivalence_script(
+        config, step=EquivStep.EQUIV_INDUCT, induction_steps=16
     )
 
-    def run() -> str:
-        proc = _run_yosys(tmp_path, script)
-        return proc.stdout + proc.stderr
+    def run() -> subprocess.CompletedProcess[str]:
+        return _run_yosys(tmp_path, script)
 
     def write_model(step: str) -> None:
         (tmp_path / "cells_sim.v").write_text(
@@ -174,15 +201,17 @@ def test_wrong_mcell_model_is_not_caught_by_equivalence(tmp_path: Path) -> None:
 
     write_model("4'd1")
     correct = run()
-    assert "successfully proven" in correct.lower(), correct
+    assert "successfully proven" in (correct.stdout + correct.stderr).lower(), (
+        correct.stdout + correct.stderr
+    )
 
-    # The deliberately wrong model: counts by two instead of one.
+    # The deliberately wrong model: counts by two instead of one.  The spec side
+    # still requires counting by one, so this must be caught.
     write_model("4'd2")
     mutated = run()
-
-    assert "successfully proven" in mutated.lower(), (
-        "the wrong CNT4 model was NOT caught by equivalence: both sides read the "
-        "same cells_sim.v, so the mutation cancels itself out (the R25 risk). "
-        "The M-cell mutation path is unverified.\n"
-        f"{mutated}"
+    combined = (mutated.stdout + mutated.stderr).lower()
+    assert "successfully proven" not in combined, (
+        "the wrong CNT4 model was NOT caught: the golden and gate sides must "
+        "have read the same model file again. The M-cell mutation path is "
+        f"unverified.\n{combined}"
     )

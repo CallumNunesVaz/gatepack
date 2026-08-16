@@ -68,12 +68,13 @@ def test_equivalence_recipe_runs_async2sync_on_both_sides():
 
 def test_equivalence_recipe_reprocs_after_roundtrip():
     # M0 §6: re-`proc` after every Verilog round-trip, or the module "contains
-    # memories or processes".
+    # memories or processes".  Both sides also `flatten`: the gate side to inline
+    # the G/F/M cell models read from cells_sim.v, and the golden side to inline
+    # the M-cell specification model read from cells_spec.v (M8).
     script = equivalence.build_equivalence_script(_config())
     lines = [ln.strip() for ln in script.splitlines() if ln.strip()]
     assert "write_verilog -noattr build/gold.v" in lines
-    assert "proc; opt; async2sync; opt" in lines
-    assert "proc; flatten; opt; async2sync; opt" in lines
+    assert lines.count("proc; flatten; opt; async2sync; opt") == 2
     assert "design -stash goldstash" in lines
     assert "design -stash gatestash" in lines
 

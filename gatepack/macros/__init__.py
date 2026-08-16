@@ -11,6 +11,15 @@ from __future__ import annotations
 import importlib.resources
 
 from gatepack.macros.bindings import MCellBinding, get_binding, known_m_cells
+from gatepack.macros.specs import (
+    MCellPort,
+    MCellSpec,
+    blackbox_module,
+    get_spec,
+    known_spec_cells,
+    load_spec_models,
+    spec_model,
+)
 
 _MODEL_DIR = importlib.resources.files("gatepack.macros") / "models"
 
@@ -31,8 +40,15 @@ def load_models() -> str:
 
 __all__ = [
     "MCellBinding",
+    "MCellPort",
+    "MCellSpec",
+    "blackbox_module",
     "get_binding",
+    "get_spec",
     "known_m_cells",
+    "known_spec_cells",
     "load_models",
+    "load_spec_models",
     "model_files",
+    "spec_model",
 ]

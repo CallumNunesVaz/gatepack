@@ -250,16 +250,26 @@ def test_cnt4_macro_golden_compiles_and_counts_macro_flops():
     assert c.clock_fanout == c.flop_count + 1  # one clock pin per macro
 
 
-def test_cnt4_macro_is_declared_but_not_instantiated():
+def test_cnt4_macro_is_instantiated_not_just_declared():
     # §9.4: M-cells are instantiated by hand and never inferred by Yosys.  The
-    # front-end must *emit* that instantiation for C4 to exercise it; today it
-    # emits only a comment, so the macro is absent from every netlist.  This is
-    # the M8 gap the toolchain test reports loudly — pinned here so a future
-    # emitter change that adds the instantiation also flips this assertion.
+    # front-end must *emit* that instantiation for C4 to exercise it (the M8
+    # gap): a real `CNT4 dwell (...)` instantiation wired to clock, reset and
+    # enable, plus a `(* blackbox *)` stub so `hierarchy -check` accepts it while
+    # synthesis still leaves the physical part unmapped.
     import re
 
     result = compile_design_file(DESIGNS / "cnt4_macro.yaml")
     v = result.verilog
-    assert "// M-cell dwell: CNT4" in v
-    # no `CNT4 dwell (...)` module instantiation anywhere in the emitted Verilog
-    assert re.search(r"^\s*CNT4\s+dwell\s*\(", v, re.MULTILINE) is None
+    # the blackbox stub declares the module so hierarchy -check passes
+    assert "(* blackbox *)" in v
+    assert "module CNT4 (" in v
+    # ...and the design actually instantiates it, wired to clk / rst_n / enable
+    inst = re.search(r"CNT4\s+dwell\s*\(.*\)\s*;", v, re.DOTALL)
+    assert inst is not None, "no CNT4 instantiation in the emitted Verilog"
+    conns = inst.group(0)
+    assert ".CLK(clk)" in conns
+    assert ".RST_N(rst_n)" in conns
+    assert ".EN(state_COUNT)" in conns  # enable: "state == COUNT" -> one-hot bit
+    assert ".Q(dwell_Q)" in conns
+    # the counter output is an internal net, not an unconnected port
+    assert "wire [3:0] dwell_Q;" in v

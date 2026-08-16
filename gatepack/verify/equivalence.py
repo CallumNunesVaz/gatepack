@@ -32,6 +32,16 @@ run against real Yosys 0.23 and reports
 proven!`` on ``xor2``, and ``ERROR: Found 1 unproven $equiv cells`` (non-zero
 exit) when the mapped netlist is corrupted — so the check genuinely closes and
 genuinely fails.
+
+**M-cells (§9.4, M8).** The golden side reads ``cells_spec.v`` — the independent
+specification model generated from the M-cell's declared semantics — while the
+gate side reads ``cells_sim.v`` — the hand-written implementation model that
+exhaustive simulation also uses (§19 R25).  Reading ``cells_sim.v`` on *both*
+sides is precisely what made the M-cell mutation path vacuous: a wrong model
+changed both sides identically and still "proved" equivalent.  The two files are
+independent, so mutating the implementation model changes only the gate side and
+the check fails.  ``cells_sim.v`` remains the single implementation model shared
+by simulation and the gate side of equivalence; nothing here weakens R25.
 """
 
 from __future__ import annotations
@@ -112,8 +122,8 @@ def build_equivalence_script(
         f"write_verilog -noattr {config.gold_v}",
         "design -reset",
         "# --- golden side, round-tripped: re-proc is mandatory after write_verilog ---",
-        f"read_verilog {config.gold_v}",
-        "proc; opt; async2sync; opt",
+        f"read_verilog {config.gold_v} {config.cells_spec_v}",
+        "proc; flatten; opt; async2sync; opt",
         "design -stash goldstash",
         "# --- gate side: mapped netlist + behavioural models (cells_sim.v is mandatory) ---",
         f"read_verilog {config.gate_v} {config.cells_sim_v}",

@@ -43,6 +43,7 @@ class VerifyConfig:
     properties_sv: str = "build/properties.sv"
     cells_lib: str = "build/cells.lib"
     cells_sim_v: str = "build/cells_sim.v"
+    cells_spec_v: str = "build/cells_spec.v"
     premap_json: str = "build/premap.json"
     mapped_json: str = "build/mapped.json"
     mapped_v: str = "build/mapped.v"
