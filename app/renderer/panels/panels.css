@@ -353,6 +353,44 @@
   flex: 1;
 }
 
+/* --- panel host (the modal dialog the shell mounts panels in) ------------- */
+
+.gp-panel-host-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 8vh;
+  background: var(--gp-overlay);
+  z-index: var(--gp-z-palette);
+}
+
+.gp-panel-host {
+  position: relative;
+  width: min(760px, calc(100vw - 2 * var(--gp-space-5)));
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--gp-surface);
+  border: 1px solid var(--gp-border);
+  border-radius: var(--gp-radius-lg);
+  box-shadow: var(--gp-shadow-3);
+  overflow: hidden;
+}
+
+.gp-panel-host__close {
+  position: absolute;
+  top: var(--gp-space-2);
+  right: var(--gp-space-2);
+  z-index: 1;
+}
+
+.gp-panel-host__body {
+  overflow-y: auto;
+  min-height: 0;
+}
+
 /* --- shared summary stat row --------------------------------------------- */
 
 .gp-stat-row {

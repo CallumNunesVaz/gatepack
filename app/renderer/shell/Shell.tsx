@@ -21,6 +21,7 @@ import { CommandBusProvider, createCommandBus, useCommandBus } from './commands'
 import { useGlobalShortcuts } from './keyboard';
 import { CommandPalette } from './CommandPalette';
 import { ShortcutsSheet } from './ShortcutsSheet';
+import { PanelHost } from './PanelHost';
 import { Inspector } from './Inspector';
 import { StatusBar } from './StatusBar';
 import { Icon, IconButton, ToastProvider, useToast } from '../ui';
@@ -156,6 +157,9 @@ function ShellContent() {
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} onRun={run} />
       <ShortcutsSheet open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      {/* Rendered after the palette so its focus capture runs once the palette
+          has restored focus to the invoking element. */}
+      <PanelHost />
     </div>
   );
 }

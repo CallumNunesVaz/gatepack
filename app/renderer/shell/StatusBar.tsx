@@ -17,7 +17,7 @@ import type { DoctorReport } from '../../shared/api';
 const PROGRESS_FADE_MS = 1600;
 
 export function StatusBar() {
-  const { project, model, diagnostics } = useProject();
+  const { project, model, diagnostics, specStale } = useProject();
   const api = useApi();
   const [doctor, setDoctor] = useState<DoctorReport | null>(null);
   const [doctorFailed, setDoctorFailed] = useState(false);
@@ -78,6 +78,15 @@ export function StatusBar() {
       >
         {errorCount} error{errorCount === 1 ? '' : 's'}
       </span>
+      {specStale ? (
+        <span
+          className="gp-statusbar__item gp-statusbar__diag"
+          data-testid="status-stale"
+          title="The spec changed on disk; your unsaved edits were kept."
+        >
+          spec changed on disk
+        </span>
+      ) : null}
       <span className="gp-statusbar__spacer" />
       {progress ? (
         <span className="gp-statusbar__item gp-statusbar__progress" data-testid="status-progress">
