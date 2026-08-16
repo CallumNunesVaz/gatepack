@@ -1,0 +1,225 @@
+#!/usr/bin/env bash
+#
+# gatepack — one entry point for the two things you can start.
+#
+#   ./start              the desktop app
+#   ./start dev          the desktop app with renderer live-reload
+#   ./start cli ARGS...  the command-line core
+#   ./start doctor       report what is installed and what is missing
+#
+# The desktop app is strictly a view over CLI-produced artefacts (§5), so the
+# CLI is the product and the app is the second thing that starts.  Everything
+# below either works or says why it does not; nothing here fakes a result.
+
+set -euo pipefail
+
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+APP="$ROOT/app"
+VENV="$ROOT/.venv"
+IMAGE="${GATEPACK_IMAGE:-gatepack-toolchain:m6}"
+
+# Subcommands that shell out to Yosys/sby/Icarus.  Anything else runs natively.
+TOOLCHAIN_COMMANDS=" estimate verify build simulate analyse "
+
+bold() { printf '\033[1m%s\033[0m\n' "$*"; }
+warn() { printf '\033[33m%s\033[0m\n' "$*" >&2; }
+die()  { printf '\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# --- the Python core ---------------------------------------------------------
+
+# The core is invoked as `python -m gatepack.cli` with the repo root on
+# PYTHONPATH — the same way app/main/core.cts spawns it, and what AGENTS.md
+# documents.  The `gatepack` console script only exists after `pip install`,
+# which a working checkout does not require.
+core_importable() {
+  [ -x "$VENV/bin/python" ] &&
+    PYTHONPATH="$ROOT" "$VENV/bin/python" -c 'import gatepack' >/dev/null 2>&1
+}
+
+ensure_venv() {
+  if core_importable; then return; fi
+
+  if [ ! -d "$VENV" ]; then
+    # Fresh clone: create the venv and install the one runtime dependency.
+    bold "Creating .venv…"
+    python3 -m venv "$VENV"
+    "$VENV/bin/pip" install --quiet --upgrade pip
+    "$VENV/bin/pip" install --quiet -e "$ROOT"
+    core_importable || die "install finished but 'import gatepack' still fails"
+    return
+  fi
+
+  # A venv exists but cannot import the core.  Do not silently mutate it — it
+  # may be shared (the delegation worktrees symlink this one).
+  die "$VENV exists but 'import gatepack' fails there. Install the dependency:
+
+    $VENV/bin/pip install -e $ROOT
+
+Not doing this automatically: this venv may be shared with other checkouts."
+}
+
+# Run the core the way everything else in this repo runs it.
+core() {
+  PYTHONPATH="$ROOT" "$VENV/bin/python" -m gatepack.cli "$@"
+}
+
+image_present() {
+  have docker && docker image inspect "$IMAGE" >/dev/null 2>&1
+}
+
+# Does this invocation need Yosys?  Find the first non-flag argument.
+needs_toolchain() {
+  local a
+  for a in "$@"; do
+    case "$a" in
+      -*) continue ;;
+      *)  [[ "$TOOLCHAIN_COMMANDS" == *" $a "* ]] && return 0 || return 1 ;;
+    esac
+  done
+  return 1
+}
+
+run_cli() {
+  ensure_venv
+
+  if needs_toolchain "$@" && ! have yosys; then
+    if image_present; then
+      warn "yosys is not on PATH — running in $IMAGE instead."
+      warn "Paths are relative to the repository root inside the container."
+      exec docker run --rm -v "$ROOT:/repo" -w /repo \
+        -u "$(id -u):$(id -g)" "$IMAGE" python3 -m gatepack.cli "$@"
+    fi
+    die "This command needs Yosys, which is not installed and the toolchain
+image '$IMAGE' is not built. Build it with:
+
+    docker build -t $IMAGE -f Dockerfile.probe .
+
+gatepack will not fabricate a synthesis result, so it stops here."
+  fi
+
+  exec env PYTHONPATH="$ROOT" "$VENV/bin/python" -m gatepack.cli "$@"
+}
+
+# --- the desktop app ---------------------------------------------------------
+
+ensure_node_modules() {
+  [ -d "$APP/node_modules" ] || die "app/node_modules is missing. Run: (cd app && npm ci)"
+}
+
+# Rebuild only when a source file is newer than the compiled output.  `npm run
+# build` is ~15s and this is the difference between starting instantly and not.
+build_stale() {
+  local out="$APP/dist/main/index.cjs"
+  [ -f "$out" ] || return 0
+  [ -f "$APP/dist/renderer/index.html" ] || return 0
+  [ -n "$(find "$APP/main" "$APP/preload" "$APP/renderer" "$APP/shared" \
+            -newer "$out" -type f -print -quit 2>/dev/null)" ]
+}
+
+start_app() {
+  ensure_venv
+  ensure_node_modules
+
+  if build_stale; then
+    bold "Building the app…"
+    (cd "$APP" && npm run build)
+  fi
+
+  have yosys || image_present || warn \
+    "Note: no Yosys and no toolchain image — the app will open, but Build and
+Verify will report the missing tool rather than producing a result."
+
+  bold "Starting gatepack…"
+  (cd "$APP" && exec npm start)
+}
+
+start_dev() {
+  ensure_venv
+  ensure_node_modules
+
+  bold "Compiling main and preload…"
+  (cd "$APP" && npm run build:main)
+
+  bold "Starting the Vite dev server…"
+  (cd "$APP" && npm run dev >"$ROOT/.gpout/vite.log" 2>&1) &
+  local vite_pid=$!
+  # shellcheck disable=SC2064
+  trap "kill $vite_pid 2>/dev/null || true" EXIT
+
+  local url=""
+  for _ in $(seq 1 60); do
+    url="$(grep -om1 'http://localhost:[0-9]*' "$ROOT/.gpout/vite.log" 2>/dev/null || true)"
+    [ -n "$url" ] && break
+    sleep 0.5
+  done
+  [ -n "$url" ] || die "Vite did not report a URL within 30s — see .gpout/vite.log"
+
+  bold "Renderer on $url — starting Electron (edits reload live)."
+  (cd "$APP" && GATEPACK_DEV_SERVER="$url" npm start)
+}
+
+# --- doctor ------------------------------------------------------------------
+
+report() {
+  local name="$1" found="$2" note="${3:-}"
+  if [ -n "$found" ]; then
+    printf '  \033[32m✓\033[0m %-12s %s\n' "$name" "$found"
+  else
+    printf '  \033[31m✗\033[0m %-12s %s\n' "$name" "${note:-not found}"
+  fi
+}
+
+doctor() {
+  bold "Core"
+  if core_importable; then
+    report gatepack "$(core --version 2>&1 | head -1)"
+    report venv "$VENV"
+  else
+    report gatepack "" "not importable from $VENV"
+  fi
+  report python3 "$(python3 --version 2>&1 || true)"
+
+  bold "Toolchain (needed by estimate/verify/build/simulate/analyse)"
+  local t
+  for t in yosys sby iverilog z3 espresso; do
+    if have "$t"; then
+      report "$t" "$(command -v "$t")"
+    else
+      report "$t" ""
+    fi
+  done
+  if image_present; then
+    report container "$IMAGE (used automatically when a tool is missing)"
+  else
+    report container "" "$IMAGE not built — docker build -t $IMAGE -f Dockerfile.probe ."
+  fi
+
+  bold "Desktop app"
+  report node "$(node --version 2>&1 || true)"
+  [ -d "$APP/node_modules" ] && report node_modules "installed" || report node_modules ""
+  [ -f "$APP/dist/main/index.cjs" ] && report build "compiled" || report build "" "not built yet"
+  if [ -x "$APP/resources/bin/gatepack" ]; then
+    report bundled-core "$APP/resources/bin/gatepack"
+  else
+    report bundled-core "" "not bundled — a packaged app would find no core (M18)"
+  fi
+}
+
+# --- dispatch ----------------------------------------------------------------
+
+mkdir -p "$ROOT/.gpout"
+
+case "${1:-app}" in
+  app)    shift || true; start_app ;;
+  dev)    shift || true; start_dev ;;
+  cli)    shift; [ $# -gt 0 ] || set -- --help; run_cli "$@" ;;
+  doctor) shift || true; doctor ;;
+  -h|--help|help)
+    sed -n '3,9p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    ;;
+  *)
+    die "Unknown mode '${1}'. Try: ./start [app|dev|cli|doctor|help]"
+    ;;
+esac

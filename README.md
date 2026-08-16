@@ -77,6 +77,21 @@ disagree with it.**
 ## Getting started
 
 ```bash
+./start doctor       # what is installed, what is missing, what that costs you
+./start              # the desktop application
+./start dev          # the same, with renderer live-reload
+./start cli ARGS...  # the command-line core
+```
+
+`./start` creates the venv on a fresh clone, builds the app only when a source
+file is newer than the build, and — when a command needs Yosys and Yosys is not
+installed — runs it in the toolchain container instead, saying so on stderr.
+It never substitutes a result for a missing tool.
+
+The rest of this section is what `./start` does, spelled out, for when you want
+to drive the pieces yourself.
+
+```bash
 python -m venv .venv && .venv/bin/pip install -e .
 
 .venv/bin/gatepack examples list
