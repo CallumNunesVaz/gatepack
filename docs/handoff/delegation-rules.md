@@ -1,0 +1,45 @@
+
+# Rules — each of these has cost a previous run
+
+- **Do not commit.** Leave everything in the working tree. No branches, no
+  stashing, no amending.
+- **Do not edit** `gatepack-design.md`, `docs/M0-FINDINGS.md`,
+  `docs/M6-FINDINGS.md`, `docs/MILESTONE-AUDIT.md`, `docs/GUI-AUDIT.md`,
+  `app/shared/api.ts`. They are inputs; `api.ts` is the authoritative IPC
+  contract, match it field for field.
+- **Stay inside your file scope.** Three other agents are writing in this repo
+  right now, in the scopes listed as off-limits below.
+- **Never write outside the project directory, and never `&&`-chain a command
+  that might be refused.** Anything outside it is auto-rejected and the
+  refusal ENDS THE RUN — it has now killed three runs, two of them mid-task
+  after real work. Use `.gpout/` **inside your worktree** for every scratch
+  file, backup and build output. Do not `cp` to `/tmp`; do not use `../` paths
+  that climb out of the worktree.
+- **Do not run `npm install`.** `app/node_modules` is already populated.
+- Run the tests and fix what you break. Python:
+  `.venv/bin/python -m pytest tests -q` (**532 pass, 4 skip** at baseline).
+  From `app/`: `npx tsc --noEmit -p tsconfig.json`,
+  `npx tsc --noEmit -p tsconfig.main.json`, `npx vitest run` (**150 pass**),
+  and `DISPLAY=:1 npx playwright test --config playwright.config.cjs`
+  (**12 pass**, after `npm run build:main && npx vite build`).
+- **A check that cannot fail is worth nothing.** For everything you add, build
+  the input that makes it fail and keep that as a test. This project has now
+  shipped **eight** pieces of machinery that reported a status while measuring
+  nothing, every one with a green suite, and four of them had tests that could
+  not have failed.
+- **Never fake a tool result.** A missing binary is reported, never
+  substituted.
+- **Run the real thing.** `gatepack-toolchain:m6` has Yosys 0.23, Icarus, sby,
+  z3 and pydantic, and the CLI runs in it:
+  `docker run --rm -v "$PWD:/repo" -w /repo gatepack-toolchain:m6 bash -c '...'`
+  Claims that a tool closes must come from that, not a fake runner. Files it
+  writes are owned by root — delete them from inside the container.
+- Write `docs/BUILD-NOTES-<scope>.md`: what you implemented, what you guessed,
+  what is a placeholder, what you could not verify, what is weakest. Your notes
+  have three times caught defects you could not reach yourself — record
+  suspicions as well as facts.
+
+# Output
+
+A short summary: files added/changed, test counts before and after, and the
+three things you are least confident about.
