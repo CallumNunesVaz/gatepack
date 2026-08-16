@@ -46,11 +46,11 @@
     },
     {
       "name": "elkjs",
-      "licence": "EPL-1.0",
-      "version": "0.3.0",
-      "integration": "transitive via netlistsvg, baked into the renderer bundle",
+      "licence": "EPL-2.0",
+      "version": "0.9.3",
+      "integration": "npm dependency; netlistsvg is pinned onto this copy by an override",
       "unmodified": true,
-      "note": "the copy that ships is netlistsvg's nested elkjs@0.3.0 (EPL-1.0), not the top-level elkjs@0.9.3 (EPL-2.0) that app/package.json declares; the top-level copy is unused and excluded from the asar. EPL-1.0 has no secondary-licence provision, so §4's EPL-2.0 argument does not transfer (§4)"
+      "note": "netlistsvg declares elkjs ^0.3.0, whose only satisfying release is EPL-1.0 \u2014 a licence with no secondary-licence provision, so \u00a74's EPL-2.0 argument does not transfer to it. An npm `overrides` entry pins netlistsvg onto the top-level elkjs 0.9.3 (EPL-2.0) instead, and the EPL-1.0 copy is no longer installed or shipped. netlistsvg uses only `new ELK()` and `elk.layout(graph, {layoutOptions})`, which 0.9.3 provides; verified by rendering a netlist through it."
     },
     {
       "name": "React Flow",
