@@ -124,13 +124,14 @@ class SynchronousVerify(VerificationStrategy):
                 [],
             )
 
-        def run_equivalence(mutated_lib: str) -> CheckStatus:
-            # A correct mutation test must re-map with the mutated library, then
-            # re-run equivalence.  (Construction-phase; the tool path is untested
-            # here — Yosys is not installed.)
-            lib_path = Path(config.cells_lib)
-            original = lib_path.read_text()
-            lib_path.write_text(mutated_lib)
+        def run_equivalence(mutated_sim: str) -> CheckStatus:
+            # Both checks read cells_sim.v as the behavioural model, so the
+            # mutated model (not the Liberty file) is what a correct check must
+            # see.  Writing the mutated Liberty would change nothing: the
+            # equivalence script never reads cells.lib.
+            sim_path = Path(config.cells_sim_v)
+            original = sim_path.read_text()
+            sim_path.write_text(mutated_sim)
             try:
                 result = runner.run(
                     yosys_command(equiv_mod.build_equivalence_script(config)),
@@ -140,7 +141,7 @@ class SynchronousVerify(VerificationStrategy):
                     return CheckStatus.FAILED
                 return equiv_mod.parse_equiv_status(result.stdout).status
             finally:
-                lib_path.write_text(original)
+                sim_path.write_text(original)
 
         def run_simulation(mutated_sim: str) -> CheckStatus:
             sim_path = Path(config.cells_sim_v)
@@ -161,14 +162,24 @@ class SynchronousVerify(VerificationStrategy):
             finally:
                 sim_path.write_text(original)
 
+        mapped_v = ""
+        mapped_v_path = Path(config.mapped_v)
+        if mapped_v_path.exists():
+            mapped_v = mapped_v_path.read_text()
+
         outcomes = mutation_mod.run_mutation_suite(
-            mutation_mod.MUTATIONS, lib_text, sim_text, run_equivalence, run_simulation
+            mutation_mod.MUTATIONS,
+            lib_text,
+            sim_text,
+            run_equivalence,
+            run_simulation,
+            mapped_v or None,
         )
-        all_detected = all(o.detected for o in outcomes)
-        status = CheckStatus.PASSED if all_detected else CheckStatus.FAILED
+        undetected = [o.mutation for o in outcomes if o.applicable and not o.detected]
+        status = CheckStatus.FAILED if undetected else CheckStatus.PASSED
         detail = (
-            "all mutations detected"
-            if all_detected
-            else "one or more mutations NOT detected (vacuous pass — R2/R18)"
+            "one or more mutations NOT detected: " + ", ".join(undetected)
+            if undetected
+            else "all applicable mutations detected"
         )
         return CheckResult("mutation", status, detail, kind="mutation"), outcomes

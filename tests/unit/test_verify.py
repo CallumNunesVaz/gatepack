@@ -74,8 +74,23 @@ def test_equivalence_recipe_reprocs_after_roundtrip():
     assert "write_verilog -noattr build/gold.v" in lines
     assert "proc; opt; async2sync; opt" in lines
     assert "proc; flatten; opt; async2sync; opt" in lines
-    assert "design -stash golden" in lines
-    assert "design -stash mapped" in lines
+    assert "design -stash goldstash" in lines
+    assert "design -stash gatestash" in lines
+
+
+def test_equivalence_recipe_copies_stashes_back_before_equiv_make():
+    # M0-FINDINGS §6 correction: `design -stash` saves the design *and clears
+    # it*, and `equiv_make` takes module names in the current design, not stash
+    # names.  The stashes must be copied back in and renamed first.
+    script = equivalence.build_equivalence_script(_config())
+    lines = [ln.strip() for ln in script.splitlines() if ln.strip()]
+    copy_gold = "design -copy-from goldstash -as golden mytop"
+    copy_gate = "design -copy-from gatestash -as mapped mytop"
+    assert copy_gold in lines
+    assert copy_gate in lines
+    # copy-from precedes equiv_make, which is the command that would otherwise
+    # fail with "Can't find gold module golden".
+    assert script.index(copy_gold) < script.index("equiv_make golden mapped equiv")
 
 
 def test_equivalence_fallback_ladder():
@@ -226,6 +241,83 @@ def test_run_mutation_suite_real_fault_is_detected():
         mutation.MUTATIONS, lib, sim, failing_equiv, failing_sim
     )
     assert all(o.detected for o in outcomes)
+
+
+def test_used_cells_extracts_cell_types():
+    mapped = (
+        "module t;\n"
+        "  NAND2 _0_ (.A(a), .B(b), .Y(y));\n"
+        "  DFF_R _1_ (.D(d), .CK(clk), .Q(q), .RST_N(r));\n"
+        "endmodule\n"
+    )
+    assert mutation.used_cells(mapped) == {"NAND2", "DFF_R"}
+
+
+def test_is_applicable_depends_on_instantiated_cells():
+    combinational = "module t;\n  XOR2 _0_ (.A(a), .B(b), .Y(y));\nendmodule\n"
+    nand = mutation.MUTATIONS[0]
+    flop = mutation.MUTATIONS[1]
+    assert nand.name == "nand_to_and"
+    assert not mutation.is_applicable(nand, combinational)
+    assert not mutation.is_applicable(flop, combinational)
+    sequential = "module t;\n  NAND2 _0_ (.A(a), .B(b), .Y(y));\n  DFF_R _1_ (.D(d), .CK(clk), .Q(q), .RST_N(r));\nendmodule\n"
+    assert mutation.is_applicable(nand, sequential)
+    assert mutation.is_applicable(flop, sequential)
+
+
+def test_run_mutation_suite_marks_inapplicable_separately():
+    # A combinational netlist (no NAND2, no flops): every mutation is
+    # not_applicable, none runs a check, and none counts as a vacuity failure.
+    lib, sim = _artefacts()
+    combinational = "module t;\n  XOR2 _0_ (.A(a), .B(b), .Y(y));\nendmodule\n"
+    calls = []
+
+    def run_equiv(_text):
+        calls.append("equiv")
+        return CheckStatus.PASSED
+
+    def run_sim(_text):
+        calls.append("sim")
+        return CheckStatus.PASSED
+
+    outcomes = mutation.run_mutation_suite(
+        mutation.MUTATIONS, lib, sim, run_equiv, run_sim, combinational
+    )
+    assert all(not o.detected and not o.applicable for o in outcomes)
+    assert calls == []  # no check ran for an inapplicable mutation
+
+
+def test_run_mutation_suite_applicable_undetected_is_a_failure():
+    # A sequential netlist uses the mutated cells, so an undetected fault is a
+    # genuine vacuity failure, not a category error.
+    from gatepack.verify.base import VerificationReport
+
+    lib, sim = _artefacts()
+    sequential = "module t;\n  NAND2 _0_ (.A(a), .B(b), .Y(y));\n  DFF_R _1_ (.D(d), .CK(clk), .Q(q), .RST_N(r));\nendmodule\n"
+
+    def vacuous_equiv(_text):
+        return CheckStatus.PASSED
+
+    def vacuous_sim(_text):
+        return CheckStatus.PASSED
+
+    outcomes = mutation.run_mutation_suite(
+        mutation.MUTATIONS, lib, sim, vacuous_equiv, vacuous_sim, sequential
+    )
+    assert all(o.applicable for o in outcomes)
+    assert all(not o.detected for o in outcomes)
+    report = VerificationReport(checks=[], mutations=outcomes)
+    assert report.has_failure  # applicable-but-undetected is a hard failure
+
+
+def test_not_applicable_mutations_do_not_fail_the_report():
+    from gatepack.verify.base import MutationOutcome, VerificationReport
+
+    report = VerificationReport(
+        checks=[],
+        mutations=[MutationOutcome("nand_to_and", False, "n/a", applicable=False)],
+    )
+    assert not report.has_failure
 
 
 # --- strategy dispatch --------------------------------------------------------

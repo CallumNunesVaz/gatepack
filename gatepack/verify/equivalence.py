@@ -5,7 +5,7 @@ shared from that one file, never copied — and then stops before
 ``dfflegalize``/``dfflibmap``/``abc``.  That shared front end is what makes
 k-induction close, because both sides keep identical state encodings ([R4-5]).
 
-The script follows the **measured** M0 recipe, which added three steps the
+The script follows the **measured** M0 recipe, which added four steps the
 design omitted and each of which is a hard failure:
 
 1. ``cells_sim.v`` is read alongside the mapped netlist — without the
@@ -16,13 +16,22 @@ design omitted and each of which is a hard failure:
    reset mandatory, so every design hits this).
 3. ``proc`` is re-run after every Verilog round-trip, or the module "contains
    memories or processes".
+4. Each side is ``design -stash``-ed (which *clears* the design), then copied
+   back in under the names ``equiv_make`` takes.  ``design -stash`` saves the
+   current design and empties it, and ``equiv_make`` takes **module names in the
+   current design**, not stash names — so ``equiv_make golden mapped equiv``
+   directly after two stashes fails with ``ERROR: Can't find gold module
+   golden.``  The two stashes are copied back in with
+   ``design -copy-from <stash> -as <name> <top>`` first.
 
-The fallback ladder (``equiv_simple`` -> ``equiv_induct -seq N`` raised -> sby
-miter) remains for escalation; the primary run uses the measured ``equiv_simple
-; equiv_induct`` sequence.  The exact wording of ``equiv_status -assert`` output
-is best-effort and MUST be confirmed against the pinned Yosys at M0 (Yosys is
-not installed here); the script *generation* and result *parsing* are
-unit-testable regardless.
+The measured ``equiv_simple ; equiv_induct ; equiv_status -assert`` sequence is
+the primary run; the fallback ladder (``equiv_simple`` -> ``equiv_induct -seq
+N`` raised -> sby miter) remains for escalation.  This exact script has been
+run against real Yosys 0.23 and reports
+``Of those cells 1 are proven and 0 are unproven. Equivalence successfully
+proven!`` on ``xor2``, and ``ERROR: Found 1 unproven $equiv cells`` (non-zero
+exit) when the mapped netlist is corrupted — so the check genuinely closes and
+genuinely fails.
 """
 
 from __future__ import annotations
@@ -75,14 +84,14 @@ def golden_prep(config: VerifyConfig) -> str:
 
 def _equiv_commands(step: EquivStep, induction_steps: int | None) -> list[str]:
     if step is EquivStep.EQUIV_SIMPLE:
-        return ["equiv_simple equiv", "equiv_status -assert equiv"]
+        return ["equiv_simple", "equiv_status -assert"]
     if step is EquivStep.EQUIV_INDUCT:
         induct = (
             f"equiv_induct -seq {induction_steps} equiv"
             if induction_steps is not None
-            else "equiv_induct equiv"
+            else "equiv_induct"
         )
-        return ["equiv_simple equiv", induct, "equiv_status -assert equiv"]
+        return ["equiv_simple", induct, "equiv_status -assert"]
     raise ValueError("SBY_MITER is a separate construction, not a Yosys script")
 
 
@@ -91,7 +100,12 @@ def build_equivalence_script(
     step: EquivStep = EquivStep.EQUIV_INDUCT,
     induction_steps: int | None = None,
 ) -> str:
-    """Emit the Yosys equivalence script following the measured M0 recipe."""
+    """Emit the Yosys equivalence script following the measured M0 recipe.
+
+    ``design -stash`` clears the design, so both stashes are copied back in via
+    ``design -copy-from`` before ``equiv_make`` is given their names (M0-FINDINGS
+    §6 correction).
+    """
     lines = [
         golden_prep(config),
         "# --- golden side ready (shared front end, stopped before dfflegalize/dfflibmap/abc) ---",
@@ -100,11 +114,15 @@ def build_equivalence_script(
         "# --- golden side, round-tripped: re-proc is mandatory after write_verilog ---",
         f"read_verilog {config.gold_v}",
         "proc; opt; async2sync; opt",
-        "design -stash golden",
+        "design -stash goldstash",
         "# --- gate side: mapped netlist + behavioural models (cells_sim.v is mandatory) ---",
         f"read_verilog {config.gate_v} {config.cells_sim_v}",
         "proc; flatten; opt; async2sync; opt",
-        "design -stash mapped",
+        "design -stash gatestash",
+        "# --- copy stashes back in: design -stash cleared the design, and equiv_make",
+        "# --- takes module names in the current design, not stash names (M0-FINDINGS §6) ---",
+        f"design -copy-from goldstash -as golden {config.top}",
+        f"design -copy-from gatestash -as mapped {config.top}",
         "equiv_make golden mapped equiv",
         "prep -top equiv",
     ]
@@ -116,37 +134,36 @@ def build_sby_miter(config: VerifyConfig, bound: int) -> str:
     """Emit a hand-built miter + ``.sby`` config for BMC (last-resort fallback).
 
     BMC proves correctness only up to ``bound``; the result must therefore be a
-    *bounded pass*, never a green pass (§21.5).  The miter renames the golden
-    top to avoid the name clash with the mapped top; the exact form is
-    best-effort and unverified against a real sby run (M0).  It reads the cell
-    models and runs ``async2sync`` for the same reasons the equivalence recipe
-    does (M0-FINDINGS §6).
+    *bounded pass*, never a green pass (§21.5).  The golden side is the *golden
+    netlist* (``gold.v``, stopped before ``dfflegalize``/``dfflibmap``/``abc``),
+    not the raw behavioural ``generated.v``: both sides must pass through the
+    same front end or their state encodings drift and the miter cannot close.
+    It reads the cell models and runs ``async2sync`` for the same reasons the
+    equivalence recipe does (M0-FINDINGS §6).  The reads live in ``[script]``,
+    interleaved with ``proc``/``rename``, so the files are not also listed in
+    ``[files]`` (that would read them twice).
     """
     return "\n".join(
         [
             "[options]",
-            f"mode bmc",
+            "mode bmc",
             f"depth {bound}",
             "",
             "[engines]",
             "smtbmc z3",
             "",
             "[script]",
-            f"read_verilog -sv {config.generated_v}",
+            f"read_verilog {config.gold_v}",
             "proc; opt; async2sync; opt",
-            "rename {top} golden",
+            f"rename {config.top} golden",
             f"read_verilog {config.mapped_v} {config.cells_sim_v}",
             "proc; flatten; opt; async2sync; opt",
-            "prep -top {top}",
-            "miter -equiv golden {top} miter",
+            f"prep -top {config.top}",
+            f"miter -equiv golden {config.top} miter",
+            "prep -top miter",
             "select -assert-none t:miter -non-equiv",
-            "",
-            "[files]",
-            f"{config.generated_v}",
-            f"{config.mapped_v}",
-            f"{config.cells_sim_v}",
         ]
-    ).replace("{top}", config.top)
+    )
 
 
 def parse_equiv_status(stdout: str) -> EquivalenceOutcome:
@@ -154,7 +171,11 @@ def parse_equiv_status(stdout: str) -> EquivalenceOutcome:
     text = stdout.lower()
     if "equivalence successfully proven" in text or "equivalence proved" in text:
         return EquivalenceOutcome(CheckStatus.PASSED)
-    if "equivalence check failed" in text or "counterexample" in text:
+    if (
+        "equivalence check failed" in text
+        or "counterexample" in text
+        or "unproven" in text
+    ):
         return EquivalenceOutcome(CheckStatus.FAILED, "equivalence check failed")
     return EquivalenceOutcome(CheckStatus.NOT_RUN, "unrecognized equiv output")
 

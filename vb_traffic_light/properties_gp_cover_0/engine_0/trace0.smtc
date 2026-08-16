@@ -1,0 +1,51 @@
+initial
+assume (= [$formal$properties.sv:18$2_EN] false)
+assume (= [$formal$properties.sv:20$3_EN] false)
+assume (= [_witness_.anyinit_procdff_100] false)
+assume (= [_witness_.anyinit_procdff_101] false)
+assume (= [_witness_.anyinit_procdff_102] false)
+assume (= [_witness_.anyinit_procdff_87] false)
+assume (= [_witness_.anyinit_procdff_89] false)
+assume (= [_witness_.anyinit_procdff_94] false)
+assume (= [_witness_.anyinit_procdff_95] false)
+assume (= [_witness_.anyinit_procdff_96] false)
+assume (= [_witness_.anyinit_procdff_97] false)
+assume (= [_witness_.anyinit_procdff_98] false)
+assume (= [_witness_.anyinit_procdff_99] false)
+assume (= [gp_cycle] #x0)
+
+state 0
+assume (= [clk] false)
+assume (= [emergency] true)
+assume (= [go] true)
+assume (= [rst_n] false)
+
+state 1
+assume (= [clk] false)
+assume (= [emergency] true)
+assume (= [go] true)
+assume (= [rst_n] false)
+
+state 2
+assume (= [clk] false)
+assume (= [emergency] true)
+assume (= [go] true)
+assume (= [rst_n] false)
+
+state 3
+assume (= [clk] false)
+assume (= [emergency] true)
+assume (= [go] true)
+assume (= [rst_n] false)
+
+state 4
+assume (= [clk] false)
+assume (= [emergency] true)
+assume (= [go] true)
+assume (= [rst_n] false)
+
+state 5
+assume (= [clk] false)
+assume (= [emergency] true)
+assume (= [go] true)
+assume (= [rst_n] false)

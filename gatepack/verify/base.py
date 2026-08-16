@@ -84,6 +84,10 @@ class MutationOutcome:
     mutation: str
     detected: bool
     detail: str = ""
+    # False when the mutation targets a cell the design does not instantiate
+    # (a category error, not a vacuity finding).  Such outcomes are reported
+    # separately and do not count towards the vacuity verdict (R2, R18).
+    applicable: bool = True
 
 
 @dataclass
@@ -94,7 +98,7 @@ class VerificationReport:
     @property
     def has_failure(self) -> bool:
         return any(c.status == CheckStatus.FAILED for c in self.checks) or any(
-            not m.detected for m in self.mutations
+            m.applicable and not m.detected for m in self.mutations
         )
 
     @property
