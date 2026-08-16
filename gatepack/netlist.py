@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterator, Mapping as MappingABC
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -194,7 +195,89 @@ def resolve_parts(netlist: MappedNetlist, parts: Sequence[Part]) -> MappedNetlis
     )
 
 
-def stable_cell_names(netlist: MappedNetlist) -> dict[str, str]:
+class CellNames(MappingABC[str, str]):
+    """The two cell-name spaces, reconciled in exactly one place.
+
+    A mapped cell has two names, and confusing them has caused real defects:
+
+    * the **instance** name — what Yosys/ABC emit and what ``MappedCell.name``
+      holds (``$abc$148$...$154``); renumbered by every synthesis;
+    * the **stable** name — the cone-hash from :func:`stable_cell_names`
+      (``OR2__3cf29954``); deterministic across runs.
+
+    This object owns *both* directions of the mapping, so a call site never has
+    to guess which space a ``str`` is in or re-derive the reverse lookup.  It is
+    a :class:`~collections.abc.Mapping` keyed by **instance** name (so
+    ``dict(names)`` is instance -> stable, the shape the IPC contract exposes
+    as ``stableCellNames``), and it adds two explicit, direction-named methods
+    that hard-error on a name from the wrong space:
+
+    * :meth:`to_stable` — instance -> stable;
+    * :meth:`to_instance` — stable -> instance.
+
+    Both raise :class:`KeyError` with a message that names the space, so passing
+    an instance name where a stable one belongs fails loudly instead of
+    silently producing a wrong answer.
+    """
+
+    def __init__(self, instance_to_stable: Mapping[str, str]) -> None:
+        by_instance = dict(instance_to_stable)
+        by_stable: dict[str, str] = {}
+        for instance, stable in by_instance.items():
+            if stable in by_stable:
+                raise ValueError(
+                    f"two cells map to the same stable name {stable!r}: "
+                    f"{by_stable[stable]!r} and {instance!r}"
+                )
+            by_stable[stable] = instance
+        self._by_instance = by_instance
+        self._by_stable = by_stable
+
+    def __getitem__(self, instance: str) -> str:
+        return self.to_stable(instance)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._by_instance)
+
+    def __len__(self) -> int:
+        return len(self._by_instance)
+
+    def __repr__(self) -> str:
+        return f"CellNames({self._by_instance!r})"
+
+    def to_stable(self, instance: str) -> str:
+        try:
+            return self._by_instance[instance]
+        except KeyError:
+            raise KeyError(f"{instance!r} is not a known instance name") from None
+
+    def to_instance(self, stable: str) -> str:
+        try:
+            return self._by_stable[stable]
+        except KeyError:
+            raise KeyError(f"{stable!r} is not a known stable name") from None
+
+    def stable_of(self, cell: MappedCell) -> str:
+        """The stable name of ``cell`` (an instance -> stable lookup)."""
+        return self.to_stable(cell.name)
+
+    @property
+    def stable_names(self) -> tuple[str, ...]:
+        """The stable names (the *values* of the instance -> stable map)."""
+        return tuple(self._by_stable)
+
+    @property
+    def instance_to_stable(self) -> dict[str, str]:
+        """A plain instance -> stable dict (the ``stableCellNames`` IPC shape)."""
+        return dict(self._by_instance)
+
+    @classmethod
+    def identity(cls, cells: Sequence[MappedCell]) -> CellNames:
+        """An identity mapping (stable name == instance name) for ``cells``."""
+        return cls({c.name: c.name for c in cells})
+
+
+def stable_cell_names(netlist: MappedNetlist) -> CellNames:
     """Return a deterministic stable name for each cell ([R4-19] stage 1).
 
     A cell's identity is its Liberty function plus the hash of its
@@ -205,6 +288,10 @@ def stable_cell_names(netlist: MappedNetlist) -> dict[str, str]:
     The *determinism* guarantee is exact; the *stability under re-optimisation*
     guarantee is best-effort (reduced churn, not eliminated) and is only fully
     observable against real Yosys output, which is not available here.
+
+    Returns a :class:`CellNames` owning both directions of the instance<->stable
+    mapping, so the reverse lookup is derived once rather than re-derived (and
+    re-gotten-wrong) at each call site.
     """
     cells = netlist.cells
     by_name = {c.name: c for c in cells}
@@ -246,7 +333,7 @@ def stable_cell_names(netlist: MappedNetlist) -> dict[str, str]:
         grp = sorted(groups[base], key=lambda c: (_output_net(c), c.name))
         for i, c in enumerate(grp):
             names[c.name] = base if len(grp) == 1 else f"{base}_{i}"
-    return names
+    return CellNames(names)
 
 
 def _output_net(cell: MappedCell) -> str:
