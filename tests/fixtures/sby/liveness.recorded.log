@@ -1,0 +1,35 @@
+SBY 15:02:25 [build/properties_gp_cover_0] Removing directory '/work/build/properties_gp_cover_0'.
+SBY 15:02:25 [build/properties_gp_cover_0] Copy '/work/build/generated.v' to '/work/build/properties_gp_cover_0/src/generated.v'.
+SBY 15:02:25 [build/properties_gp_cover_0] Copy '/work/build/properties.sv' to '/work/build/properties_gp_cover_0/src/properties.sv'.
+SBY 15:02:25 [build/properties_gp_cover_0] engine_0: smtbmc z3
+SBY 15:02:25 [build/properties_gp_cover_0] base: starting process "cd build/properties_gp_cover_0/src; yosys -ql ../model/design.log ../model/design.ys"
+SBY 15:02:25 [build/properties_gp_cover_0] base: finished (returncode=0)
+SBY 15:02:25 [build/properties_gp_cover_0] prep: starting process "cd build/properties_gp_cover_0/model; yosys -ql design_prep.log design_prep.ys"
+SBY 15:02:25 [build/properties_gp_cover_0] prep: finished (returncode=0)
+SBY 15:02:25 [build/properties_gp_cover_0] smt2: starting process "cd build/properties_gp_cover_0/model; yosys -ql design_smt2.log design_smt2.ys"
+SBY 15:02:25 [build/properties_gp_cover_0] smt2: finished (returncode=0)
+SBY 15:02:25 [build/properties_gp_cover_0] engine_0: starting process "cd build/properties_gp_cover_0; yosys-smtbmc -s z3 --presat -c --noprogress -t 64  --append 0 --dump-vcd engine_0/trace%.vcd --dump-yw engine_0/trace%.yw --dump-vlogtb engine_0/trace%_tb.v --dump-smtc engine_0/trace%.smtc model/design_smt2.smt2"
+SBY 15:02:25 [build/properties_gp_cover_0] engine_0: ##   0:00:00  Solver: z3
+SBY 15:02:25 [build/properties_gp_cover_0] engine_0: ##   0:00:00  Checking cover reachability in step 0..
+SBY 15:02:25 [build/properties_gp_cover_0] engine_0: ##   0:00:00  Checking cover reachability in step 1..
+SBY 15:02:25 [build/properties_gp_cover_0] engine_0: ##   0:00:00  Checking cover reachability in step 2..
+SBY 15:02:25 [build/properties_gp_cover_0] engine_0: ##   0:00:00  Checking cover reachability in step 3..
+SBY 15:02:25 [build/properties_gp_cover_0] engine_0: ##   0:00:00  Checking cover reachability in step 4..
+SBY 15:02:25 [build/properties_gp_cover_0] engine_0: ##   0:00:00  Checking cover reachability in step 5..
+SBY 15:02:25 [build/properties_gp_cover_0] engine_0: ##   0:00:00  Checking cover reachability in step 6..
+SBY 15:02:25 [build/properties_gp_cover_0] engine_0: ##   0:00:00  Checking cover reachability in step 7..
+SBY 15:02:25 [build/properties_gp_cover_0] engine_0: ##   0:00:00  Checking cover reachability in step 8..
+SBY 15:02:25 [build/properties_gp_cover_0] engine_0: ##   0:00:00  Checking cover reachability in step 9..
+SBY 15:02:25 [build/properties_gp_cover_0] engine_0: ##   0:00:00  Reached cover statement at gp_cover_0 in step 9.
+SBY 15:02:25 [build/properties_gp_cover_0] engine_0: ##   0:00:00  Writing trace to VCD file: engine_0/trace0.vcd
+SBY 15:02:25 [build/properties_gp_cover_0] engine_0: ##   0:00:00  Writing trace to Verilog testbench: engine_0/trace0_tb.v
+SBY 15:02:25 [build/properties_gp_cover_0] engine_0: ##   0:00:00  Writing trace to constraints file: engine_0/trace0.smtc
+SBY 15:02:25 [build/properties_gp_cover_0] engine_0: ##   0:00:00  Writing trace to Yosys witness file: engine_0/trace0.yw
+SBY 15:02:25 [build/properties_gp_cover_0] engine_0: ##   0:00:00  Status: passed
+SBY 15:02:25 [build/properties_gp_cover_0] engine_0: finished (returncode=0)
+SBY 15:02:25 [build/properties_gp_cover_0] engine_0: Status returned by engine: pass
+SBY 15:02:25 [build/properties_gp_cover_0] summary: Elapsed clock time [H:MM:SS (secs)]: 0:00:00 (0)
+SBY 15:02:25 [build/properties_gp_cover_0] summary: Elapsed process time [H:MM:SS (secs)]: 0:00:00 (0)
+SBY 15:02:25 [build/properties_gp_cover_0] summary: engine_0 (smtbmc z3) returned pass
+SBY 15:02:25 [build/properties_gp_cover_0] summary: trace: build/properties_gp_cover_0/engine_0/trace0.vcd
+SBY 15:02:25 [build/properties_gp_cover_0] DONE (PASS, rc=0)

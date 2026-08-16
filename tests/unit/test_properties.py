@@ -23,18 +23,21 @@ _DESIGN = (
     "clock: {signal: clk, freq_hz: 1000, source: OSC}\n"
     "reset: {signal: rst_n, active: low, source: SUPERVISOR}\n"
     "inputs:\n  - {name: x, sync: false}\n"
+    "outputs:\n  - {name: a}\n  - {name: b}\n"
     "states: [A, B]\n"
     "initial: A\n"
     "transitions:\n"
     '  - {from: A, to: B, when: "x"}\n'
     '  - {from: A, to: A, when: "!x"}\n'
     '  - {from: B, to: A, when: "1"}\n'
-    "output_logic: {}\n"
+    "output_logic:\n"
+    '  a: "state == B"\n'
+    '  b: "x"\n'
     "properties:\n"
-    '  - {name: p1, kind: invariant, expr: "1"}\n'
-    '  - {name: m1, kind: mutex, expr: "1"}\n'
+    '  - {name: p1, kind: invariant, expr: "!x | (state == B)"}\n'
+    '  - {name: m1, kind: mutex, expr: "!(a & b)"}\n'
     '  - {name: r1, kind: reachability, from: A, to: B}\n'
-    '  - {name: l1, kind: liveness, expr: "1"}\n'
+    '  - {name: l1, kind: liveness, to: B}\n'
 )
 
 
@@ -50,16 +53,26 @@ def test_default_depth_is_max_two_states_64():
 def test_property_tasks_modes():
     tasks = props.property_tasks(_compiled())
     by_label = {t.label: t for t in tasks}
-    # invariant + mutex -> prove assert + cover (vacuity guard)
+    # invariant + mutex -> prove assert + ONE cover task (vacuity guard)
     assert by_label["gp_assert_0"].mode == "prove"
     assert by_label["gp_assert_0"].role == "assert"
+    # implication antecedent (p in p -> q) is a SINGLE cover at gp_cover_0
     assert by_label["gp_cover_0"].mode == "cover"
     assert by_label["gp_cover_0"].role == "cover"
+    assert len(by_label["gp_cover_0"].covers) == 1
+    assert "antecedent" in by_label["gp_cover_0"].covers[0].description
     assert by_label["gp_assert_1"].mode == "prove"
+    # a mutex over a,b -> ONE cover task carrying both per-signal covers
+    assert by_label["gp_cover_1"].kind == "mutex"
+    assert [c.label for c in by_label["gp_cover_1"].covers] == [
+        "gp_cover_1_0",
+        "gp_cover_1_1",
+    ]
     # reachability + liveness -> cover only (M6-FINDINGS §4: mode cover)
     assert by_label["gp_cover_2"].mode == "cover"
     assert by_label["gp_cover_3"].kind == "liveness"
     assert "gp_assert_2" not in by_label
+    assert "gp_assert_3" not in by_label
 
 
 def test_sby_file_structure():
@@ -71,8 +84,11 @@ def test_sby_file_structure():
     # properties.sv is `include`d into the design module under GP_FORMAL, so it
     # is never read separately and the top is the DESIGN, not a wrapper. A
     # wrapper cannot see the design's signals: Yosys silently turns
-    # `dut.<sig>` into an undriven wire (M6-FINDINGS §6).
-    assert "read_verilog -sv -formal -DGP_FORMAL build/generated.v" in text
+    # `dut.<sig>` into an undriven wire (M6-FINDINGS §6).  The read command
+    # uses the *basename*: sby runs it from the task's src/ dir, where the
+    # [files] entries land under their basenames.
+    assert "read_verilog -sv -formal -DGP_FORMAL -DGP_PROVE generated.v" in text
+    assert "build/generated.v" in text  # the [files] entry, relative to cwd
     assert "read_verilog -sv build/properties.sv" not in text
     assert "prep -top t" in text
     assert "_properties" not in text
@@ -95,6 +111,10 @@ def test_sby_cover_task_uses_cover_mode():
     )
     assert "mode cover" in text
     assert "mode prove" not in text
+    # the cover task compiles the assertions out (M6-FINDINGS §6 / `mode cover`
+    # still checks asserts), so it reads with GP_COVER, not GP_PROVE.
+    assert "-DGP_COVER" in text
+    assert "-DGP_PROVE" not in text
 
 
 # ---------------------------------------------------------------------------
@@ -163,11 +183,39 @@ def test_parse_sby_cover_reached_is_bounded():
 
 
 def test_parse_sby_cover_unreached_is_failed():
+    # measured format (M6-FINDINGS §4 / recorded logs): sby names the unreached
+    # cover explicitly.
     stdout = (
+        "SBY 12:00:00 [gp_cover_2] engine_0: ##   0:00:00  Unreached cover "
+        "statement at gp_cover_2.\n"
+        "SBY 12:00:00 [gp_cover_2] engine_0: Status: failed\n"
         "SBY 12:00:00 [gp_cover_2] DONE (FAIL, rc=2)\n"
     )
     result = props.parse_sby(stdout, _tasks())["gp_cover_2"]
     assert result.status == "failed"
+
+
+def test_parse_sby_cover_fail_without_unreached_line_is_failed():
+    # a cover task that FAILs without an explicit "Unreached ..." line is still
+    # a failure, never a pass.
+    stdout = "SBY 12:00:00 [gp_cover_2] DONE (FAIL, rc=2)\n"
+    result = props.parse_sby(stdout, _tasks())["gp_cover_2"]
+    assert result.status == "failed"
+
+
+def test_parse_sby_multi_cover_reaches_each_and_names_the_unreached():
+    # one `mode cover` run reaches every cover; an unreached signal is reported
+    # per-label, so the vacuity failure can name the exact signal.
+    stdout = (
+        "SBY 12:00:00 [gp_cover_1] engine_0: Reached cover statement at "
+        "gp_cover_1_0 in step 4\n"
+        "SBY 12:00:00 [gp_cover_1] engine_0: Unreached cover statement at "
+        "gp_cover_1_1.\n"
+        "SBY 12:00:00 [gp_cover_1] DONE (FAIL, rc=2)\n"
+    )
+    parsed = props.parse_sby(stdout, _tasks())
+    assert parsed["gp_cover_1_0"].status == "bounded"
+    assert parsed["gp_cover_1_1"].status == "failed"
 
 
 def test_parse_sby_no_status_line_is_not_run():
@@ -225,6 +273,69 @@ def test_reachability_unreachable_is_failed():
     checks = props.checks_from_sby(_compiled(), _tasks(), results)
     r1 = next(c for c in checks if c.name == "property r1")
     assert r1.status is CheckStatus.FAILED
+
+
+def test_mutex_one_unreached_signal_cover_is_vacuous_failure():
+    # the mutex assertion proved, but ONE of its signals can never be asserted:
+    # the mutex is vacuously true for that signal and must be a failure.
+    results = _results_for(
+        {
+            "gp_assert_1": "passed",
+            "gp_cover_1_0": "bounded",
+            "gp_cover_1_1": "failed",
+        }
+    )
+    checks = props.checks_from_sby(_compiled(), _tasks(), results)
+    m1 = next(c for c in checks if c.name == "property m1")
+    assert m1.status is CheckStatus.FAILED
+    assert "vacuous" in m1.detail.lower() or "vacuity" in m1.detail.lower()
+    assert "b" in m1.detail  # names the signal whose cover failed
+
+
+def test_mutex_all_signal_covers_reached_is_passed():
+    results = _results_for(
+        {
+            "gp_assert_1": "passed",
+            "gp_cover_1_0": "bounded",
+            "gp_cover_1_1": "bounded",
+        }
+    )
+    checks = props.checks_from_sby(_compiled(), _tasks(), results)
+    m1 = next(c for c in checks if c.name == "property m1")
+    assert m1.status is CheckStatus.PASSED
+
+
+def test_liveness_is_bounded_with_default_depth_not_reached_step():
+    # §21.5: a liveness result is bounded with the default depth, never the
+    # reached step and never a plain pass.
+    results = _results_for({"gp_cover_3": "bounded"})
+    checks = props.checks_from_sby(_compiled(), _tasks(), results)
+    l1 = next(c for c in checks if c.name == "property l1")
+    assert l1.status is CheckStatus.BOUNDED_PASS
+    assert l1.bound == props.default_depth(2) == 64
+
+
+def test_liveness_unreachable_is_failed():
+    results = _results_for({"gp_cover_3": "failed"})
+    checks = props.checks_from_sby(_compiled(), _tasks(), results)
+    l1 = next(c for c in checks if c.name == "property l1")
+    assert l1.status is CheckStatus.FAILED
+
+
+def test_invariant_with_no_referenced_signals_is_not_run():
+    # an invariant with no antecedent and no signals has no vacuity guard to run;
+    # reporting it as passed would be a silent vacuous pass.
+    design = _DESIGN.replace(
+        '  - {name: p1, kind: invariant, expr: "!x | (state == B)"}\n',
+        '  - {name: p1, kind: invariant, expr: "1"}\n',
+    )
+    compiled = compile_design_text(design).compiled
+    tasks = props.property_tasks(compiled)
+    results = _results_for({"gp_assert_0": "passed"})
+    checks = props.checks_from_sby(compiled, tasks, results)
+    p1 = next(c for c in checks if c.name == "property p1")
+    assert p1.status is CheckStatus.NOT_RUN
+    assert "no signals" in p1.detail
 
 
 # ---------------------------------------------------------------------------
@@ -321,10 +432,11 @@ def test_run_properties_with_sby_present_passes(tmp_path):
             lines.append(f"SBY 12:00:00 [{t.label}] engine_0: returned pass for basecase")
             lines.append(f"SBY 12:00:00 [{t.label}] engine_0: returned pass for induction")
         else:
-            lines.append(
-                f"SBY 12:00:00 [{t.label}] engine_0: Reached cover statement "
-                f"at {t.label} in step 3"
-            )
+            for spec in t.covers:
+                lines.append(
+                    f"SBY 12:00:00 [{t.label}] engine_0: Reached cover statement "
+                    f"at {spec.label} in step 3"
+                )
         lines.append(f"SBY 12:00:00 [{t.label}] DONE (PASS, rc=0)")
     runner = FakeRunner(available=("sby",), stdout="\n".join(lines))
     checks = props.run_properties(compiled, config, runner)

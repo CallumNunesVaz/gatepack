@@ -146,13 +146,16 @@ def test_properties_file_emits_assertions():
     assert "p1" in props
     # `disable iff (!rst_n)` has no equivalent here; it becomes a guard.
     assert "disable iff" not in props
-    assert "if (rst_n)" in props
+    assert "if (gp_settled && rst_n)" in props
     # M6-FINDINGS §2: the reset assumption, without which true invariants
     # fail at step 1 from states the circuit can never reach.
     assert "assume ((!rst_n));" in props or "assume (!rst_n);" in props
     assert "gp_settled" in props
-    # §11 vacuity guard: every asserted property carries an antecedent cover.
-    assert "gp_cover_0: cover (" in props
+    # §11 vacuity guard: cover the *antecedent*, never the property body. A body
+    # cover of `!(o & x)` is satisfied by the all-zero state and proves nothing.
+    assert "gp_cover_0_0: cover (o);" in props
+    assert "gp_cover_0_1: cover (x);" in props
+    assert "cover ((~(o & x)))" not in props
     # a formal harness, not a testbench — no clock generator, no delays.
     # Checked against code lines only: the header comment says the words.
     code = [ln for ln in props.splitlines() if not ln.strip().startswith("//")]
@@ -168,3 +171,51 @@ def test_johnson_suggestion_surfaced_in_result():
     result = compile_design_text(yaml)
     assert result.compiled.johnson_suggestion is not None
     assert "JOHN10" in result.compiled.johnson_suggestion
+
+
+# ---------------------------------------------------------------------------
+# Vacuity-cover extraction from the expression AST (§11)
+# ---------------------------------------------------------------------------
+
+
+from gatepack.frontend import verilog as verilog_mod
+
+
+def _covers_for(expr: str, kind: str = "invariant"):
+    yaml = sync_design(
+        outputs=["a", "b"],
+        output_logic={"a": "state == B", "b": "x"},
+    )
+    yaml += f'properties:\n  - {{name: p, kind: {kind}, expr: "{expr}"}}\n'
+    compiled = compile_design_text(yaml).compiled
+    prop = compiled.design.properties[0]
+    return [c.label for c in verilog_mod.property_cover_specs(compiled, 0, prop)]
+
+
+def test_implication_antecedent_is_covered_not_the_body():
+    # p -> q spelled !p | q: the vacuity guard covers p, not !p | q.
+    assert _covers_for("!x | (state == B)") == ["gp_cover_0"]
+    # p -> q spelled !(p & !q)
+    assert _covers_for("!(x & !(state == B))") == ["gp_cover_0"]
+    # OR is commutative: q | !p is still p -> q
+    assert _covers_for("(state == B) | !x") == ["gp_cover_0"]
+
+
+def test_invariant_without_antecedent_covers_each_signal():
+    # !(a & b) has no implication form; the guard covers a and b individually.
+    assert _covers_for("!(a & b)") == ["gp_cover_0_0", "gp_cover_0_1"]
+
+
+def test_mutex_covers_each_signal():
+    # a mutex over three signals -> three per-signal covers, never the body.
+    assert _covers_for("!(a & b) & !(b & x)", kind="mutex") == [
+        "gp_cover_0_0",
+        "gp_cover_0_1",
+        "gp_cover_0_2",
+    ]
+
+
+def test_plain_disjunction_is_not_an_implication():
+    # a | b | x is a disjunction, not p -> q; no single antecedent is picked
+    # out, so each referenced signal gets its own cover.
+    assert _covers_for("a | b | x") == ["gp_cover_0_0", "gp_cover_0_1", "gp_cover_0_2"]

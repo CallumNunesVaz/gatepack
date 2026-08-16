@@ -45,10 +45,16 @@ def test_showcase_exercises_the_features_it_is_meant_to_demonstrate():
 def test_showcase_properties_are_emitted_and_guarded():
     result = compile_design_file(SHOWCASE / "design.yaml")
     props = result.properties
-    # each property gets an assertion and an antecedent cover (§11 vacuity)
+    # every property gets an assertion, and every property's antecedent is
+    # guarded by covers over its *signals* (never the property body).
     for index in range(len(result.compiled.design.properties)):
         assert f"gp_assert_{index}: assert (" in props
-        assert f"gp_cover_{index}: cover (" in props
+    # never_walk_with_traffic guards walk, traffic_green, traffic_amber
+    for sig in ("walk", "traffic_green", "traffic_amber"):
+        assert f"cover ({sig});" in props
+    # one_traffic_aspect guards the three traffic signals
+    for sig in ("traffic_red", "traffic_green", "traffic_amber"):
+        assert f"cover ({sig});" in props
 
 
 def test_showcase_gpk_is_present_and_round_trips_semantically():

@@ -99,6 +99,18 @@ def test_property_violating_fsm_skipped_without_sby():
     pytest.skip("property discharging needs sby (M6); not installed here")
 
 
+def test_liveness_goldens_emit_bounded_cover_not_a_comment():
+    # §21.5: liveness is emitted as bounded reachability (a `cover`), never a
+    # comment and never an unbounded assertion.  The bound is chosen at M6.
+    for name in ("liveness", "liveness_violating"):
+        result = compile_design_file(DESIGNS / f"{name}.yaml")
+        props = result.properties
+        assert "gp_cover_0: cover (" in props
+        assert "liveness" in props
+        # never an SVA concurrent assertion, never a self-toggling clock
+        assert "assert property" not in props
+
+
 def test_latch_inferring_design_skipped_without_yosys():
     # The latch ban is a C3 Yosys-level assertion (§9.2), not a C1 check.
     pytest.skip("latch-inferring golden needs a real Yosys run (C3); not installed")

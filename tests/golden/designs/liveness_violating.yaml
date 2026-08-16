@@ -1,0 +1,22 @@
+# A liveness property that must FAIL: the completion signal `done` is never
+# driven high, so "eventually done" is unreachable within any bound. sby's
+# cover for it is unreached, and that must surface as a failure, never a pass.
+name: liveness_violating
+timing_model: synchronous
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+reset: {signal: rst_n, active: low}
+inputs:
+  - {name: start, sync: false}
+outputs:
+  - {name: done}
+states: [IDLE, RUN]
+initial: IDLE
+transitions:
+  - {from: IDLE, to: RUN, when: "start"}
+  - {from: IDLE, to: IDLE, when: "!start"}
+  - {from: RUN, to: RUN, when: "1"}
+output_logic:
+  # the spec bug: a completion signal that is never asserted
+  done: "0"
+properties:
+  - {name: eventually_done, kind: liveness, expr: "done"}

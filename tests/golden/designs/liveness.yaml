@@ -1,0 +1,22 @@
+# A liveness property, discharged as bounded reachability (§21.5). The target
+# state RUN is reachable, so the check reports "bounded" with the default depth
+# — never "passed", because a bounded liveness result is exactly the "bounded
+# pass" the four-state model exists to distinguish.
+name: liveness
+timing_model: synchronous
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+reset: {signal: rst_n, active: low}
+inputs:
+  - {name: start, sync: false}
+outputs:
+  - {name: done}
+states: [IDLE, RUN]
+initial: IDLE
+transitions:
+  - {from: IDLE, to: RUN, when: "start"}
+  - {from: IDLE, to: IDLE, when: "!start"}
+  - {from: RUN, to: RUN, when: "1"}
+output_logic:
+  done: "state == RUN"
+properties:
+  - {name: eventually_done, kind: liveness, to: RUN}
