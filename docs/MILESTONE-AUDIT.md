@@ -27,7 +27,7 @@ tool closes, the only evidence that counts is that tool closing.
 | M15 | C12 schematic — all layers | **met** (2026-08-16) — packed and overlay layers render from `out/packed.json` |
 | M16 | Linked selection — §15.2 cross-highlights | **met** (2026-08-16) — package and property selections resolve |
 | M17 | C13 packing override, C14 dashboard, C15 tri-state | **met** (2026-08-16) |
-| M18 | Signed installers; worked example; CI green | **partial** — packaging builds, licence defects open, core does not ship |
+| M18 | Signed installers; worked example; CI green | **partial** — the core now ships; installers are unsigned (no credentials provisioned) |
 
 ## M5 — met (2026-08-16)
 
@@ -368,7 +368,43 @@ Two things had to be fixed for it to be true rather than merely present:
 - `force_groups` had never worked at all (see M9), so the override the view
   persists would have been refused on every rebuild.
 
-## M18 — partial
+## M18 — partial (the core now ships; signing does not)
+
+**Updated 2026-08-16: the core ships.** `scripts/bundle_core.py` produces a
+self-contained PyInstaller binary at `app/resources/bin/gatepack` (~14.5 MB),
+which `app/main/core.cts` already preferred over the host venv. Measured, not
+asserted — under `env -i`, with no Python, no venv and no `PATH`:
+
+```
+$ env -i app/resources/bin/gatepack examples list
+pelican (showcase)
+$ env -i app/resources/bin/gatepack examples extract pelican -o <tmp>
+wrote design.yaml / parts.csv
+```
+
+The acceptance test has both halves: with the bundle present the scrubbed
+invocation must succeed, and with the bundle moved aside it must fail — without
+the second half a host venv answering the call would prove nothing.
+
+One defect was found in review of the first attempt and sent back. `examples/`
+sits *beside* the `gatepack` package rather than inside it, so `--collect-all
+gatepack` never collected it and the frozen binary answered `examples list` with
+"no bundled examples found" and **exit 0**. The app opens the showcase on
+launch, so a packaged app would have started to an empty list. The bundler's own
+smoke test had checked two resources, found them present, and declared the
+bundle proven. `libraries/74aup.csv` is deliberately *not* bundled: it is passed
+as an explicit `--library` path and extracted projects carry their own
+`parts.csv`.
+
+`gatepack doctor` reports each external tool as found-with-version or missing,
+so a user without yosys gets a named tool and its purpose rather than a stack
+trace. **The native toolchain (yosys, sby, iverilog, z3, espresso) is still not
+bundled** — that is the remaining half of "ships", and it is reported honestly
+rather than stubbed.
+
+Still open: **no signing credentials exist**, so macOS and Windows installers
+build unsigned and will trip Gatekeeper and SmartScreen. Nothing here fabricates
+an identity.
 
 `electron-builder` config exists and `--linux dir` builds an app that launches.
 `scripts/version_check.py` prevents pyproject/package.json drift. The licence
