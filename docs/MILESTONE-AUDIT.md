@@ -16,7 +16,7 @@ tool closes, the only evidence that counts is that tool closing.
 | M4 | Sync path through the interface; async refuses cleanly | **met** |
 | M5 | Equivalence closes on all goldens; exhaustive sim; mutation | **met** (2026-08-16) |
 | M6 | sby discharges invariants/reachability/liveness; covers guard vacuity | **met** (2026-08-16) |
-| M8 | CNT4 + SUPERVISOR + tie-off; shared behavioural models | **met**, depth unverified |
+| M8 | CNT4 + SUPERVISOR + tie-off; shared behavioural models | **NOT MET** — a wrong M-cell model is not caught |
 | M9 | `pack_cost`; spare avoidance; deterministic; override works | **met** (2026-08-16) |
 | M10 | KiCad import clean; SCOAP delta; stuck-at classification | **partial** — analysis met, KiCad import unverified |
 | M11a | Two clean builds hash-identical | **met** (2026-08-16) |
@@ -87,6 +87,37 @@ traffic_light   passed — an honest mutex is not rejected
 
 Liveness is emitted as a bounded check reporting `bounded` with its depth,
 never `passed`.
+
+## M8 — not met
+
+The M-cell path is **unverified in the way that matters**, measured
+2026-08-16:
+
+- The front end emits a macro as a dangling `(* gp_src *)` attribute rather
+  than an instantiation, so `gatepack verify` on a macro design fails at C3
+  with `syntax error, unexpected TOK_ENDMODULE`.
+- More seriously: with a hand-built netlist that *does* instantiate `CNT4`, a
+  deliberately wrong model (`Q <= Q + 4'd2`) is **not caught**. Equivalence
+  reads `cells_sim.v` on both sides, so mutating the model changes both sides
+  identically and Yosys still reports "Equivalence successfully proven!".
+
+§19 R25 requires one shared model file so that equivalence and simulation
+cannot drift. That control is satisfied — but only its trivial half. Sharing
+the file is precisely what makes a macro model **unable to be checked against
+anything**: for a black box, the specification side has no independent
+definition of the macro's behaviour, so the model is compared with itself.
+
+This is the eighth piece of machinery in this project to report a status while
+measuring nothing, and the most serious, because the status it reports is the
+central claim: formal equivalence. It is sound for G- and F-cells, whose
+golden side is behavioural RTL derived from the specification. It is vacuous
+for M-cells.
+
+Closing it needs an independent behavioural definition of each macro — derived
+from the specification's own semantics of a counter, not from the same file
+the netlist uses. Pinned meanwhile by `tests/toolchain/test_mcell_coverage.py`,
+which asserts the current broken behaviour so it is visible rather than
+forgotten.
 
 ## M9 — met (2026-08-16), after the library gained multi-gate parts
 
