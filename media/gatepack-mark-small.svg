@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"
+     role="img" aria-labelledby="title desc">
+  <title id="title">gatepack</title>
+  <desc id="desc">A NAND gate, simplified for small sizes.</desc>
+
+  <!--
+    The 16–32 px variant. Same idea as gatepack-mark.svg, with everything that
+    turns to mush at that size removed: no package pins, no pin-1 dot, thicker
+    strokes, and the gate enlarged to fill the tile.
+
+    Detail that cannot be resolved is not neutral — it is noise that blurs the
+    silhouette. What has to survive is the one thing that identifies the mark:
+    a NAND gate.
+  -->
+
+  <defs>
+    <linearGradient id="board" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0F4A38"/>
+      <stop offset="1" stop-color="#08301F"/>
+    </linearGradient>
+    <!-- userSpaceOnUse: an objectBoundingBox gradient collapses on the
+         horizontal leads, whose bounding box has zero height. -->
+    <linearGradient id="gold" gradientUnits="userSpaceOnUse"
+                    x1="60" y1="120" x2="460" y2="400">
+      <stop offset="0" stop-color="#F5CF66"/>
+      <stop offset="1" stop-color="#C9962A"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="16" y="16" width="480" height="480" rx="88" fill="url(#board)"/>
+
+  <g fill="none" stroke="url(#gold)" stroke-width="42"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M78 186 H150"/>
+    <path d="M78 326 H150"/>
+    <path d="M150 118 V394 H196 A138 138 0 0 0 196 118 Z" fill="#08301F"/>
+    <path d="M396 256 H442"/>
+  </g>
+  <circle cx="362" cy="256" r="30" fill="#08301F" stroke="url(#gold)" stroke-width="34"/>
+</svg>

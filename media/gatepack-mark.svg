@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"
+     role="img" aria-labelledby="title desc">
+  <title id="title">gatepack</title>
+  <desc id="desc">A NAND gate inside a five-pin logic package.</desc>
+
+  <!--
+    The mark is the product stated literally: one logic gate, inside one
+    physical package. That is what gatepack compiles a specification into.
+
+    The gate is a NAND — the universal gate, from which any logic can be
+    built, which is the premise the whole tool rests on. It is drawn to the
+    IEEE distinctive shape (flat back, semicircular front, inversion bubble)
+    rather than a rounded box, for the same reason C12 renders with netlistsvg
+    and not React Flow: engineers read the real symbol and reject the other.
+
+    Five pins, three left and two right, is the SOT-353 pinout the 74AUP
+    single-gate parts actually ship in.
+
+    Colours are ENIG gold on solder-mask green — a real board, not a generic
+    tech gradient.
+  -->
+
+  <defs>
+    <linearGradient id="board" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0F4A38"/>
+      <stop offset="1" stop-color="#08301F"/>
+    </linearGradient>
+    <!--
+      userSpaceOnUse, deliberately. The default (objectBoundingBox) collapses
+      on a horizontal line, whose bounding box has zero height, so the gate's
+      input and output leads rendered as nothing at all and the glyph read as
+      a plain letter D rather than a NAND.
+    -->
+    <linearGradient id="gold" gradientUnits="userSpaceOnUse"
+                    x1="100" y1="140" x2="430" y2="380">
+      <stop offset="0" stop-color="#F2C75C"/>
+      <stop offset="1" stop-color="#C9962A"/>
+    </linearGradient>
+  </defs>
+
+  <!-- pins: 3 left, 2 right (SOT-353) -->
+  <g fill="url(#gold)">
+    <rect x="8"   y="132" width="66" height="46" rx="12"/>
+    <rect x="8"   y="233" width="66" height="46" rx="12"/>
+    <rect x="8"   y="334" width="66" height="46" rx="12"/>
+    <rect x="438" y="172" width="66" height="46" rx="12"/>
+    <rect x="438" y="294" width="66" height="46" rx="12"/>
+  </g>
+
+  <!-- package body -->
+  <rect x="56" y="56" width="400" height="400" rx="64" fill="url(#board)"/>
+  <rect x="56" y="56" width="400" height="400" rx="64" fill="none"
+        stroke="#0A2418" stroke-width="8"/>
+
+  <!-- pin-1 dot, as on a real package -->
+  <circle cx="112" cy="112" r="15" fill="#F2C75C" opacity="0.85"/>
+
+  <!-- NAND gate, IEEE distinctive shape -->
+  <g fill="none" stroke="url(#gold)" stroke-width="24"
+     stroke-linecap="round" stroke-linejoin="round">
+    <!-- input leads: long enough to read as inputs, not as part of the body -->
+    <path d="M120 204 H206"/>
+    <path d="M120 308 H206"/>
+    <!-- body: flat back, semicircular front (IEEE distinctive shape) -->
+    <path d="M206 158 V354 H242 A98 98 0 0 0 242 158 Z" fill="#08301F"/>
+    <!-- output lead, starting clear of the bubble -->
+    <path d="M382 256 H426"/>
+  </g>
+  <!-- inversion bubble: the N in NAND -->
+  <circle cx="358" cy="256" r="22" fill="#08301F" stroke="url(#gold)" stroke-width="20"/>
+</svg>

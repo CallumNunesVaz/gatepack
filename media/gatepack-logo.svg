@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 320" width="1120" height="320"
+     role="img" aria-labelledby="title desc">
+  <title id="title">gatepack</title>
+  <desc id="desc">gatepack — a NAND gate in a five-pin package, with wordmark.</desc>
+
+  <!--
+    Horizontal lockup: mark + wordmark.
+
+    The tagline is the project's actual claim, not a slogan — what gatepack
+    does that nothing else surveyed in §24 does is prove the netlist matches
+    the specification.
+
+    Text is set in a system sans. If this needs to render somewhere without
+    those fonts (a print house, a foreign CI), convert the text to paths
+    first — do not assume the substitution will be acceptable.
+  -->
+
+  <defs>
+    <linearGradient id="board" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0F4A38"/>
+      <stop offset="1" stop-color="#08301F"/>
+    </linearGradient>
+    <!-- userSpaceOnUse: an objectBoundingBox gradient collapses on the
+         horizontal leads, whose bounding box has zero height. -->
+    <linearGradient id="gold" gradientUnits="userSpaceOnUse"
+                    x1="60" y1="60" x2="330" y2="270">
+      <stop offset="0" stop-color="#F2C75C"/>
+      <stop offset="1" stop-color="#C9962A"/>
+    </linearGradient>
+  </defs>
+
+  <!-- — mark, scaled from the 512 grid into a 256 box at x=32 — -->
+  <g transform="translate(32,32) scale(0.5)">
+    <g fill="url(#gold)">
+      <rect x="8"   y="132" width="66" height="46" rx="12"/>
+      <rect x="8"   y="233" width="66" height="46" rx="12"/>
+      <rect x="8"   y="334" width="66" height="46" rx="12"/>
+      <rect x="438" y="172" width="66" height="46" rx="12"/>
+      <rect x="438" y="294" width="66" height="46" rx="12"/>
+    </g>
+    <rect x="56" y="56" width="400" height="400" rx="64" fill="url(#board)"/>
+    <rect x="56" y="56" width="400" height="400" rx="64" fill="none"
+          stroke="#0A2418" stroke-width="8"/>
+    <circle cx="112" cy="112" r="15" fill="#F2C75C" opacity="0.85"/>
+    <g fill="none" stroke="url(#gold)" stroke-width="24"
+       stroke-linecap="round" stroke-linejoin="round">
+      <path d="M120 204 H206"/>
+      <path d="M120 308 H206"/>
+      <path d="M206 158 V354 H242 A98 98 0 0 0 242 158 Z" fill="#08301F"/>
+      <path d="M382 256 H426"/>
+    </g>
+    <circle cx="358" cy="256" r="22" fill="#08301F" stroke="url(#gold)" stroke-width="20"/>
+  </g>
+
+  <!-- — wordmark — -->
+  <text x="330" y="176"
+        font-family="DejaVu Sans, Liberation Sans, Helvetica, Arial, sans-serif"
+        font-size="118" font-weight="700" letter-spacing="-2"
+        fill="#0F4A38">gate<tspan fill="#C9962A">pack</tspan></text>
+
+  <text x="334" y="232"
+        font-family="DejaVu Sans, Liberation Sans, Helvetica, Arial, sans-serif"
+        font-size="34" font-weight="400" letter-spacing="1.5"
+        fill="#4A6B5E">discrete logic, formally verified</text>
+</svg>
