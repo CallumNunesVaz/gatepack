@@ -1,7 +1,10 @@
 import { useApi } from '../bridge/context';
 import { useProject } from '../state/project';
 import { useRevisionedTask } from '../hooks/useRevisionedTask';
+import { Icon } from '../ui';
+import { ActionButton, EmptyState } from './kit';
 import type { AnalysisSummary, EstimateResult } from '../../shared/api';
+import './views.css';
 
 const FAULT_CLASSES = [
   { key: 'detected', label: 'Detected', note: 'caught by the vectors' },
@@ -16,6 +19,12 @@ const VERDICT_CLASS: Record<EstimateResult['verdict'], string> = {
   green: 'verdict verdict--green',
   amber: 'verdict verdict--amber',
   red: 'verdict verdict--red',
+};
+
+const VERDICT_ICON: Record<EstimateResult['verdict'], 'check' | 'warning' | 'error'> = {
+  green: 'check',
+  amber: 'warning',
+  red: 'error',
 };
 
 /**
@@ -47,9 +56,14 @@ export function AnalysisView() {
     <section className="pane" data-testid="analysis-view">
       <header className="pane__header">
         <h2>Analysis</h2>
-        <button onClick={runAll} disabled={analysis.state.status === 'running'}>
-          {analysis.state.status === 'running' ? 'Analysing…' : 'Run analysis'}
-        </button>
+        <ActionButton
+          icon="analysis"
+          label="Run analysis"
+          busyLabel="Analysing"
+          busy={analysis.state.status === 'running'}
+          onClick={runAll}
+          primary
+        />
       </header>
       {analysis.isStale || estimate.isStale ? (
         <div className="stale-note">Stale — the source has changed.</div>
@@ -58,6 +72,7 @@ export function AnalysisView() {
       {verdict ? (
         <div className="analysis__verdict">
           <span className={VERDICT_CLASS[verdict.verdict]} data-testid="verdict" data-verdict={verdict.verdict}>
+            <Icon name={VERDICT_ICON[verdict.verdict]} size={13} decorative />
             viability: {verdict.verdict}
           </span>
           {verdict.reasons.length ? (
@@ -77,53 +92,64 @@ export function AnalysisView() {
 
       {summary ? (
         <div>
-          <h3>Metrics</h3>
-          <ul className="metric-list">
+          <h3 className="section-title">Metrics</h3>
+          <ul className="metric-grid">
             {summary.metrics.map((m) => (
               <li
                 key={m.name}
-                className={m.violated ? 'metric--violated' : ''}
+                className={m.violated ? 'metric-card metric--violated' : 'metric-card'}
                 data-testid={`metric-${m.name}`}
                 data-violated={m.violated || undefined}
               >
-                <span className="metric__name">{m.name}</span>
-                <strong className="metric__value">
-                  {m.value === null ? '—' : m.value}
-                </strong>
-                <span className="metric__unit">{m.unit}</span>
-                {m.limit !== null ? <span className="metric__limit">(limit {m.limit})</span> : null}
-                {m.violated ? <span className="metric__flag">VIOLATED</span> : null}
+                <span className="metric-card__name">{m.name}</span>
+                <span className="metric-card__value">
+                  <strong>{m.value === null ? '—' : m.value}</strong>
+                  <span className="metric-card__unit">{m.unit}</span>
+                </span>
+                {m.limit !== null ? (
+                  <span className="metric-card__limit">limit {m.limit}</span>
+                ) : null}
+                <span
+                  className={`metric-card__band ${
+                    m.violated ? 'metric-card__band--violated' : 'metric-card__band--met'
+                  }`}
+                >
+                  <Icon name={m.violated ? 'error' : 'check'} size={12} decorative />
+                  {m.violated ? 'violated' : 'met'}
+                </span>
               </li>
             ))}
           </ul>
 
-          <h3>SCOAP delta</h3>
+          <h3 className="section-title">SCOAP delta</h3>
           {summary.scoap.length ? (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Net</th>
-                  <th>CC0</th>
-                  <th>CC1</th>
-                  <th>CO</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.scoap.map((row) => (
-                  <tr key={row.net}>
-                    <td>{row.net}</td>
-                    <td>{row.controllability0}</td>
-                    <td>{row.controllability1}</td>
-                    <td>{row.observability}</td>
+            <div className="view-grid">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Net</th>
+                    <th scope="col">CC0</th>
+                    <th scope="col">CC1</th>
+                    <th scope="col">CO</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {summary.scoap.map((row) => (
+                    <tr key={row.net}>
+                      <td className="mono">{row.net}</td>
+                      <td className="num">{row.controllability0}</td>
+                      <td className="num">{row.controllability1}</td>
+                      <td className="num">{row.observability}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : (
             <p className="pane__empty">No SCOAP data — synthesis has not produced a netlist.</p>
           )}
 
-          <h3>Stuck-at classification</h3>
+          <h3 className="section-title">Stuck-at classification</h3>
           <ul className="fault-list">
             {FAULT_CLASSES.map(({ key, label, note }) => (
               <li
@@ -141,7 +167,7 @@ export function AnalysisView() {
 
           {summary.cpldBlockers.length ? (
             <>
-              <h3>CPLD blockers</h3>
+              <h3 className="section-title">CPLD blockers</h3>
               <ul className="diag-list" data-testid="cpld-blockers">
                 {summary.cpldBlockers.map((d) => (
                   <li key={d.code} className={`diag--${d.severity}`}>
@@ -155,7 +181,12 @@ export function AnalysisView() {
       ) : null}
 
       {analysis.state.status === 'idle' ? (
-        <p className="pane__empty">Run analysis to see metrics.</p>
+        <EmptyState
+          icon="analysis"
+          title="Run analysis to see metrics."
+          hint="The dashboard reads the core's analyse() and estimate() results — it never computes its own."
+          testId="analysis-empty"
+        />
       ) : null}
     </section>
   );

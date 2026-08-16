@@ -13,7 +13,11 @@ import {
   type PackingCell,
 } from '../components/packing';
 import { PackingCards } from '../components/PackingCards';
+import { Icon, Tooltip } from '../ui';
+import { ActionButton } from './kit';
+import { nextDir, sortBomLines, type BomSortKey, type SortDir } from './bomSort';
 import type { BuildResult } from '../../shared/api';
+import './views.css';
 
 /**
  * C13 — packing and BOM.
@@ -25,7 +29,9 @@ import type { BuildResult } from '../../shared/api';
  *
  * Two honesty requirements are honoured here: grouping is inert for the shipped
  * 74AUP library (every part is one gate per package), and a mixed-function
- * regroup is refused with a message rather than silently dropped.
+ * regroup is refused with a message rather than silently dropped. The BOM table
+ * is sortable; the sort only re-orders rows the core produced, it never
+ * recomputes a value.
  */
 export function BomView() {
   const { model, specText, setSpecText, revision } = useProject();
@@ -38,6 +44,10 @@ export function BomView() {
   const [cells, setCells] = useState<PackingCell[] | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [netlistVersion, setNetlistVersion] = useState(0);
+  const [sort, setSort] = useState<{ key: BomSortKey; dir: SortDir }>({
+    key: 'partNumber',
+    dir: 'asc',
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -119,18 +129,36 @@ export function BomView() {
       ? data.bom.every((line) => line.gatesPerPackage <= 1)
       : false;
 
+  const sortedBom = useMemo(
+    () => (data ? sortBomLines(data.bom, sort.key, sort.dir) : []),
+    [data, sort],
+  );
+
+  const onSort = (key: BomSortKey) =>
+    setSort((s) =>
+      s.key === key ? { key, dir: nextDir(s.dir) } : { key, dir: 'asc' },
+    );
+
   return (
     <section className="pane" data-testid="bom-view">
       <header className="pane__header">
         <h2>Packing &amp; BOM</h2>
-        <button onClick={build.run} disabled={build.state.status === 'running'}>
-          {build.state.status === 'running' ? 'Building…' : 'Run build'}
-        </button>
+        <ActionButton
+          icon="build"
+          label="Run build"
+          busyLabel="Building"
+          busy={build.state.status === 'running'}
+          onClick={build.run}
+          primary
+        />
       </header>
       {build.isStale ? <div className="stale-note">Stale — the source has changed.</div> : null}
 
       {cells === null ? (
-        <p className="pane__empty">Run a build to see the mapped cells and BOM.</p>
+        <div className="gp-empty" data-testid="bom-empty">
+          <Icon name="packing" size={30} decorative />
+          <p className="gp-empty__title">Run a build to see the mapped cells and BOM.</p>
+        </div>
       ) : (
         <PackingCards
           groups={groups}
@@ -143,62 +171,129 @@ export function BomView() {
 
       {data ? (
         <div className="bom">
-          <div className="stat-row" data-testid="packing-stats">
-            <span>Packages</span>
-            <strong>{data.packageCount}</strong>
-            <span>Spares</span>
-            <strong>{data.spareCount}</strong>
-            <span>pack_cost</span>
-            <strong>{data.packCost}</strong>
+          <div className="bom-stats" data-testid="packing-stats">
+            <div className="bom-stat">
+              <span className="bom-stat__label">
+                <Tooltip content="Physical packages the packer produced">
+                  <span>Packages</span>
+                </Tooltip>
+              </span>
+              <strong className="bom-stat__value">{data.packageCount}</strong>
+            </div>
+            <div className="bom-stat">
+              <span className="bom-stat__label">
+                <Tooltip content="Unused gates across all packages">
+                  <span>Spares</span>
+                </Tooltip>
+              </span>
+              <strong className="bom-stat__value">{data.spareCount}</strong>
+            </div>
+            <div className="bom-stat">
+              <span className="bom-stat__label">
+                <Tooltip content="Package cost reported by the core">
+                  <span>pack_cost</span>
+                </Tooltip>
+              </span>
+              <strong className="bom-stat__value">{data.packCost}</strong>
+            </div>
           </div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Part</th>
-                <th>Qty</th>
-                <th>Package</th>
-                <th>Refdes</th>
-                <th>Mfrs</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.bom.map((line) => (
-                <tr
-                  key={line.partNumber}
-                  className={line.singleSourced ? 'row--single-sourced' : ''}
-                  data-single-sourced={line.singleSourced || undefined}
-                >
-                  <td>
-                    {line.partNumber}
-                    {line.singleSourced ? (
-                      <span className="single-source-marker" data-testid="single-source-marker">
-                        SINGLE-SOURCE
-                      </span>
-                    ) : null}
-                  </td>
-                  <td>{line.quantity}</td>
-                  <td>{line.package}</td>
-                  <td>
-                    {line.refdes.map((ref) => (
-                      <button
-                        key={ref}
-                        type="button"
-                        className={highlights.packages.includes(ref) ? 'refdes refdes--highlight' : 'refdes'}
-                        data-refdes={ref}
-                        data-highlight={highlights.packages.includes(ref) || undefined}
-                        onClick={() => setSelection({ kind: 'package', refdes: ref })}
-                      >
-                        {ref}
-                      </button>
-                    ))}
-                  </td>
-                  <td>{line.manufacturers.join('; ')}</td>
+
+          <div className="view-grid">
+            <table>
+              <thead>
+                <tr>
+                  <SortableTh label="Part" sortKey="partNumber" sort={sort} onSort={onSort} />
+                  <SortableTh label="Qty" sortKey="quantity" sort={sort} onSort={onSort} />
+                  <SortableTh label="Package" sortKey="package" sort={sort} onSort={onSort} />
+                  <th scope="col">Refdes</th>
+                  <SortableTh
+                    label="Gates/pkg"
+                    sortKey="gatesPerPackage"
+                    sort={sort}
+                    onSort={onSort}
+                    tooltip="Gates one package holds — whether packing can spare a gate"
+                  />
+                  <SortableTh label="Mfrs" sortKey="manufacturers" sort={sort} onSort={onSort} />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {sortedBom.map((line) => (
+                  <tr
+                    key={line.partNumber}
+                    className={line.singleSourced ? 'row--single-sourced' : ''}
+                    data-single-sourced={line.singleSourced || undefined}
+                  >
+                    <td className="mono">
+                      {line.partNumber}
+                      {line.singleSourced ? (
+                        <span className="single-source-marker" data-testid="single-source-marker">
+                          <Icon name="warning" size={12} decorative />
+                          SINGLE-SOURCE
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="num">{line.quantity}</td>
+                    <td className="mono">{line.package}</td>
+                    <td>
+                      {line.refdes.map((ref) => (
+                        <button
+                          key={ref}
+                          type="button"
+                          className={highlights.packages.includes(ref) ? 'refdes refdes--highlight' : 'refdes'}
+                          data-refdes={ref}
+                          data-highlight={highlights.packages.includes(ref) || undefined}
+                          onClick={() => setSelection({ kind: 'package', refdes: ref })}
+                        >
+                          {ref}
+                        </button>
+                      ))}
+                    </td>
+                    <td className="num">{line.gatesPerPackage}</td>
+                    <td>{line.manufacturers.join('; ')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : null}
     </section>
+  );
+}
+
+function SortableTh({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  tooltip,
+}: {
+  label: string;
+  sortKey: BomSortKey;
+  sort: { key: BomSortKey; dir: SortDir };
+  onSort: (key: BomSortKey) => void;
+  tooltip?: string;
+}) {
+  const active = sort.key === sortKey;
+  return (
+    <th
+      scope="col"
+      className="sortable"
+      aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
+      <button type="button" className="view-sort" onClick={() => onSort(sortKey)}>
+        {label}
+        <span className="sort-indicator">
+          <Icon name="chevronDown" size={12} decorative />
+        </span>
+      </button>
+      {tooltip ? (
+        <Tooltip content={tooltip}>
+          <span className="th-info" tabIndex={0} role="img" aria-label={tooltip}>
+            <Icon name="info" size={12} decorative />
+          </span>
+        </Tooltip>
+      ) : null}
+    </th>
   );
 }

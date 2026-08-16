@@ -12,6 +12,7 @@ import { applyTopLevelEdit, renameState, type Transition } from '../../design/mo
 import { useHighlights, useSelection } from '../../selection/bus';
 import { useLinkContext } from '../../selection/useLinkContext';
 import { SelectionBadge } from '../../selection/SelectionBadge';
+import '../views.css';
 
 /**
  * FSM graph (React Flow): states are nodes, transitions are labelled edges. A
@@ -21,9 +22,10 @@ import { SelectionBadge } from '../../selection/SelectionBadge';
  *
  * Selecting a node/edge emits a §15.2 selection; the same selection reflected
  * back from another view (a truth-table row, a schematic gate) highlights the
- * matching nodes/edges here. A transition whose provenance has no surviving
- * link renders its "no exact link" state instead of silently highlighting
- * nothing.
+ * matching nodes/edges here. The direct selection and the cross-highlight are
+ * both drawn with the selection tokens. A transition whose provenance has no
+ * surviving link renders its "no exact link" state instead of silently
+ * highlighting nothing.
  */
 export function FsmGraph() {
   const { specText, model, setSpecText, project } = useProject();
@@ -41,32 +43,45 @@ export function FsmGraph() {
   );
 
   if (!model) {
-    return <div className="pane__empty">The spec does not parse yet.</div>;
+    return <div className="gp-empty">The spec does not parse yet.</div>;
   }
 
-  const nodes: Node[] = model.states.map((state, i) => ({
-    id: state,
-    position: positions[state] ?? { x: i * 180, y: 0 },
-    data: { label: state },
-    className: highlights.states.includes(state) ? 'fsm-node--highlight' : undefined,
-    style:
-      state === model.initial
-        ? { border: '2px solid #4c9ffe' }
-        : highlights.states.includes(state)
-          ? { border: '2px solid #23a55a' }
-          : undefined,
-  }));
+  const selectedTransitionIndex =
+    selection?.kind === 'transition'
+      ? model.transitions.findIndex((t) => t.from === selection.from && t.to === selection.to)
+      : -1;
+  const selectedTransition = selectedTransitionIndex >= 0 ? model.transitions[selectedTransitionIndex] : null;
+  const selectedState = selection?.kind === 'state' ? selection.id : null;
 
-  const edges: Edge[] = model.transitions.map((t, i) => ({
-    id: `e${i}`,
-    source: t.from,
-    target: t.to,
-    label: t.when,
-    type: 'default',
-    markerEnd: { type: MarkerType.ArrowClosed },
-    className: highlights.transitions.includes(i) ? 'fsm-edge--highlight' : undefined,
-    style: highlights.transitions.includes(i) ? { stroke: '#23a55a', strokeWidth: 2 } : undefined,
-  }));
+  const nodes: Node[] = model.states.map((state, i) => {
+    const classes = [
+      state === model.initial ? 'fsm-node--initial' : '',
+      highlights.states.includes(state) ? 'fsm-node--highlight' : '',
+      state === selectedState ? 'fsm-node--selected' : '',
+    ].filter(Boolean).join(' ');
+    return {
+      id: state,
+      position: positions[state] ?? { x: i * 180, y: 0 },
+      data: { label: state },
+      className: classes || undefined,
+    };
+  });
+
+  const edges: Edge[] = model.transitions.map((t, i) => {
+    const classes = [
+      highlights.transitions.includes(i) ? 'fsm-edge--highlight' : '',
+      selectedTransitionIndex === i ? 'fsm-edge--selected' : '',
+    ].filter(Boolean).join(' ');
+    return {
+      id: `e${i}`,
+      source: t.from,
+      target: t.to,
+      label: t.when,
+      type: 'default',
+      markerEnd: { type: MarkerType.ArrowClosed },
+      className: classes || undefined,
+    };
+  });
 
   const onNodeDragStop = (_event: unknown, node: Node) => {
     const next = { ...positions, [node.id]: { x: node.position.x, y: node.position.y } };
@@ -97,18 +112,15 @@ export function FsmGraph() {
     setTransitions([...model.transitions, { from, to, when: '1' }]);
   };
 
-  const selectedTransitionIndex =
-    selection?.kind === 'transition'
-      ? model.transitions.findIndex((t) => t.from === selection.from && t.to === selection.to)
-      : -1;
-  const selectedTransition = selectedTransitionIndex >= 0 ? model.transitions[selectedTransitionIndex] : null;
-  const selectedState = selection?.kind === 'state' ? selection.id : null;
-
   return (
     <div className="fsm" data-testid="fsm-graph">
       <div className="fsm__toolbar">
-        <button onClick={addState}>+ state</button>
-        <button onClick={addTransition}>+ transition</button>
+        <button type="button" className="view-btn" onClick={addState}>
+          + state
+        </button>
+        <button type="button" className="view-btn" onClick={addTransition}>
+          + transition
+        </button>
       </div>
       <div className="fsm-graph">
         <ReactFlow

@@ -267,4 +267,23 @@ describe('BomView — C13 packing and BOM', () => {
     // the package itself, and the schematic's cells are the instance cells g0/g1.
     expect(u1).toHaveAttribute('data-refdes', 'U1');
   });
+
+  it('sorts the BOM by a column header — reordering, never recomputing', async () => {
+    const fake = new FakeGatepack();
+    fake.setOk('mappedNetlist', mappedJson());
+    fake.setOk('build', buildResult());
+
+    renderBom(fake);
+    fireEvent.click(screen.getByText('Run build'));
+    await waitFor(() => expect(screen.getByTestId('single-source-marker')).toBeTruthy());
+
+    const bodyRows = () => screen.getAllByRole('row').filter((r) => r.querySelector('td'));
+    // Default order is part number ascending.
+    expect(bodyRows()[0].textContent).toContain('74AUP1G00');
+
+    // Two clicks on "Qty" take it to quantity-descending: the qty-2 line first.
+    fireEvent.click(screen.getByText('Qty'));
+    fireEvent.click(screen.getByText('Qty'));
+    await waitFor(() => expect(bodyRows()[0].textContent).toContain('74AUP1G02'));
+  });
 });
