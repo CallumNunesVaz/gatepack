@@ -177,6 +177,39 @@ export interface PackedView {
   }>;
 }
 
+/**
+ * Toolchain self-check — what the core can and cannot do right now.
+ *
+ * The app never synthesises or verifies itself; it spawns the core, which
+ * shells out to yosys/sby/iverilog. When one of those is absent the honest
+ * answer is "this tool is missing and here is what it was for", never a
+ * fabricated result and never a bare stack trace. This is the shape the core
+ * emits from `gatepack doctor --json`; main validates it, the renderer
+ * displays it, and nothing recomputes it.
+ */
+export interface DoctorReport {
+  /** True only when every `direct` tool below was found. */
+  allToolsPresent: boolean;
+  tools: Array<{
+    name: string;
+    /** Whether the core invokes this binary itself (as opposed to via another). */
+    direct: boolean;
+    found: boolean;
+    /** Absolute path, or null when not found. Never a guess. */
+    path: string | null;
+    /** Reported by the binary itself, or null when not found or silent. */
+    version: string | null;
+    /** What breaks without it, in the user's terms. */
+    purpose: string;
+  }>;
+  /** Resources that must travel with a bundled core; false means a broken build. */
+  resources: {
+    commonFrontendYs: boolean;
+    mcellModels: boolean;
+    mcellCount: number;
+  };
+}
+
 /** §C14 dashboard metrics, each against its §10.2 constraint. */
 export interface AnalysisSummary {
   metrics: Metric[];
@@ -315,6 +348,14 @@ export interface GatepackApi {
    * name is in — confusing the two has caused four separate defects here.
    */
   packedNetlist(): Promise<Envelope<PackedView>>;
+  /**
+   * Ask the core which tools it can actually reach (`gatepack doctor`).
+   *
+   * Deliberately takes no invoke token: it is cheap, spawns nothing but the
+   * core itself, and must stay answerable precisely when the expensive
+   * commands cannot run.
+   */
+  doctor(): Promise<Envelope<DoctorReport>>;
   /** Cancel an in-flight call started with this token (§16.1). */
   cancel(token: string): Promise<void>;
 

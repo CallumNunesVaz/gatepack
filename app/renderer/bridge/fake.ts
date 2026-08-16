@@ -13,6 +13,7 @@ import type {
   EstimateResult,
   GatepackApi,
   ProjectInfo,
+  DoctorReport,
   PackedView,
   ProvenanceMap,
   SimulationTable,
@@ -27,6 +28,7 @@ export type Command =
   | 'analyse'
   | 'mappedNetlist'
   | 'packedNetlist'
+  | 'doctor'
   | 'provenance'
   | 'simulate';
 
@@ -205,6 +207,10 @@ export class FakeGatepack implements GatepackApi {
 
   simulate(token?: string): Promise<Envelope<SimulationTable>> {
     return this.invoke<SimulationTable>('simulate', token);
+  }
+
+  doctor(): Promise<Envelope<DoctorReport>> {
+    return this.invoke<DoctorReport>('doctor');
   }
 
   packedNetlist(): Promise<Envelope<PackedView>> {

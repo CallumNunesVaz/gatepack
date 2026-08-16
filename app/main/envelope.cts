@@ -139,6 +139,28 @@ export const PackedViewSchema = z.object({
   ),
 });
 
+export const DoctorReportSchema = z.object({
+  allToolsPresent: z.boolean(),
+  tools: z.array(
+    z.object({
+      name: z.string(),
+      direct: z.boolean(),
+      found: z.boolean(),
+      // `.nullable()` and not `.optional()`: the core always emits the key, and
+      // "not found" must be an explicit null rather than an absent field that a
+      // reader could mistake for "not checked".
+      path: z.string().nullable(),
+      version: z.string().nullable(),
+      purpose: z.string(),
+    }),
+  ),
+  resources: z.object({
+    commonFrontendYs: z.boolean(),
+    mcellModels: z.boolean(),
+    mcellCount: z.number(),
+  }),
+});
+
 export const ProvenanceMapSchema = z.object({
   entries: z.array(
     z.object({

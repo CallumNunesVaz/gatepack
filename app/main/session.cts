@@ -20,6 +20,7 @@ import type {
   Envelope,
   EstimateResult,
   ProjectInfo,
+  DoctorReport,
   PackedView,
   ProvenanceMap,
   SimulationTable,
@@ -34,6 +35,7 @@ import {
   CompileResultSchema,
   EstimateResultSchema,
   MappedNetlistSchema,
+  DoctorReportSchema,
   PackedViewSchema,
   ProvenanceMapSchema,
   SimulationTableSchema,
@@ -53,7 +55,8 @@ export type CoreKind =
   | 'provenance'
   | 'simulate'
   | 'mappedNetlist'
-  | 'packedNetlist';
+  | 'packedNetlist'
+  | 'doctor';
 
 export interface ProgressEvent {
   token: string;
@@ -137,6 +140,10 @@ export function buildCommandArgs(kind: CoreKind, project: ProjectState): string[
       return ['mapped-netlist', outDir];
     case 'packedNetlist':
       return ['packed-netlist', outDir];
+    case 'doctor':
+      // Takes no project paths: it reports on the core's environment, so it
+      // must stay answerable with no project open and no build present.
+      return ['doctor'];
   }
 }
 
@@ -434,6 +441,10 @@ export class SessionManager {
   provenance(): Promise<Envelope<ProvenanceMap>> {
     return this.invoke(ProvenanceMapSchema, 'provenance', 'provenance');
   }
+  doctor(): Promise<Envelope<DoctorReport>> {
+    return this.invoke(DoctorReportSchema, 'doctor', 'doctor');
+  }
+
   packedNetlist(): Promise<Envelope<PackedView>> {
     return this.invoke(PackedViewSchema, 'packedNetlist', 'packedNetlist');
   }
