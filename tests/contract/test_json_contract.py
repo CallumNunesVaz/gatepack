@@ -214,6 +214,86 @@ def test_compile_json_failure_envelope(tmp_path):
     assert "error:" in proc.stderr
 
 
+_CSV_HEADER = (
+    "cell,tier,family,part_suffix,equivalents,function,inputs,gates_per_pkg,"
+    "package,mfrs,vcc_min,vcc_max,area,tpd_ns,iq_ua\n"
+)
+
+
+def test_lib_check_json_envelope(tmp_path):
+    proc = _run("lib", "check", str(LIBRARY_CSV), "--json")
+    assert proc.returncode == 0, proc.stderr
+    env = _envelope(proc)
+    assert env["ok"] is True
+    assert env["command"] == "lib"
+    data = env["data"]
+    assert set(data) == {
+        "path", "refsPath", "refsPresent", "cellCount", "includedCount",
+        "excludedCount", "missingCitations", "parts",
+    }
+    assert data["refsPresent"] is True
+    assert data["missingCitations"] == []
+    assert data["cellCount"] == data["includedCount"] + data["excludedCount"]
+    assert data["parts"]
+    part = data["parts"][0]
+    assert set(part) == {
+        "cell", "tier", "family", "partNumber", "function", "inputs",
+        "gatesPerPackage", "package", "manufacturers", "equivalents",
+        "secondSourceCount", "citation", "unverified", "excluded",
+        "exclusionReason",
+    }
+    # every cell carries an explicit citation status (null only when uncited)
+    cited = [p for p in data["parts"] if p["citation"] is None]
+    assert cited == []
+    # the shipped library is entirely placeholder/unverified (§19 R8)
+    assert all(p["unverified"] for p in data["parts"])
+
+
+def test_lib_check_json_reports_missing_citations_not_a_hard_error(tmp_path):
+    csv = tmp_path / "parts.csv"
+    csv.write_text(
+        _CSV_HEADER
+        + 'FOO,G,AUP,1G04,,!A,1,1,SOT-353,"TI;Nexperia",0.8,3.6,1.0,4.6,0.9\n'
+    )
+    proc = _run("lib", "check", str(csv), "--json")
+    # a report, never a gate: the finding is in the payload, not the envelope
+    assert proc.returncode == 0, proc.stderr
+    data = _envelope(proc)["data"]
+    assert data["refsPresent"] is False
+    assert data["missingCitations"] == ["FOO"]
+    part = data["parts"][0]
+    assert part["citation"] is None
+    assert part["unverified"] is False  # uncited ≠ unverified
+    assert part["excluded"] is False
+    assert part["exclusionReason"] is None
+
+
+def test_lib_check_json_malformed_csv_is_a_hard_error(tmp_path):
+    csv = tmp_path / "parts.csv"
+    csv.write_text(_CSV_HEADER + "INV,G,AUP,1G04,,!A,not_an_int,1,SOT-353\n")
+    proc = _run("lib", "check", str(csv), "--json")
+    assert proc.returncode == 1
+    env = _envelope(proc)
+    assert env["ok"] is False
+    assert env["command"] == "lib"
+    assert env["error"]["code"] == "GP1004"
+
+
+def test_examples_list_json_envelope():
+    proc = _run("examples", "list", "--json")
+    assert proc.returncode == 0, proc.stderr
+    env = _envelope(proc)
+    assert env["ok"] is True
+    assert env["command"] == "examples"
+    examples = env["data"]["examples"]
+    assert isinstance(examples, list)
+    names = [e["name"] for e in examples]
+    assert "pelican" in names
+    showcase = next(e for e in examples if e["name"] == "pelican")
+    assert set(showcase) == {"name", "summary", "isShowcase"}
+    assert showcase["isShowcase"] is True
+
+
 def test_compile_json_stdout_is_exactly_one_object(tmp_path):
     design = _design(tmp_path)
     proc = _run("compile", str(design), "-o", str(tmp_path / "build"), "--json")

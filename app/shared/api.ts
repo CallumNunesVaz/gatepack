@@ -296,6 +296,75 @@ export interface ProvenanceMap {
 }
 
 /* ------------------------------------------------------------------ */
+/* Library check (§C2)                                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * `gatepack lib check --json` — the §C2 library validation result.
+ *
+ * A report, never a gate: the human CLI exits non-zero on a missing refs file
+ * or missing citations, but the JSON form always carries the full picture
+ * (`refsPresent`, `missingCitations`, per-part `citation`) so the renderer can
+ * show *why* validation failed rather than a bare error. Only a malformed CSV
+ * is an `ok: false` envelope.
+ */
+export interface LibraryPart {
+  cell: string;
+  tier: string;
+  family: string;
+  /** Full part number (family + suffix), or '' when the suffix is empty. */
+  partNumber: string;
+  function: string | null;
+  inputs: number;
+  gatesPerPackage: number;
+  package: string;
+  manufacturers: string[];
+  /** Count of equivalent, differently-numbered part numbers (§10.1). */
+  equivalents: number;
+  /** mfrs + equivalents; < 2 is single-sourced (§10.1). */
+  secondSourceCount: number;
+  /**
+   * Citation status text from the companion refs file, or null when uncited.
+   * Null is the explicit "not cited" state, never an absent key a reader could
+   * mistake for "not checked".
+   */
+  citation: string | null;
+  /** True when `citation` marks the electrical data as unverified/placeholder. */
+  unverified: boolean;
+  /** True when the part was dropped from the Liberty file (§9.4/§10.1). */
+  excluded: boolean;
+  /** Drop reason (`tier`/`single-sourced`/`vcc-incompatible`), or null. */
+  exclusionReason: string | null;
+}
+
+export interface LibraryCheckResult {
+  /** Absolute path to the parts.csv that was checked. */
+  path: string;
+  refsPath: string;
+  refsPresent: boolean;
+  cellCount: number;
+  /** Parts selected for the Liberty file (G/F, second-sourced, vcc-ok). */
+  includedCount: number;
+  excludedCount: number;
+  /** Cell names with no refs entry — `lib check` fails on these. */
+  missingCitations: string[];
+  parts: LibraryPart[];
+}
+
+/* ------------------------------------------------------------------ */
+/* Bundled examples (§18.1)                                            */
+/* ------------------------------------------------------------------ */
+
+/** `gatepack examples list --json` */
+export interface ExamplesList {
+  examples: Array<{
+    name: string;
+    summary: string;
+    isShowcase: boolean;
+  }>;
+}
+
+/* ------------------------------------------------------------------ */
 /* The bridge exposed to the renderer                                  */
 /* ------------------------------------------------------------------ */
 
@@ -356,6 +425,16 @@ export interface GatepackApi {
    * commands cannot run.
    */
   doctor(): Promise<Envelope<DoctorReport>>;
+  /**
+   * Validate a parts.csv (§C2 `gatepack lib check`). Takes the path the
+   * renderer received from `ProjectInfo.libraryPath`; a relative path is
+   * scoped to the project root in main. Answerable with no project open.
+   */
+  checkLibrary(path: string): Promise<Envelope<LibraryCheckResult>>;
+  /** The bundled examples (§18.1), showcase first. Answerable with no project. */
+  listExamples(): Promise<Envelope<ExamplesList>>;
+  /** Open a bundled example into a new project (scratch copy, §18.1). */
+  openExample(name: string): Promise<Envelope<ProjectInfo>>;
   /** Cancel an in-flight call started with this token (§16.1). */
   cancel(token: string): Promise<void>;
 

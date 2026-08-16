@@ -18,9 +18,11 @@ from typing import Mapping, Sequence, TYPE_CHECKING
 
 from gatepack.diagnostic import Diagnostic
 from gatepack.emit.bom import collect_bom
+from gatepack.parts import Exclusion, Part
 from gatepack.verify.base import CheckResult, CheckStatus
 
 if TYPE_CHECKING:  # pragma: no cover - type annotations only
+    from gatepack.examples import Example
     from gatepack.frontend.model import CompiledDesign
 
 SCHEMA = 1
@@ -310,6 +312,96 @@ def build_payload(result, paths: Mapping[str, Path], mapped_json_path: str | Pat
     }
 
 
+# ---------------------------------------------------------------------------
+# lib check (§C2)
+# ---------------------------------------------------------------------------
+
+
+def _citation_unverified(citation: str | None) -> bool:
+    """True when a citation marks its electrical data as unverified/placeholder.
+
+    ``citation`` is the last column of the ``<name>.refs.md`` row, e.g.
+    ``"placeholder — unverified"``; a genuinely verified entry does not carry
+    either word. ``None`` (uncited) is reported separately, so it is *not*
+    "unverified" here — an uncited cell is a harder finding than an unverified
+    one, and conflating the two hides which one the user is looking at.
+    """
+    if citation is None:
+        return False
+    lowered = citation.lower()
+    return "unverified" in lowered or "placeholder" in lowered
+
+
+def library_part_payload(
+    part: Part, citation: str | None, excluded: Exclusion | None
+) -> dict:
+    return {
+        "cell": part.cell,
+        "tier": part.tier,
+        "family": part.family,
+        "partNumber": part.part_number,
+        "function": part.function,
+        "inputs": part.inputs,
+        "gatesPerPackage": part.gates_per_pkg,
+        "package": part.package,
+        "manufacturers": list(part.mfrs),
+        "equivalents": len(part.equivalents),
+        "secondSourceCount": part.second_source_count,
+        # "not cited" is an explicit null, never an absent key — the reader must
+        # be able to tell "has a citation" from "was not checked".
+        "citation": citation,
+        "unverified": _citation_unverified(citation),
+        "excluded": excluded is not None,
+        "exclusionReason": excluded.reason.value if excluded is not None else None,
+    }
+
+
+def library_check_payload(
+    csv_path: str | Path,
+    parts: Sequence[Part],
+    included: Sequence[Part],
+    excluded: Sequence[Exclusion],
+    citations: Mapping[str, str],
+    refs_path: str | Path,
+) -> dict:
+    """The ``gatepack lib check --json`` report (§C2, app/shared/api.ts).
+
+    A report, never a gate: the human CLI exits non-zero on a missing refs file
+    or missing citations, but the JSON form always emits the full picture —
+    ``refsPresent``, ``missingCitations`` and per-part ``citation`` — so the GUI
+    can show *why* validation failed rather than a bare error. Only a malformed
+    CSV (unparseable) is a hard ``ok: false``.
+    """
+    excluded_by_cell = {e.cell: e for e in excluded}
+    return {
+        "path": str(csv_path),
+        "refsPath": str(refs_path),
+        "refsPresent": Path(refs_path).exists(),
+        "cellCount": len(parts),
+        "includedCount": len(included),
+        "excludedCount": len(excluded),
+        "missingCitations": [p.cell for p in parts if p.cell not in citations],
+        "parts": [
+            library_part_payload(p, citations.get(p.cell), excluded_by_cell.get(p.cell))
+            for p in parts
+        ],
+    }
+
+
+def examples_list_payload(examples: Sequence["Example"]) -> dict:
+    """The ``gatepack examples list --json`` payload (§18.1)."""
+    return {
+        "examples": [
+            {
+                "name": example.name,
+                "summary": example.summary,
+                "isShowcase": example.is_showcase,
+            }
+            for example in examples
+        ]
+    }
+
+
 __all__ = [
     "CPLD_ALTERNATIVE",
     "SCHEMA",
@@ -322,6 +414,9 @@ __all__ = [
     "envelope_err",
     "envelope_ok",
     "estimate_payload",
+    "examples_list_payload",
+    "library_check_payload",
+    "library_part_payload",
     "mapped_cell_counts",
     "metric",
     "packed_view_payload",

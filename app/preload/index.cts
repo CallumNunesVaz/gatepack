@@ -17,7 +17,9 @@ import type {
   CompileResult,
   Envelope,
   EstimateResult,
+  ExamplesList,
   GatepackApi,
+  LibraryCheckResult,
   ProjectInfo,
   DoctorReport,
   PackedView,
@@ -77,6 +79,15 @@ const api: GatepackApi = {
   packedNetlist: () =>
     ipcRenderer.invoke('gatepack:packedNetlist') as Promise<Envelope<PackedView>>,
   doctor: () => ipcRenderer.invoke('gatepack:doctor') as Promise<Envelope<DoctorReport>>,
+
+  checkLibrary: (path: string) =>
+    ipcRenderer.invoke('gatepack:checkLibrary', { path }) as Promise<Envelope<LibraryCheckResult>>,
+
+  listExamples: () =>
+    ipcRenderer.invoke('gatepack:listExamples') as Promise<Envelope<ExamplesList>>,
+
+  openExample: (name: string) =>
+    ipcRenderer.invoke('gatepack:openExample', { name }) as Promise<Envelope<ProjectInfo>>,
 
   cancel: (token: string) => ipcRenderer.invoke('gatepack:cancel', { token }) as Promise<void>,
 

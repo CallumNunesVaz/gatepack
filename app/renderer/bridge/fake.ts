@@ -11,7 +11,9 @@ import type {
   Diagnostic,
   Envelope,
   EstimateResult,
+  ExamplesList,
   GatepackApi,
+  LibraryCheckResult,
   ProjectInfo,
   DoctorReport,
   PackedView,
@@ -30,7 +32,10 @@ export type Command =
   | 'packedNetlist'
   | 'doctor'
   | 'provenance'
-  | 'simulate';
+  | 'simulate'
+  | 'checkLibrary'
+  | 'listExamples'
+  | 'openExample';
 
 type ResultFactory<T> = Envelope<T> | ((token?: string) => Envelope<T>);
 type Hook = (token?: string) => Promise<void>;
@@ -90,6 +95,10 @@ export class FakeGatepack implements GatepackApi {
   calls: Array<{ command: Command; token?: string }> = [];
   cancelled: string[] = [];
   writes: string[] = [];
+  /** Paths passed to `checkLibrary` (for asserting what the panel checked). */
+  checkedLibraries: string[] = [];
+  /** Names passed to `openExample`. */
+  openedExamples: string[] = [];
   delayMs: number;
 
   private projectChangedHandlers: Array<(info: ProjectInfo) => void> = [];
@@ -219,6 +228,20 @@ export class FakeGatepack implements GatepackApi {
 
   mappedNetlist(): Promise<Envelope<unknown>> {
     return this.invoke<unknown>('mappedNetlist');
+  }
+
+  checkLibrary(path: string): Promise<Envelope<LibraryCheckResult>> {
+    this.checkedLibraries.push(path);
+    return this.invoke<LibraryCheckResult>('checkLibrary');
+  }
+
+  listExamples(): Promise<Envelope<ExamplesList>> {
+    return this.invoke<ExamplesList>('listExamples');
+  }
+
+  openExample(name: string): Promise<Envelope<ProjectInfo>> {
+    this.openedExamples.push(name);
+    return this.invoke<ProjectInfo>('openExample', name);
   }
 
   async cancel(token: string): Promise<void> {

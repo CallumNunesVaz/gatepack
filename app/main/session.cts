@@ -19,6 +19,8 @@ import type {
   CompileResult,
   Envelope,
   EstimateResult,
+  ExamplesList,
+  LibraryCheckResult,
   ProjectInfo,
   DoctorReport,
   PackedView,
@@ -34,6 +36,8 @@ import {
   BuildResultSchema,
   CompileResultSchema,
   EstimateResultSchema,
+  ExamplesListSchema,
+  LibraryCheckResultSchema,
   MappedNetlistSchema,
   DoctorReportSchema,
   PackedViewSchema,
@@ -56,7 +60,9 @@ export type CoreKind =
   | 'simulate'
   | 'mappedNetlist'
   | 'packedNetlist'
-  | 'doctor';
+  | 'doctor'
+  | 'listExamples'
+  | 'checkLibrary';
 
 export interface ProgressEvent {
   token: string;
@@ -110,12 +116,17 @@ function genToken(): string {
 }
 
 /** Build the argv (excluding the `--json` flag) for a core subcommand. */
-export function buildCommandArgs(kind: CoreKind, project: ProjectState): string[] {
-  const design = path.join(project.root, 'design.yaml');
-  const library = path.join(project.root, 'parts.csv');
-  const hasLibrary = fs.existsSync(library);
-  const buildDir = path.join(project.root, '.gatepack', 'build');
-  const outDir = path.join(project.root, '.gatepack', 'out');
+export function buildCommandArgs(
+  kind: CoreKind,
+  project: ProjectState | null,
+  arg?: string,
+): string[] {
+  const root = project === null ? '' : project.root;
+  const design = path.join(root, 'design.yaml');
+  const library = path.join(root, 'parts.csv');
+  const hasLibrary = project !== null && fs.existsSync(library);
+  const buildDir = path.join(root, '.gatepack', 'build');
+  const outDir = path.join(root, '.gatepack', 'out');
 
   switch (kind) {
     case 'compile':
@@ -144,6 +155,13 @@ export function buildCommandArgs(kind: CoreKind, project: ProjectState): string[
       // Takes no project paths: it reports on the core's environment, so it
       // must stay answerable with no project open and no build present.
       return ['doctor'];
+    case 'listExamples':
+      // Also project-independent: browsing examples is how a user gets a first
+      // project, so it must not require one to already be open.
+      return ['examples', 'list'];
+    case 'checkLibrary':
+      // `arg` is the absolute parts.csv path the renderer asked to validate.
+      return ['lib', 'check', arg ?? ''];
   }
 }
 
@@ -453,6 +471,48 @@ export class SessionManager {
     return this.invoke(MappedNetlistSchema, 'mappedNetlist', 'mappedNetlist');
   }
 
+  listExamples(): Promise<Envelope<ExamplesList>> {
+    return this.invokeStandalone(ExamplesListSchema, 'listExamples', 'listExamples');
+  }
+
+  checkLibrary(input: string): Promise<Envelope<LibraryCheckResult>> {
+    let abs: string;
+    try {
+      // An absolute path is the path the renderer already received from
+      // `ProjectInfo.libraryPath`. A relative path comes straight from the
+      // (untrusted) renderer and must be scoped to the project root (§5.2).
+      abs = path.isAbsolute(input)
+        ? path.resolve(input)
+        : this.project !== null
+          ? resolveWithin(this.project.root, input)
+          : path.resolve(input);
+    } catch (err) {
+      return Promise.resolve(
+        errorEnvelope(
+          'checkLibrary',
+          'GP4202',
+          `refusing path outside project root: ${input}`,
+          err,
+        ),
+      );
+    }
+    return this.invokeStandalone(
+      LibraryCheckResultSchema,
+      'checkLibrary',
+      'checkLibrary',
+      abs,
+    );
+  }
+
+  /**
+   * Open a bundled example into a new project (§18.1). This is the same
+   * scratch-copy-and-open flow the showcase and the Examples menu use, so the
+   * discovery from `listExamples()` and the open path stay one implementation.
+   */
+  openExample(name: string): Promise<Envelope<ProjectInfo>> {
+    return this.openBundledExample(name);
+  }
+
   private invoke<T>(
     schema: z.ZodType<T>,
     kind: CoreKind,
@@ -475,6 +535,25 @@ export class SessionManager {
       registry: this.deps.registry,
       onProgress: (stage, percent) => this.deps.onProgress({ token: tok, stage, percent }),
     });
+  }
+
+  /**
+   * A core invocation that does not need an open project (library validation,
+   * example listing). `doctor` predates this helper and goes through `invoke`
+   * today, which is why it only answers once a project is open; the new
+   * project-independent commands use this instead.
+   */
+  private invokeStandalone<T>(
+    schema: z.ZodType<T>,
+    kind: CoreKind,
+    command: string,
+    arg?: string,
+  ): Promise<Envelope<T>> {
+    if (this.deps.location === null) {
+      return Promise.resolve(errorEnvelope(command, 'GP9001', 'gatepack executable not found'));
+    }
+    const args = buildCommandArgs(kind, null, arg);
+    return runEnvelope(this.deps.location, schema, command, args, {});
   }
 
   /* --- git ------------------------------------------------------------ */

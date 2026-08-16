@@ -111,6 +111,9 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="do not exclude single-sourced cells",
     )
+    check.add_argument(
+        "--json", action="store_true", help="emit one machine-readable JSON object to stdout"
+    )
 
     gen = lib_sub.add_parser(
         "gen", help="emit a Liberty file from a parts.csv"
@@ -254,7 +257,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "examples", help="bundled example projects (§18.1)"
     )
     examples_sub = examples_p.add_subparsers(dest="examples_command", required=True)
-    examples_sub.add_parser("list", help="list the bundled examples")
+    list_p = examples_sub.add_parser("list", help="list the bundled examples")
+    list_p.add_argument(
+        "--json", action="store_true", help="emit one machine-readable JSON object to stdout"
+    )
     extract_p = examples_sub.add_parser(
         "extract", help="copy a bundled example into a directory"
     )
@@ -338,13 +344,28 @@ def _cmd_lib_check(args: argparse.Namespace) -> int:
     try:
         parts = load_parts(csv_path)
     except parts_mod.PartError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        if args.json:
+            _json_err("lib", error(GP_LIBRARY, str(exc)))
+        else:
+            print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    _, excluded = parts_mod.select_for_liberty(
+    included, excluded = parts_mod.select_for_liberty(
         parts, project_vcc=args.vcc, allow_single_source=args.allow_single_source
     )
     missing, refs_path = refs_mod.check_citations(parts, csv_path)
+    citations = refs_mod.parse_refs(refs_path)
+
+    if args.json:
+        # A report, never a gate: missing citations and a missing refs file are
+        # findings in the payload (refsPresent / missingCitations / per-part
+        # citation), not an `ok: false` envelope — the GUI must be able to show
+        # *why* validation failed. Only a malformed CSV is a hard error.
+        payload = api.library_check_payload(
+            csv_path, parts, included, excluded, citations, refs_path
+        )
+        _json_ok("lib", payload)
+        return EXIT_OK
 
     print(f"loaded {len(parts)} cells from {csv_path}")
     _print_exclusions(excluded)
@@ -363,7 +384,6 @@ def _cmd_lib_check(args: argparse.Namespace) -> int:
 
     print(f"citations: all {len(parts)} cells have a {refs_path.name} entry")
 
-    citations = refs_mod.parse_refs(refs_path)
     unverified = [
         cell
         for cell, status in citations.items()
@@ -912,6 +932,10 @@ def _cmd_examples_list(args: argparse.Namespace) -> int:
     from gatepack.examples import list_examples
 
     found = list_examples()
+    if args.json:
+        _json_ok("examples", api.examples_list_payload(found))
+        return EXIT_OK
+
     if not found:
         print("no bundled examples found", file=sys.stderr)
         return EXIT_USAGE

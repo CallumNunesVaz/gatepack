@@ -5,6 +5,8 @@ import {
   DiagnosticSchema,
   envelopeSchema,
   errorEnvelope,
+  ExamplesListSchema,
+  LibraryCheckResultSchema,
   okEnvelope,
   parseEnvelope,
 } from './envelope.cjs';
@@ -103,5 +105,57 @@ describe('envelope schemas', () => {
     const env = errorEnvelope<typeof validCompile>('compile', 'GP9001', 'missing core');
     const parsed = envelopeSchema(CompileResultSchema).parse(env);
     expect(parsed.ok).toBe(false);
+  });
+
+  it('library check: "not cited" is an explicit null, never an absent key', () => {
+    // `.nullable()` must accept null and must still *require* the key — the
+    // trap this repo has hit is `z.unknown()`/`z.any()` inferring optional, so
+    // a field silently becomes droppable.
+    const withNullCitation = LibraryCheckResultSchema.parse({
+      path: '/tmp/parts.csv',
+      refsPath: '/tmp/parts.refs.md',
+      refsPresent: false,
+      cellCount: 1,
+      includedCount: 1,
+      excludedCount: 0,
+      missingCitations: ['FOO'],
+      parts: [
+        {
+          cell: 'FOO',
+          tier: 'G',
+          family: 'AUP',
+          partNumber: '',
+          function: null,
+          inputs: 1,
+          gatesPerPackage: 1,
+          package: 'SOT-353',
+          manufacturers: [],
+          equivalents: 0,
+          secondSourceCount: 0,
+          citation: null,
+          unverified: false,
+          excluded: false,
+          exclusionReason: null,
+        },
+      ],
+    });
+    expect(withNullCitation.parts[0].citation).toBeNull();
+
+    // Dropping a nullable field must fail — it is required, not optional.
+    const droppingCitation = (() => {
+      const obj = withNullCitation as unknown as Record<string, unknown>;
+      const part = obj.parts as unknown as Record<string, unknown>[];
+      const stripped = { ...part[0] } as Record<string, unknown>;
+      delete stripped.citation;
+      return LibraryCheckResultSchema.parse({ ...obj, parts: [stripped] });
+    });
+    expect(() => droppingCitation()).toThrow();
+  });
+
+  it('examples list schema accepts the core payload', () => {
+    const parsed = ExamplesListSchema.parse({
+      examples: [{ name: 'pelican', summary: 'Pelican crossing', isShowcase: true }],
+    });
+    expect(parsed.examples[0].isShowcase).toBe(true);
   });
 });

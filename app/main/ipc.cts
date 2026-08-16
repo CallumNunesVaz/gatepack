@@ -13,7 +13,9 @@ import type { Envelope, ProjectInfo } from '../shared/api';
 import { CancelRegistry, CancelledError } from './cancel.cjs';
 import {
   CancelTokenSchema,
+  CheckLibrarySchema,
   InvokeTokenSchema,
+  OpenExampleSchema,
   OpenProjectPathSchema,
   SaveProjectAsSchema,
   WriteSpecSchema,
@@ -95,6 +97,10 @@ export function registerIpc(deps: IpcDeps): void {
   handle('gatepack:packedNetlist', NoPayloadSchema, () => session.packedNetlist());
 
   handle('gatepack:doctor', NoPayloadSchema, () => session.doctor());
+
+  handle('gatepack:checkLibrary', CheckLibrarySchema, (p) => session.checkLibrary(p.path));
+  handle('gatepack:listExamples', NoPayloadSchema, () => session.listExamples());
+  handle('gatepack:openExample', OpenExampleSchema, (p) => session.openExample(p.name));
 
   ipcMain.handle('gatepack:cancel', async (_event, raw: unknown) => {
     const parsed = CancelTokenSchema.safeParse(raw ?? {});

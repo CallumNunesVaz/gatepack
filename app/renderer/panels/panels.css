@@ -1,0 +1,368 @@
+/*
+ * Inspector/utility panels added by the CLI-parity package.
+ *
+ * These are styled exclusively from `ui/tokens.css` — no literal colour, no
+ * literal spacing. The legacy `--bg`/`--text` aliases in `styles.css` are for
+ * the views that predate the token migration; nothing here may use them.
+ */
+
+.gp-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gp-space-3);
+  padding: var(--gp-space-4);
+  color: var(--gp-text);
+  font-family: var(--gp-font);
+  font-size: var(--gp-text-md);
+  line-height: var(--gp-line);
+}
+
+.gp-panel__header {
+  display: flex;
+  align-items: center;
+  gap: var(--gp-space-3);
+  flex-wrap: wrap;
+}
+
+.gp-panel__title {
+  margin: 0;
+  font-size: var(--gp-text-lg);
+  font-weight: 600;
+  color: var(--gp-text);
+}
+
+.gp-panel__actions {
+  margin-left: auto;
+  display: flex;
+  gap: var(--gp-space-2);
+  align-items: center;
+}
+
+.gp-panel button {
+  background: var(--gp-surface-2);
+  color: var(--gp-text);
+  border: 1px solid var(--gp-border);
+  border-radius: var(--gp-radius-sm);
+  padding: var(--gp-space-1) var(--gp-space-2);
+  cursor: pointer;
+  font: inherit;
+}
+
+.gp-panel button:hover:not(:disabled) {
+  background: var(--gp-surface-3);
+}
+
+.gp-panel button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* --- status regions ------------------------------------------------------ */
+
+.gp-empty {
+  color: var(--gp-text-faint);
+  padding: var(--gp-space-3);
+  border: 1px dashed var(--gp-border);
+  border-radius: var(--gp-radius);
+}
+
+.gp-loading {
+  color: var(--gp-text-muted);
+  padding: var(--gp-space-3);
+}
+
+.gp-error {
+  color: var(--gp-fail);
+  background: var(--gp-fail-bg);
+  border: 1px solid var(--gp-fail);
+  border-radius: var(--gp-radius);
+  padding: var(--gp-space-3);
+}
+
+.gp-note {
+  color: var(--gp-text-muted);
+  font-size: var(--gp-text-sm);
+}
+
+.gp-overall {
+  display: flex;
+  align-items: center;
+  gap: var(--gp-space-2);
+  font-weight: 600;
+}
+
+.gp-overall--ok { color: var(--gp-ok); }
+.gp-overall--fail { color: var(--gp-fail); }
+
+/* --- badges -------------------------------------------------------------- */
+
+.gp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gp-space-1);
+  border-radius: var(--gp-radius-sm);
+  padding: 1px var(--gp-space-2);
+  font-weight: 600;
+  font-size: var(--gp-text-xs);
+  white-space: nowrap;
+}
+
+.gp-badge--found { color: var(--gp-ok); background: var(--gp-ok-bg); border: 1px solid var(--gp-ok); }
+.gp-badge--missing { color: var(--gp-fail); background: var(--gp-fail-bg); border: 1px solid var(--gp-fail); }
+.gp-badge--exact { color: var(--gp-ok); background: var(--gp-ok-bg); border: 1px solid var(--gp-ok); }
+.gp-badge--inferred { color: var(--gp-warn); background: var(--gp-warn-bg); border: 1px solid var(--gp-warn); }
+.gp-badge--verified { color: var(--gp-ok); background: var(--gp-ok-bg); border: 1px solid var(--gp-ok); }
+.gp-badge--unverified { color: var(--gp-warn); background: var(--gp-warn-bg); border: 1px solid var(--gp-warn); }
+.gp-badge--uncited { color: var(--gp-fail); background: var(--gp-fail-bg); border: 1px solid var(--gp-fail); }
+.gp-badge--showcase { color: var(--gp-accent-text); background: var(--gp-accent); border: 1px solid var(--gp-accent); }
+
+/* --- search -------------------------------------------------------------- */
+
+.gp-search {
+  display: flex;
+  align-items: center;
+  gap: var(--gp-space-2);
+}
+
+.gp-search input {
+  flex: 1;
+  max-width: 420px;
+  background: var(--gp-surface);
+  border: 1px solid var(--gp-border);
+  color: var(--gp-text);
+  border-radius: var(--gp-radius-sm);
+  padding: var(--gp-space-1) var(--gp-space-2);
+  font: inherit;
+}
+
+/* --- tables -------------------------------------------------------------- */
+
+.gp-table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.gp-table th,
+.gp-table td {
+  border: 1px solid var(--gp-border);
+  padding: var(--gp-space-1) var(--gp-space-2);
+  text-align: left;
+  vertical-align: top;
+}
+
+.gp-table th {
+  background: var(--gp-surface-2);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+}
+
+.gp-table tr.row--excluded {
+  background: var(--gp-warn-bg);
+}
+
+/* --- tool list (doctor) -------------------------------------------------- */
+
+.gp-tool-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gp-space-2);
+}
+
+.gp-tool {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gp-space-1);
+  border: 1px solid var(--gp-border);
+  border-radius: var(--gp-radius);
+  padding: var(--gp-space-2) var(--gp-space-3);
+  background: var(--gp-surface);
+}
+
+.gp-tool--missing {
+  border-color: var(--gp-fail);
+  background: var(--gp-fail-bg);
+}
+
+.gp-tool__head {
+  display: flex;
+  align-items: center;
+  gap: var(--gp-space-2);
+  flex-wrap: wrap;
+}
+
+.gp-tool__name {
+  font-family: var(--gp-font-mono);
+  font-weight: 700;
+}
+
+.gp-tool__direct {
+  color: var(--gp-text-faint);
+  font-size: var(--gp-text-xs);
+}
+
+.gp-tool__version { color: var(--gp-text-muted); }
+.gp-tool__path { font-family: var(--gp-font-mono); font-size: var(--gp-text-sm); color: var(--gp-text-faint); }
+.gp-tool__purpose { color: var(--gp-text-muted); }
+
+/* --- provenance entries -------------------------------------------------- */
+
+.gp-entry-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gp-space-2);
+}
+
+.gp-entry {
+  border: 1px solid var(--gp-border);
+  border-radius: var(--gp-radius);
+  padding: var(--gp-space-2) var(--gp-space-3);
+  background: var(--gp-surface);
+}
+
+.gp-entry__head {
+  display: flex;
+  align-items: center;
+  gap: var(--gp-space-2);
+  flex-wrap: wrap;
+}
+
+.gp-entry__pointer {
+  font-family: var(--gp-font-mono);
+  font-weight: 600;
+}
+
+.gp-entry__links {
+  color: var(--gp-text-muted);
+  font-size: var(--gp-text-sm);
+}
+
+.gp-entry__links .gp-mono {
+  font-size: var(--gp-text-xs);
+}
+
+/* --- netlist raw view ---------------------------------------------------- */
+
+.gp-raw {
+  font-family: var(--gp-font-mono);
+  font-size: var(--gp-text-sm);
+  background: var(--gp-surface);
+  border: 1px solid var(--gp-border);
+  border-radius: var(--gp-radius);
+  padding: var(--gp-space-3);
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 480px;
+}
+
+.gp-raw mark {
+  background: var(--gp-select-bg);
+  color: inherit;
+  border-radius: 2px;
+}
+
+/* --- packed packages ----------------------------------------------------- */
+
+.gp-package-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gp-space-2);
+}
+
+.gp-package {
+  border: 1px solid var(--gp-border);
+  border-radius: var(--gp-radius);
+  padding: var(--gp-space-2) var(--gp-space-3);
+  background: var(--gp-surface);
+}
+
+.gp-package__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gp-space-2);
+  flex-wrap: wrap;
+}
+
+.gp-package__refdes {
+  font-family: var(--gp-font-mono);
+  font-weight: 700;
+}
+
+.gp-package__meta { color: var(--gp-text-muted); font-size: var(--gp-text-sm); }
+.gp-package__rationale { color: var(--gp-text-muted); font-size: var(--gp-text-sm); }
+
+.gp-name-spaces {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--gp-space-2);
+  margin-top: var(--gp-space-2);
+}
+
+.gp-name-space__label {
+  font-size: var(--gp-text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gp-text-faint);
+}
+
+.gp-name-space__cells {
+  font-family: var(--gp-font-mono);
+  font-size: var(--gp-text-xs);
+  color: var(--gp-text-muted);
+}
+
+/* --- examples ------------------------------------------------------------ */
+
+.gp-example-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gp-space-2);
+}
+
+.gp-example {
+  display: flex;
+  align-items: center;
+  gap: var(--gp-space-3);
+  border: 1px solid var(--gp-border);
+  border-radius: var(--gp-radius);
+  padding: var(--gp-space-2) var(--gp-space-3);
+  background: var(--gp-surface);
+}
+
+.gp-example__name {
+  font-weight: 700;
+  font-family: var(--gp-font-mono);
+}
+
+.gp-example__summary {
+  color: var(--gp-text-muted);
+  flex: 1;
+}
+
+/* --- shared summary stat row --------------------------------------------- */
+
+.gp-stat-row {
+  display: flex;
+  gap: var(--gp-space-4);
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.gp-stat-row .gp-stat__value {
+  font-family: var(--gp-font-mono);
+  font-weight: 700;
+}
