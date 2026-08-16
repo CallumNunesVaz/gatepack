@@ -1,0 +1,58 @@
+initial
+assume (= [$formal$properties.sv:29$2_EN] false)
+assume (= [_witness_.anyinit_procdff_49] false)
+assume (= [_witness_.anyinit_procdff_54] false)
+assume (= [_witness_.anyinit_procdff_55] false)
+assume (= [_witness_.anyinit_procdff_56] true)
+assume (= [_witness_.anyinit_procdff_57] false)
+assume (= [gp_cycle] #x0)
+
+state 0
+assume (= [clk] false)
+assume (= [rst_n] false)
+assume (= [x] true)
+
+state 1
+assume (= [clk] false)
+assume (= [rst_n] false)
+assume (= [x] true)
+
+state 2
+assume (= [clk] false)
+assume (= [rst_n] false)
+assume (= [x] true)
+
+state 3
+assume (= [clk] false)
+assume (= [rst_n] false)
+assume (= [x] true)
+
+state 4
+assume (= [clk] false)
+assume (= [rst_n] true)
+assume (= [x] true)
+
+state 5
+assume (= [clk] false)
+assume (= [rst_n] true)
+assume (= [x] true)
+
+state 6
+assume (= [clk] false)
+assume (= [rst_n] true)
+assume (= [x] true)
+
+state 7
+assume (= [clk] false)
+assume (= [rst_n] true)
+assume (= [x] true)
+
+state 8
+assume (= [clk] false)
+assume (= [rst_n] true)
+assume (= [x] false)
+
+state 9
+assume (= [clk] false)
+assume (= [rst_n] true)
+assume (= [x] true)

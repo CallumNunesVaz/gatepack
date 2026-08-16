@@ -5,7 +5,7 @@ assignment, optional state, ``expected`` from the specification, ``actual`` from
 the mapped netlist, and a ``diverges`` flag.
 
 The ``expected`` side **reuses C4's spec evaluation**
-(:func:`gatepack.verify.simulation._expected_outputs`), so the divergence column
+(:func:`gatepack.verify.simulation.expected_outputs`), so the divergence column
 cannot disagree with the verified exhaustive check — the whole point of moving it
 out of the renderer (a renderer-side "simulated" column compares the spec against
 itself and can never disagree).  The ``actual`` side evaluates the combinational
@@ -206,7 +206,7 @@ def build_simulation_table(
             if produced >= row_limit:
                 break
             assignment = _assignment(input_names, code)
-            expected_bits = sim_mod._expected_outputs(compiled, state, assignment)
+            expected_bits = sim_mod.expected_outputs(compiled, state, assignment)
             expected = {name: _bit_str(v) for name, v in expected_bits.items()}
 
             row: dict = {

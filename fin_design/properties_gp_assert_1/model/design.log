@@ -1,0 +1,335 @@
+
+ /----------------------------------------------------------------------------\
+ |                                                                            |
+ |  yosys -- Yosys Open SYnthesis Suite                                       |
+ |                                                                            |
+ |  Copyright (C) 2012 - 2020  Claire Xenia Wolf <claire@yosyshq.com>         |
+ |                                                                            |
+ |  Permission to use, copy, modify, and/or distribute this software for any  |
+ |  purpose with or without fee is hereby granted, provided that the above    |
+ |  copyright notice and this permission notice appear in all copies.         |
+ |                                                                            |
+ |  THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES  |
+ |  WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF          |
+ |  MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR   |
+ |  ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES    |
+ |  WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN     |
+ |  ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF   |
+ |  OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.            |
+ |                                                                            |
+ \----------------------------------------------------------------------------/
+
+ Yosys 0.23 (git sha1 7ce5011c24b)
+
+
+-- Executing script file `../model/design.ys' --
+
+1. Executing Verilog-2005 frontend: generated.v
+Parsing formal SystemVerilog input from `generated.v' to AST representation.
+Generating RTLIL representation for module `\pelican'.
+Successfully finished Verilog frontend.
+
+2. Executing PREP pass.
+
+2.1. Executing HIERARCHY pass (managing design hierarchy).
+
+2.1.1. Analyzing design hierarchy..
+Top module:  \pelican
+
+2.1.2. Analyzing design hierarchy..
+Top module:  \pelican
+Removed 0 unused modules.
+Module pelican directly or indirectly contains formal properties -> setting "keep" attribute.
+
+2.2. Executing PROC pass (convert processes to netlists).
+
+2.2.1. Executing PROC_CLEAN pass (remove empty switches from decision trees).
+Cleaned up 0 empty switches.
+
+2.2.2. Executing PROC_RMDEAD pass (remove dead branches from decision trees).
+Marked 1 switch rules as full_case in process $proc$generated.v:102$29 in module pelican.
+Marked 1 switch rules as full_case in process $proc$generated.v:52$8 in module pelican.
+Marked 1 switch rules as full_case in process $proc$generated.v:36$6 in module pelican.
+Marked 1 switch rules as full_case in process $proc$generated.v:21$4 in module pelican.
+Removed a total of 0 dead cases.
+
+2.2.3. Executing PROC_PRUNE pass (remove redundant assignments in processes).
+Removed 11 redundant assignments.
+Promoted 4 assignments to connections.
+
+2.2.4. Executing PROC_INIT pass (extract init attributes).
+Found init rule in `\pelican.$proc$properties.sv:0$70'.
+  Set init value: $formal$properties.sv:51$3_EN = 1'0
+Found init rule in `\pelican.$proc$properties.sv:0$68'.
+  Set init value: $formal$properties.sv:31$2_EN = 1'0
+Found init rule in `\pelican.$proc$properties.sv:0$66'.
+  Set init value: $formal$properties.sv:12$1_EN = 1'0
+Found init rule in `\pelican.$proc$properties.sv:10$65'.
+  Set init value: \gp_cycle = 4'0000
+
+2.2.5. Executing PROC_ARST pass (detect async resets in processes).
+Found async reset \rst_n_i in `\pelican.$proc$generated.v:102$29'.
+Found async reset \rst_n in `\pelican.$proc$generated.v:52$8'.
+Found async reset \rst_n in `\pelican.$proc$generated.v:36$6'.
+Found async reset \rst_n in `\pelican.$proc$generated.v:21$4'.
+
+2.2.6. Executing PROC_ROM pass (convert switches to ROMs).
+Converted 0 switches.
+<suppressed ~4 debug messages>
+
+2.2.7. Executing PROC_MUX pass (convert decision trees to multiplexers).
+Creating decoders for process `\pelican.$proc$properties.sv:0$70'.
+Creating decoders for process `\pelican.$proc$properties.sv:0$68'.
+Creating decoders for process `\pelican.$proc$properties.sv:0$66'.
+Creating decoders for process `\pelican.$proc$properties.sv:10$65'.
+Creating decoders for process `\pelican.$proc$properties.sv:49$52'.
+     1/2: $0$formal$properties.sv:51$3_EN[0:0]$54
+     2/2: $0$formal$properties.sv:51$3_CHECK[0:0]$53
+Creating decoders for process `\pelican.$proc$properties.sv:29$43'.
+     1/2: $0$formal$properties.sv:31$2_EN[0:0]$45
+     2/2: $0$formal$properties.sv:31$2_CHECK[0:0]$44
+Creating decoders for process `\pelican.$proc$properties.sv:12$37'.
+     1/2: $0$formal$properties.sv:12$1_EN[0:0]$39
+     2/2: $0$formal$properties.sv:12$1_CHECK[0:0]$38
+Creating decoders for process `\pelican.$proc$properties.sv:11$34'.
+     1/1: $0\gp_cycle[3:0]
+Creating decoders for process `\pelican.$proc$generated.v:102$29'.
+     1/5: $0\state_CLEAR[0:0]
+     2/5: $0\state_CROSS[0:0]
+     3/5: $0\state_STOP[0:0]
+     4/5: $0\state_WARN[0:0]
+     5/5: $0\state_GO[0:0]
+Creating decoders for process `\pelican.$proc$generated.v:52$8'.
+     1/2: $0\rst_n_s2[0:0]
+     2/2: $0\rst_n_s1[0:0]
+Creating decoders for process `\pelican.$proc$generated.v:36$6'.
+     1/2: $0\hold_s2[0:0]
+     2/2: $0\hold_s1[0:0]
+Creating decoders for process `\pelican.$proc$generated.v:21$4'.
+     1/2: $0\request_s2[0:0]
+     2/2: $0\request_s1[0:0]
+
+2.2.8. Executing PROC_DLATCH pass (convert process syncs to latches).
+
+2.2.9. Executing PROC_DFF pass (convert process syncs to FFs).
+Creating register for signal `\pelican.$formal$properties.sv:51$3_CHECK' using process `\pelican.$proc$properties.sv:49$52'.
+  created $dff cell `$procdff$86' with positive edge clock.
+Creating register for signal `\pelican.$formal$properties.sv:51$3_EN' using process `\pelican.$proc$properties.sv:49$52'.
+  created $dff cell `$procdff$87' with positive edge clock.
+Creating register for signal `\pelican.$formal$properties.sv:31$2_CHECK' using process `\pelican.$proc$properties.sv:29$43'.
+  created $dff cell `$procdff$88' with positive edge clock.
+Creating register for signal `\pelican.$formal$properties.sv:31$2_EN' using process `\pelican.$proc$properties.sv:29$43'.
+  created $dff cell `$procdff$89' with positive edge clock.
+Creating register for signal `\pelican.$formal$properties.sv:12$1_CHECK' using process `\pelican.$proc$properties.sv:12$37'.
+  created $dff cell `$procdff$90' with positive edge clock.
+Creating register for signal `\pelican.$formal$properties.sv:12$1_EN' using process `\pelican.$proc$properties.sv:12$37'.
+  created $dff cell `$procdff$91' with positive edge clock.
+Creating register for signal `\pelican.\gp_cycle' using process `\pelican.$proc$properties.sv:11$34'.
+  created $dff cell `$procdff$92' with positive edge clock.
+Creating register for signal `\pelican.\state_GO' using process `\pelican.$proc$generated.v:102$29'.
+  created $adff cell `$procdff$93' with positive edge clock and negative level reset.
+Creating register for signal `\pelican.\state_WARN' using process `\pelican.$proc$generated.v:102$29'.
+  created $adff cell `$procdff$94' with positive edge clock and negative level reset.
+Creating register for signal `\pelican.\state_STOP' using process `\pelican.$proc$generated.v:102$29'.
+  created $adff cell `$procdff$95' with positive edge clock and negative level reset.
+Creating register for signal `\pelican.\state_CROSS' using process `\pelican.$proc$generated.v:102$29'.
+  created $adff cell `$procdff$96' with positive edge clock and negative level reset.
+Creating register for signal `\pelican.\state_CLEAR' using process `\pelican.$proc$generated.v:102$29'.
+  created $adff cell `$procdff$97' with positive edge clock and negative level reset.
+Creating register for signal `\pelican.\rst_n_s1' using process `\pelican.$proc$generated.v:52$8'.
+  created $adff cell `$procdff$98' with positive edge clock and negative level reset.
+Creating register for signal `\pelican.\rst_n_s2' using process `\pelican.$proc$generated.v:52$8'.
+  created $adff cell `$procdff$99' with positive edge clock and negative level reset.
+Creating register for signal `\pelican.\hold_s1' using process `\pelican.$proc$generated.v:36$6'.
+  created $adff cell `$procdff$100' with positive edge clock and negative level reset.
+Creating register for signal `\pelican.\hold_s2' using process `\pelican.$proc$generated.v:36$6'.
+  created $adff cell `$procdff$101' with positive edge clock and negative level reset.
+Creating register for signal `\pelican.\request_s1' using process `\pelican.$proc$generated.v:21$4'.
+  created $adff cell `$procdff$102' with positive edge clock and negative level reset.
+Creating register for signal `\pelican.\request_s2' using process `\pelican.$proc$generated.v:21$4'.
+  created $adff cell `$procdff$103' with positive edge clock and negative level reset.
+
+2.2.10. Executing PROC_MEMWR pass (convert process memory writes to cells).
+
+2.2.11. Executing PROC_CLEAN pass (remove empty switches from decision trees).
+Removing empty process `pelican.$proc$properties.sv:0$70'.
+Removing empty process `pelican.$proc$properties.sv:0$68'.
+Removing empty process `pelican.$proc$properties.sv:0$66'.
+Removing empty process `pelican.$proc$properties.sv:10$65'.
+Found and cleaned up 1 empty switch in `\pelican.$proc$properties.sv:49$52'.
+Removing empty process `pelican.$proc$properties.sv:49$52'.
+Found and cleaned up 1 empty switch in `\pelican.$proc$properties.sv:29$43'.
+Removing empty process `pelican.$proc$properties.sv:29$43'.
+Found and cleaned up 1 empty switch in `\pelican.$proc$properties.sv:12$37'.
+Removing empty process `pelican.$proc$properties.sv:12$37'.
+Found and cleaned up 1 empty switch in `\pelican.$proc$properties.sv:11$34'.
+Removing empty process `pelican.$proc$properties.sv:11$34'.
+Removing empty process `pelican.$proc$generated.v:102$29'.
+Removing empty process `pelican.$proc$generated.v:52$8'.
+Removing empty process `pelican.$proc$generated.v:36$6'.
+Removing empty process `pelican.$proc$generated.v:21$4'.
+Cleaned up 4 empty switches.
+
+2.2.12. Executing OPT_EXPR pass (perform const folding).
+Optimizing module pelican.
+<suppressed ~3 debug messages>
+
+2.3. Executing OPT_EXPR pass (perform const folding).
+Optimizing module pelican.
+
+2.4. Executing OPT_CLEAN pass (remove unused cells and wires).
+Finding unused cells or wires in module \pelican..
+Removed 4 unused cells and 46 unused wires.
+<suppressed ~5 debug messages>
+
+2.5. Executing CHECK pass (checking for obvious problems).
+Checking module pelican...
+Found and reported 0 problems.
+
+2.6. Executing OPT pass (performing simple optimizations).
+
+2.6.1. Executing OPT_EXPR pass (perform const folding).
+Optimizing module pelican.
+
+2.6.2. Executing OPT_MERGE pass (detect identical cells).
+Finding identical cells in module `\pelican'.
+<suppressed ~6 debug messages>
+Removed a total of 2 cells.
+
+2.6.3. Executing OPT_MUXTREE pass (detect dead branches in mux trees).
+Running muxtree optimizer on module \pelican..
+  Creating internal representation of mux trees.
+  Evaluating internal representation of mux trees.
+  Analyzing evaluation results.
+Removed 0 multiplexer ports.
+<suppressed ~7 debug messages>
+
+2.6.4. Executing OPT_REDUCE pass (consolidate $*mux and $reduce_* inputs).
+  Optimizing cells in module \pelican.
+Performed a total of 0 changes.
+
+2.6.5. Executing OPT_MERGE pass (detect identical cells).
+Finding identical cells in module `\pelican'.
+<suppressed ~6 debug messages>
+Removed a total of 2 cells.
+
+2.6.6. Executing OPT_CLEAN pass (remove unused cells and wires).
+Finding unused cells or wires in module \pelican..
+Removed 0 unused cells and 4 unused wires.
+<suppressed ~1 debug messages>
+
+2.6.7. Executing OPT_EXPR pass (perform const folding).
+Optimizing module pelican.
+
+2.6.8. Rerunning OPT passes. (Maybe there is more to do..)
+
+2.6.9. Executing OPT_MUXTREE pass (detect dead branches in mux trees).
+Running muxtree optimizer on module \pelican..
+  Creating internal representation of mux trees.
+  Evaluating internal representation of mux trees.
+  Analyzing evaluation results.
+Removed 0 multiplexer ports.
+<suppressed ~6 debug messages>
+
+2.6.10. Executing OPT_REDUCE pass (consolidate $*mux and $reduce_* inputs).
+  Optimizing cells in module \pelican.
+Performed a total of 0 changes.
+
+2.6.11. Executing OPT_MERGE pass (detect identical cells).
+Finding identical cells in module `\pelican'.
+Removed a total of 0 cells.
+
+2.6.12. Executing OPT_CLEAN pass (remove unused cells and wires).
+Finding unused cells or wires in module \pelican..
+
+2.6.13. Executing OPT_EXPR pass (perform const folding).
+Optimizing module pelican.
+
+2.6.14. Finished OPT passes. (There is nothing left to do.)
+
+2.7. Executing WREDUCE pass (reducing word size of cells).
+Removed top 3 bits (of 4) from port B of cell pelican.$add$properties.sv:11$36 ($add).
+Removed top 29 bits (of 32) from port B of cell pelican.$lt$properties.sv:12$40 ($lt).
+Removed top 29 bits (of 32) from port B of cell pelican.$ge$properties.sv:13$42 ($ge).
+
+2.8. Executing OPT_CLEAN pass (remove unused cells and wires).
+Finding unused cells or wires in module \pelican..
+
+2.9. Executing MEMORY_COLLECT pass (generating $mem cells).
+
+2.10. Executing OPT pass (performing simple optimizations).
+
+2.10.1. Executing OPT_EXPR pass (perform const folding).
+Optimizing module pelican.
+
+2.10.2. Executing OPT_MERGE pass (detect identical cells).
+Finding identical cells in module `\pelican'.
+Removed a total of 0 cells.
+
+2.10.3. Executing OPT_CLEAN pass (remove unused cells and wires).
+Finding unused cells or wires in module \pelican..
+
+2.10.4. Finished fast OPT passes.
+
+2.11. Printing statistics.
+
+=== pelican ===
+
+   Number of wires:                 80
+   Number of wire bits:             89
+   Number of public wires:          42
+   Number of public wire bits:      45
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:                 63
+     $add                            1
+     $adff                          11
+     $and                           13
+     $assert                         2
+     $assume                         1
+     $dff                            6
+     $ge                             1
+     $logic_and                      1
+     $logic_not                      1
+     $lt                             1
+     $mux                            6
+     $ne                             1
+     $not                            8
+     $or                            10
+
+2.12. Executing CHECK pass (checking for obvious problems).
+Checking module pelican...
+Found and reported 0 problems.
+
+3. Executing ASYNC2SYNC pass.
+Replacing pelican.$procdff$100 ($adff): ARST=\rst_n, D=\hold, Q=\hold_s1
+Replacing pelican.$procdff$101 ($adff): ARST=\rst_n, D=\hold_s1, Q=\hold_s2
+Replacing pelican.$procdff$102 ($adff): ARST=\rst_n, D=\request, Q=\request_s1
+Replacing pelican.$procdff$103 ($adff): ARST=\rst_n, D=\request_s1, Q=\request_s2
+Replacing pelican.$procdff$93 ($adff): ARST=\rst_n_s2, D=\next_GO, Q=\state_GO
+Replacing pelican.$procdff$94 ($adff): ARST=\rst_n_s2, D=\next_WARN, Q=\state_WARN
+Replacing pelican.$procdff$95 ($adff): ARST=\rst_n_s2, D=$0\state_STOP[0:0], Q=\state_STOP
+Replacing pelican.$procdff$96 ($adff): ARST=\rst_n_s2, D=\next_CROSS, Q=\state_CROSS
+Replacing pelican.$procdff$97 ($adff): ARST=\rst_n_s2, D=\state_CROSS, Q=\state_CLEAR
+Replacing pelican.$procdff$98 ($adff): ARST=\rst_n, D=1'1, Q=\rst_n_s1
+Replacing pelican.$procdff$99 ($adff): ARST=\rst_n, D=\rst_n_s1, Q=\rst_n_s2
+
+4. Executing HIERARCHY pass (managing design hierarchy).
+
+4.1. Analyzing design hierarchy..
+Top module:  \pelican
+
+4.2. Analyzing design hierarchy..
+Top module:  \pelican
+Removed 0 unused modules.
+Module pelican directly or indirectly contains formal properties -> setting "keep" attribute.
+
+5. Executing jny backend.
+
+6. Executing RTLIL backend.
+Output filename: ../model/design.il
+
+End of script. Logfile hash: 9acc65c371, CPU: user 0.02s system 0.00s, MEM: 13.55 MB peak
+Yosys 0.23 (git sha1 7ce5011c24b)
+Time spent: 22% 6x opt_expr (0 sec), 20% 5x opt_clean (0 sec), ...

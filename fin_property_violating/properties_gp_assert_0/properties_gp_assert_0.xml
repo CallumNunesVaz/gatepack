@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+<testsuite timestamp="2026-08-16T01:23:57" hostname="21c1c61ad09b" package="properties_gp_assert_0" id="0" name="default" tests="1" errors="0" failures="1" time="0" skipped="1">
+<properties>
+<property name="os" value="Linux"/>
+<property name="expect" value="PASS"/>
+<property name="status" value="FAIL"/>
+</properties>
+<testcase classname="default" name="build execution" time="0">
+<failure type="FAIL" message="Task returned status FAIL." />
+</testcase>
+<testcase classname="default" name="Property ASSERT in property_violating at properties.sv:29.7-29.48" time="0" type="ASSERT" location="properties.sv:29.7-29.48" id="gp_assert_0">
+<skipped />
+</testcase>
+<system-out>SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] Removing directory '/repo/fin_property_violating/properties_gp_assert_0'.
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] Copy '/repo/fin_property_violating/generated.v' to '/repo/fin_property_violating/properties_gp_assert_0/src/generated.v'.
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] Copy '/repo/fin_property_violating/properties.sv' to '/repo/fin_property_violating/properties_gp_assert_0/src/properties.sv'.
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0: smtbmc z3
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] base: starting process &quot;cd /repo/fin_property_violating/properties_gp_assert_0/src; yosys -ql ../model/design.log ../model/design.ys&quot;
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] base: finished (returncode=0)
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] prep: starting process &quot;cd /repo/fin_property_violating/properties_gp_assert_0/model; yosys -ql design_prep.log design_prep.ys&quot;
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] prep: finished (returncode=0)
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] smt2: starting process &quot;cd /repo/fin_property_violating/properties_gp_assert_0/model; yosys -ql design_smt2.log design_smt2.ys&quot;
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] smt2: finished (returncode=0)
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: starting process &quot;cd /repo/fin_property_violating/properties_gp_assert_0; yosys-smtbmc -s z3 --presat --noprogress -t 64  --append 0 --dump-vcd engine_0/trace.vcd --dump-yw engine_0/trace.yw --dump-vlogtb engine_0/trace_tb.v --dump-smtc engine_0/trace.smtc model/design_smt2.smt2&quot;
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.induction: starting process &quot;cd /repo/fin_property_violating/properties_gp_assert_0; yosys-smtbmc -s z3 --presat -i --noprogress -t 64  --append 0 --dump-vcd engine_0/trace_induct.vcd --dump-yw engine_0/trace_induct.yw --dump-vlogtb engine_0/trace_induct_tb.v --dump-smtc engine_0/trace_induct.smtc model/design_smt2.smt2&quot;
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.induction: ##   0:00:00  Solver: z3
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Solver: z3
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.induction: ##   0:00:00  Trying induction in step 64..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Checking assumptions in step 0..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Checking assertions in step 0..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Checking assumptions in step 1..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Checking assertions in step 1..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Checking assumptions in step 2..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Checking assertions in step 2..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Checking assumptions in step 3..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Checking assertions in step 3..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Checking assumptions in step 4..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Checking assertions in step 4..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Checking assumptions in step 5..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Checking assertions in step 5..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Checking assumptions in step 6..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Checking assertions in step 6..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Checking assumptions in step 7..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Checking assertions in step 7..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Checking assumptions in step 8..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Checking assertions in step 8..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Checking assumptions in step 9..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Checking assertions in step 9..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  BMC failed!
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Assert failed in property_violating: gp_assert_0
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Writing trace to VCD file: engine_0/trace.vcd
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.induction: ##   0:00:00  Trying induction in step 63..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.induction: ##   0:00:00  Trying induction in step 62..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Writing trace to Verilog testbench: engine_0/trace_tb.v
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.induction: ##   0:00:00  Trying induction in step 61..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.induction: ##   0:00:00  Trying induction in step 60..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Writing trace to constraints file: engine_0/trace.smtc
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.induction: ##   0:00:00  Trying induction in step 59..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Writing trace to Yosys witness file: engine_0/trace.yw
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.induction: ##   0:00:00  Trying induction in step 58..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.induction: ##   0:00:00  Trying induction in step 57..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.induction: ##   0:00:00  Trying induction in step 56..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.induction: ##   0:00:00  Trying induction in step 55..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.induction: ##   0:00:00  Trying induction in step 54..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.induction: ##   0:00:00  Trying induction in step 53..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: ##   0:00:00  Status: failed
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.induction: ##   0:00:00  Trying induction in step 52..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.induction: ##   0:00:00  Trying induction in step 51..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.induction: ##   0:00:00  Trying induction in step 50..
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.basecase: finished (returncode=1)
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0: Status returned by engine for basecase: FAIL
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] engine_0.induction: terminating process
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] summary: Elapsed clock time [H:MM:SS (secs)]: 0:00:00 (0)
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] summary: Elapsed process time [H:MM:SS (secs)]: 0:00:00 (0)
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] summary: engine_0 (smtbmc z3) returned FAIL for basecase
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] summary: counterexample trace: /repo/fin_property_violating/properties_gp_assert_0/engine_0/trace.vcd
+SBY  1:23:57 [/repo/fin_property_violating/properties_gp_assert_0] DONE (FAIL, rc=2)
+</system-out>
+<system-err>
+</system-err>
+</testsuite>
+</testsuites>

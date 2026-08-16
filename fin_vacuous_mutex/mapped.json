@@ -1,0 +1,263 @@
+{
+  "creator": "Yosys 0.23 (git sha1 7ce5011c24b)",
+  "modules": {
+    "vacuous_mutex": {
+      "attributes": {
+        "gp_src": "vacuous_mutex.yaml:5:name",
+        "top": "00000000000000000000000000000001",
+        "src": "/repo/fin_vacuous_mutex/generated.v:5.1-69.10"
+      },
+      "ports": {
+        "clk": {
+          "direction": "input",
+          "bits": [ 2 ]
+        },
+        "rst_n": {
+          "direction": "input",
+          "bits": [ 3 ]
+        },
+        "x": {
+          "direction": "input",
+          "bits": [ 4 ]
+        },
+        "a": {
+          "direction": "output",
+          "bits": [ 5 ]
+        },
+        "b": {
+          "direction": "output",
+          "bits": [ "0" ]
+        }
+      },
+      "cells": {
+        "$abc$105$auto$blifparse.cc:386:parse_blif$106": {
+          "hide_name": 1,
+          "type": "INV",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A": [ 5 ],
+            "Y": [ 6 ]
+          }
+        },
+        "$abc$105$auto$blifparse.cc:386:parse_blif$107": {
+          "hide_name": 1,
+          "type": "AND2",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A": [ 4 ],
+            "B": [ 7 ],
+            "Y": [ 8 ]
+          }
+        },
+        "$abc$105$auto$blifparse.cc:386:parse_blif$108": {
+          "hide_name": 1,
+          "type": "NAND2",
+          "parameters": {
+          },
+          "attributes": {
+          },
+          "connections": {
+            "A": [ 6 ],
+            "B": [ 8 ],
+            "Y": [ 9 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$101": {
+          "hide_name": 1,
+          "type": "DFF_R",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/fin_vacuous_mutex/generated.v:49.3-57.6"
+          },
+          "connections": {
+            "CK": [ 2 ],
+            "D": [ 9 ],
+            "Q": [ 7 ],
+            "RST_N": [ 10 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$102": {
+          "hide_name": 1,
+          "type": "DFF_R",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/fin_vacuous_mutex/generated.v:49.3-57.6"
+          },
+          "connections": {
+            "CK": [ 2 ],
+            "D": [ 8 ],
+            "Q": [ 5 ],
+            "RST_N": [ 10 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$103": {
+          "hide_name": 1,
+          "type": "DFF_R",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/fin_vacuous_mutex/generated.v:19.3-27.6"
+          },
+          "connections": {
+            "CK": [ 2 ],
+            "D": [ "1" ],
+            "Q": [ 11 ],
+            "RST_N": [ 3 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$104": {
+          "hide_name": 1,
+          "type": "DFF_R",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/fin_vacuous_mutex/generated.v:19.3-27.6"
+          },
+          "connections": {
+            "CK": [ 2 ],
+            "D": [ 11 ],
+            "Q": [ 10 ],
+            "RST_N": [ 3 ]
+          }
+        }
+      },
+      "netnames": {
+        "$0\\state_A[0:0]": {
+          "hide_name": 1,
+          "bits": [ 9 ],
+          "attributes": {
+            "src": "/repo/fin_vacuous_mutex/generated.v:49.3-57.6"
+          }
+        },
+        "$abc$105$new_n6_": {
+          "hide_name": 1,
+          "bits": [ 6 ],
+          "attributes": {
+          }
+        },
+        "a": {
+          "hide_name": 0,
+          "bits": [ 5 ],
+          "attributes": {
+            "src": "/repo/fin_vacuous_mutex/generated.v:9.15-9.16"
+          }
+        },
+        "a_int": {
+          "hide_name": 0,
+          "bits": [ 5 ],
+          "attributes": {
+            "gp_src": "vacuous_mutex.yaml:21:output_logic.a",
+            "src": "/repo/fin_vacuous_mutex/generated.v:60.8-60.13"
+          }
+        },
+        "b": {
+          "hide_name": 0,
+          "bits": [ "0" ],
+          "attributes": {
+            "src": "/repo/fin_vacuous_mutex/generated.v:10.15-10.16"
+          }
+        },
+        "b_int": {
+          "hide_name": 0,
+          "bits": [ "0" ],
+          "attributes": {
+            "gp_src": "vacuous_mutex.yaml:23:output_logic.b",
+            "src": "/repo/fin_vacuous_mutex/generated.v:63.8-63.13"
+          }
+        },
+        "clk": {
+          "hide_name": 0,
+          "bits": [ 2 ],
+          "attributes": {
+            "src": "/repo/fin_vacuous_mutex/generated.v:6.14-6.17"
+          }
+        },
+        "next_B": {
+          "hide_name": 0,
+          "bits": [ 8 ],
+          "attributes": {
+            "gp_src": "vacuous_mutex.yaml:14:states",
+            "src": "/repo/fin_vacuous_mutex/generated.v:44.8-44.14"
+          }
+        },
+        "rst_n": {
+          "hide_name": 0,
+          "bits": [ 3 ],
+          "attributes": {
+            "src": "/repo/fin_vacuous_mutex/generated.v:7.14-7.19"
+          }
+        },
+        "rst_n_i": {
+          "hide_name": 0,
+          "bits": [ 10 ],
+          "attributes": {
+            "src": "/repo/fin_vacuous_mutex/generated.v:28.8-28.15"
+          }
+        },
+        "rst_n_s1": {
+          "hide_name": 0,
+          "bits": [ 11 ],
+          "attributes": {
+            "gp_src": "vacuous_mutex.yaml:8:reset",
+            "src": "/repo/fin_vacuous_mutex/generated.v:16.7-16.15"
+          }
+        },
+        "rst_n_s2": {
+          "hide_name": 0,
+          "bits": [ 10 ],
+          "attributes": {
+            "gp_src": "vacuous_mutex.yaml:8:reset",
+            "src": "/repo/fin_vacuous_mutex/generated.v:18.7-18.15"
+          }
+        },
+        "state_A": {
+          "hide_name": 0,
+          "bits": [ 7 ],
+          "attributes": {
+            "gp_src": "vacuous_mutex.yaml:14:states",
+            "src": "/repo/fin_vacuous_mutex/generated.v:32.7-32.14"
+          }
+        },
+        "state_B": {
+          "hide_name": 0,
+          "bits": [ 5 ],
+          "attributes": {
+            "gp_src": "vacuous_mutex.yaml:14:states",
+            "src": "/repo/fin_vacuous_mutex/generated.v:34.7-34.14"
+          }
+        },
+        "t_0": {
+          "hide_name": 0,
+          "bits": [ 8 ],
+          "attributes": {
+            "gp_src": "vacuous_mutex.yaml:17:transitions[0]",
+            "src": "/repo/fin_vacuous_mutex/generated.v:36.8-36.11"
+          }
+        },
+        "t_2": {
+          "hide_name": 0,
+          "bits": [ 5 ],
+          "attributes": {
+            "gp_src": "vacuous_mutex.yaml:19:transitions[2]",
+            "src": "/repo/fin_vacuous_mutex/generated.v:40.8-40.11"
+          }
+        },
+        "x": {
+          "hide_name": 0,
+          "bits": [ 4 ],
+          "attributes": {
+            "src": "/repo/fin_vacuous_mutex/generated.v:8.14-8.15"
+          }
+        }
+      }
+    }
+  }
+}

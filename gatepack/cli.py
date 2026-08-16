@@ -481,7 +481,16 @@ def _cmd_verify(args: argparse.Namespace) -> int:
             print(f"      {check.detail}")
     if report.mutations:
         for mutation in report.mutations:
-            state = "detected" if mutation.detected else "NOT DETECTED"
+            # A mutation that could not be applied is NOT an undetected one.
+            # Rendering both as "NOT DETECTED" put three of those beside a
+            # "mutation: passed" summary, which reads exactly like the vacuous
+            # pass R2/R18 exist to prevent.
+            if not getattr(mutation, "applicable", True):
+                state = "not applicable"
+            elif mutation.detected:
+                state = "detected"
+            else:
+                state = "NOT DETECTED"
             print(f"  mutation {mutation.mutation + ':':17} {state}")
     print(f"manifest: {result.paths['manifest']}")
     if report.ok:

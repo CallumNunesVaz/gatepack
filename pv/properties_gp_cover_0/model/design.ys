@@ -1,0 +1,8 @@
+# running in /repo/pv/properties_gp_cover_0/src/
+read_verilog -sv -formal -DGP_FORMAL -DGP_COVER generated.v
+prep -top pelican
+async2sync
+
+hierarchy -smtcheck
+write_jny -no-connections ../model/design.json
+write_rtlil ../model/design.il

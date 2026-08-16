@@ -1,0 +1,80 @@
+initial
+assume (= [$formal$properties.sv:40$5_EN] false)
+assume (= [_witness_.anyinit_procdff_109] false)
+assume (= [_witness_.anyinit_procdff_111] false)
+assume (= [_witness_.anyinit_procdff_113] false)
+assume (= [_witness_.anyinit_procdff_115] false)
+assume (= [_witness_.anyinit_procdff_117] false)
+assume (= [_witness_.anyinit_procdff_119] false)
+assume (= [_witness_.anyinit_procdff_124] false)
+assume (= [_witness_.anyinit_procdff_125] false)
+assume (= [_witness_.anyinit_procdff_126] false)
+assume (= [_witness_.anyinit_procdff_127] false)
+assume (= [_witness_.anyinit_procdff_128] false)
+assume (= [_witness_.anyinit_procdff_129] true)
+assume (= [_witness_.anyinit_procdff_130] false)
+assume (= [_witness_.anyinit_procdff_131] false)
+assume (= [_witness_.anyinit_procdff_132] false)
+assume (= [_witness_.anyinit_procdff_133] false)
+assume (= [_witness_.anyinit_procdff_134] false)
+assume (= [gp_cycle] #x0)
+
+state 0
+assume (= [clk] false)
+assume (= [hold] false)
+assume (= [request] false)
+assume (= [rst_n] false)
+
+state 1
+assume (= [clk] false)
+assume (= [hold] false)
+assume (= [request] false)
+assume (= [rst_n] false)
+
+state 2
+assume (= [clk] false)
+assume (= [hold] false)
+assume (= [request] false)
+assume (= [rst_n] false)
+
+state 3
+assume (= [clk] false)
+assume (= [hold] false)
+assume (= [request] false)
+assume (= [rst_n] false)
+
+state 4
+assume (= [clk] false)
+assume (= [hold] false)
+assume (= [request] false)
+assume (= [rst_n] true)
+
+state 5
+assume (= [clk] false)
+assume (= [hold] false)
+assume (= [request] false)
+assume (= [rst_n] true)
+
+state 6
+assume (= [clk] false)
+assume (= [hold] false)
+assume (= [request] false)
+assume (= [rst_n] true)
+
+state 7
+assume (= [clk] false)
+assume (= [hold] false)
+assume (= [request] false)
+assume (= [rst_n] true)
+
+state 8
+assume (= [clk] false)
+assume (= [hold] false)
+assume (= [request] false)
+assume (= [rst_n] true)
+
+state 9
+assume (= [clk] false)
+assume (= [hold] false)
+assume (= [request] false)
+assume (= [rst_n] true)

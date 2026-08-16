@@ -109,7 +109,7 @@ def _manifest(
             entry["bound"] = check.bound
         checks.append(entry)
     mutations = [
-        {"mutation": m.mutation, "detected": m.detected, "detail": m.detail}
+        {"mutation": m.mutation, "detected": m.detected, "applicable": m.applicable, "detail": m.detail}
         for m in report.mutations
     ]
     if report.has_failure:
@@ -140,7 +140,7 @@ def run_verify(
     properties_only: bool = False,
 ) -> VerifyResult:
     design_path = Path(design_path)
-    build_dir = Path(build_dir)
+    build_dir = Path(build_dir).resolve()
     build_dir.mkdir(parents=True, exist_ok=True)
 
     compiled_result: CompileResult = compile_design_file(design_path)

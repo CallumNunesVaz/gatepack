@@ -1,0 +1,117 @@
+{
+  "creator": "Yosys 0.23 (git sha1 7ce5011c24b)",
+  "modules": {
+    "xor2": {
+      "attributes": {
+        "gp_src": "xor2.yaml:1:name",
+        "top": "00000000000000000000000000000001",
+        "src": "/repo/vx/generated.v:5.1-52.10"
+      },
+      "ports": {
+        "clk": {
+          "direction": "input",
+          "bits": [ 2 ]
+        },
+        "rst_n": {
+          "direction": "input",
+          "bits": [ 3 ]
+        },
+        "a": {
+          "direction": "input",
+          "bits": [ 4 ]
+        },
+        "b": {
+          "direction": "input",
+          "bits": [ 5 ]
+        },
+        "y": {
+          "direction": "output",
+          "bits": [ 6 ]
+        }
+      },
+      "cells": {
+        "$auto$simplemap.cc:86:simplemap_bitop$89": {
+          "hide_name": 1,
+          "type": "$_XOR_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/vx/generated.v:50.17-50.22"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 4 ],
+            "B": [ 5 ],
+            "Y": [ 6 ]
+          }
+        }
+      },
+      "netnames": {
+        "a": {
+          "hide_name": 0,
+          "bits": [ 4 ],
+          "attributes": {
+            "src": "/repo/vx/generated.v:8.14-8.15"
+          }
+        },
+        "b": {
+          "hide_name": 0,
+          "bits": [ 5 ],
+          "attributes": {
+            "src": "/repo/vx/generated.v:9.14-9.15"
+          }
+        },
+        "clk": {
+          "hide_name": 0,
+          "bits": [ 2 ],
+          "attributes": {
+            "src": "/repo/vx/generated.v:6.14-6.17"
+          }
+        },
+        "rst_n": {
+          "hide_name": 0,
+          "bits": [ 3 ],
+          "attributes": {
+            "src": "/repo/vx/generated.v:7.14-7.19"
+          }
+        },
+        "rst_n_i": {
+          "hide_name": 0,
+          "bits": [ 7 ],
+          "attributes": {
+            "src": "/repo/vx/generated.v:28.8-28.15",
+            "unused_bits": "0 "
+          }
+        },
+        "rst_n_s2": {
+          "hide_name": 0,
+          "bits": [ 7 ],
+          "attributes": {
+            "gp_src": "xor2.yaml:4:reset",
+            "src": "/repo/vx/generated.v:18.7-18.15",
+            "unused_bits": "0 "
+          }
+        },
+        "y": {
+          "hide_name": 0,
+          "bits": [ 6 ],
+          "attributes": {
+            "src": "/repo/vx/generated.v:10.15-10.16"
+          }
+        },
+        "y_int": {
+          "hide_name": 0,
+          "bits": [ 6 ],
+          "attributes": {
+            "gp_src": "xor2.yaml:16:output_logic.y",
+            "src": "/repo/vx/generated.v:50.8-50.13"
+          }
+        }
+      }
+    }
+  }
+}
