@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Licence audit (§4): every dependency's licence must be GPL-3.0-compatible.
 
-Two inputs, both audited against the same POLICY table:
+Three inputs, all audited against the same POLICY table:
 
 1. ``scripts/dependencies.json`` — the declared-dependency manifest (the core
    toolchain binaries + the Python runtime dependency).  Every entry's licence
@@ -27,15 +27,25 @@ Two inputs, both audited against the same POLICY table:
      *nested* production dependencies (a hoisted ``yargs@17`` hides
      ``netlistsvg``'s real ``yargs@6`` subtree); when no lock file is present a
      flat-tree fallback is used instead.
-   * **not shipped** (devDependencies, build tooling, extraneous hoisted
-     packages, and packages packed out by ``app/electron-builder.yml`` ``files``
-     excludes) — these do not ship, so an *incompatible* licence is reported as
-     a warning, not a failure (conflating the two drowns the signal in build
-     tooling).  The ``files`` excludes are read from the same
-     ``electron-builder.yml`` that electron-builder itself reads, so the audit's
-     "shipped" set tracks the actual asar instead of drifting from it.  An
-     *unrecognised* licence is still a hard failure everywhere: a licence the
-     table cannot name is a hole in the audit, not a pass.
+    * **not shipped** (devDependencies, build tooling, extraneous hoisted
+      packages, and packages packed out by ``app/electron-builder.yml`` ``files``
+      excludes) — these do not ship, so an *incompatible* licence is reported as
+      a warning, not a failure (conflating the two drowns the signal in build
+      tooling).  The ``files`` excludes are read from the same
+      ``electron-builder.yml`` that electron-builder itself reads, so the audit's
+      "shipped" set tracks the actual asar instead of drifting from it.  An
+      *unrecognised* licence is still a hard failure everywhere: a licence the
+      table cannot name is a hole in the audit, not a pass.
+
+3. The bundled Python core (``app/resources/bin/gatepack``, a PyInstaller
+   onefile produced by ``scripts/bundle_core.py``) — opt-in via ``--bundle`` /
+   ``--require-bundle``, because the manifest-only invocation is what the
+   ``test`` CI job runs.  The binary is opened and its actual contents are
+   enumerated (the PYZ module list, the bootloader/loader/runtime-hooks, the
+   CPython runtime, and every bundled shared library) — never the declared
+   dependency list, which is how the npm tree drifted once before.  Each
+   enumerated component is classified against the POLICY table; an
+   *unrecognised* component is a hard failure.
 
 SPDX ``OR`` / ``AND`` expressions are evaluated properly (an ``OR`` is
 acceptable when any alternative is; an ``AND`` when every part is).  Licences
@@ -50,6 +60,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import marshal
+import struct
 import sys
 from pathlib import Path
 
@@ -57,6 +69,7 @@ REPO = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = Path(__file__).resolve().parent / "dependencies.json"
 DEFAULT_NODE_TREE = REPO / "app" / "node_modules"
 DEFAULT_APP_MANIFEST = REPO / "app" / "package.json"
+DEFAULT_BUNDLE = REPO / "app" / "resources" / "bin" / "gatepack"
 
 # Normalised licence key -> (verdict, rationale).
 # verdicts: "compatible", "conditional", "incompatible", "unrecognised"
@@ -91,6 +104,16 @@ POLICY: dict[str, tuple[str, str]] = {
     "cc-by-3.0": ("incompatible", "CC-BY-3.0 is not GPL-compatible (FSF)"),
     "cc-by-4.0": ("incompatible", "CC-BY-4.0 is not GPL-compatible (FSF)"),
     "proprietary": ("incompatible", "proprietary licence is not distributable under GPL-3.0"),
+    # The bundled-core audit (below) resolves these.  Each was identified by name
+    # before being added — the bootloader exception and GCC runtime exception are
+    # quoted verbatim in docs/BUILD-NOTES-m18-release.md; the rest were read from
+    # the installed package metadata or the build host's distro copyright files.
+    "psf-2.0": ("compatible", "Python Software Foundation License 2.0 (the CPython/typing_extensions licence); permissive BSD-style; GPL-compatible"),
+    "gpl-2.0-or-later with bootloader-exception": ("compatible", "PyInstaller bootloader/loader licence: GPL-2.0-or-later with the bootloader exception — unlimited permission to embed the bootloader in a combined executable (GPL restrictions still cover modification and non-embedded distribution)"),
+    "gpl-3.0-or-later with gcc-runtime-library-exception": ("compatible", "GCC runtime (libgcc_s): GPL-3.0-or-later with the GCC Runtime Library Exception, which permits linking the runtime into a combined work under other terms"),
+    "zlib": ("compatible", "Zlib licence; permissive; GPL-compatible"),
+    "bzip2": ("compatible", "bzip2 licence; permissive; GPL-compatible"),
+    "0bsd": ("compatible", "Zero-Clause BSD / public domain (liblzma); GPL-compatible"),
 }
 
 
@@ -222,6 +245,254 @@ def classify_node_licence(name: str, expr: str, unmodified: bool = True) -> tupl
     except _SpdxSyntaxError as exc:
         return "unrecognised", f"licence expression {expr!r} could not be parsed ({exc})"
     return _eval_spdx(node, name, unmodified)
+
+
+# --- bundled-core (PyInstaller onefile) audit ---------------------------------
+#
+# The app ships a self-contained Python core at app/resources/bin/gatepack
+# (produced by scripts/bundle_core.py): a PyInstaller onefile binary embedding
+# CPython, the PyInstaller bootloader/loader/runtime-hooks, and the collected
+# Python packages.  The declared manifest cannot see any of that (it is a list
+# of *declared* toolchain/runtime deps), so this section opens the binary and
+# enumerates what is actually inside it — the same lesson the npm tree taught:
+# the declared set is not the shipped set.
+#
+# The archive format is parsed here directly (stdlib only: struct + marshal)
+# rather than by importing PyInstaller, so the audit does not depend on a
+# build-only tool being installed.  The layout follows PyInstaller 6.x
+# (PyInstaller/archive/readers.py, PyInstaller/loader/pyimod01_archive.py):
+#
+#   [ELF bootloader][CArchive ("PKG")][data]
+#   CArchive: cookie b"MEI\014\013\012\013\016" + a TOC of (name, offset, ...)
+#   PYZ:      b"PYZ\0" + python-bytecode magic + TOC offset + a marshal'd list
+#             of (name, entry) pairs (PyInstaller rebuilds it as a dict)
+#
+# Every licence below was identified by name before being added; an
+# unrecognised component is a hard failure, never a defaulted pass.
+
+_CARCHIVE_MAGIC = b"MEI\014\013\012\013\016"
+_CARCHIVE_COOKIE = "!8sIIII64s"
+_CARCHIVE_TOC_ENTRY = "!IIIIBc"
+_PYZ_MAGIC = b"PYZ\0"
+
+
+class BundleFormatError(Exception):
+    """The file is not a parseable PyInstaller onefile archive."""
+
+
+def _enumerate_bundle(path: Path) -> tuple[list[str], list[tuple[str, str]]]:
+    """Parse a PyInstaller onefile binary.
+
+    Returns ``(pyz_modules, carchive_entries)``: the dotted module names frozen
+    in the PYZ, and the ``(typecode, name)`` pairs in the CArchive TOC.
+    """
+    data = path.read_bytes()
+    cookie_at = data.rfind(_CARCHIVE_MAGIC)
+    if cookie_at == -1:
+        raise BundleFormatError(
+            "no PyInstaller archive cookie found; not a PyInstaller onefile binary"
+        )
+    cookie_len = struct.calcsize(_CARCHIVE_COOKIE)
+    (_, pkg_length, toc_offset, toc_length, _pyver, _pylib) = struct.unpack(
+        _CARCHIVE_COOKIE, data[cookie_at : cookie_at + cookie_len]
+    )
+    start = cookie_at + cookie_len - pkg_length
+    toc_data = data[start + toc_offset : start + toc_offset + toc_length]
+
+    entry_len = struct.calcsize(_CARCHIVE_TOC_ENTRY)
+    toc: dict[str, tuple[int, int, int, int, str]] = {}
+    pos = 0
+    while pos < len(toc_data):
+        (entry_length, offset, length, uncompressed, comp_flag, typecode) = struct.unpack(
+            _CARCHIVE_TOC_ENTRY, toc_data[pos : pos + entry_len]
+        )
+        pos += entry_len
+        name_len = entry_length - entry_len
+        name = toc_data[pos : pos + name_len].rstrip(b"\0").decode("utf-8", "replace")
+        pos += name_len
+        code = typecode.decode("ascii", "replace")
+        if code != "o":
+            toc[name] = (offset, length, uncompressed, comp_flag, code)
+
+    modules = _pyz_module_names(data, start, toc)
+    return modules, [(code, name) for name, (_, _, _, _, code) in sorted(toc.items())]
+
+
+def _pyz_module_names(data: bytes, start: int, toc: dict) -> list[str]:
+    """List the dotted module names frozen in the archive's PYZ."""
+    pyz = next((t for n, t in toc.items() if t[4] == "z"), None)
+    if pyz is None:
+        raise BundleFormatError("no PYZ archive found in the CArchive")
+    offset = pyz[0]
+    pos = start + offset
+    if data[pos : pos + 4] != _PYZ_MAGIC:
+        raise BundleFormatError("PYZ magic mismatch")
+    pos += 4
+    pos += 4  # python bytecode magic number (4 bytes on CPython >= 3.3)
+    toc_offset = struct.unpack("!i", data[pos : pos + 4])[0]
+    pyz_obj = marshal.loads(data[start + offset + toc_offset :])
+    # PyInstaller marshals a list of (name, entry) pairs and reconstructs the
+    # dict on load (`dict(marshal.load(fp))`), so accept either shape.
+    if isinstance(pyz_obj, dict):
+        return sorted(pyz_obj.keys())
+    return sorted(name for name, _entry in pyz_obj)
+
+
+# Component name -> (licence key, rationale).  The licence keys must exist in
+# POLICY.  Each was identified by name before being added; see
+# docs/BUILD-NOTES-m18-release.md for exactly where each licence was read from.
+BUNDLE_COMPONENTS: dict[str, tuple[str, str]] = {
+    "gatepack": ("gpl-3.0-or-later", "the project itself"),
+    "cpython": ("python-2.0", "CPython runtime + stdlib (PSF licence)"),
+    "pyinstaller-bootloader": ("gpl-2.0-or-later with bootloader-exception", "PyInstaller bootloader + loader; the bootloader exception permits embedding it in a combined executable"),
+    "pyinstaller-runtime-hooks": ("apache-2.0", "PyInstaller run-time hooks are Apache-2.0 (see PyInstaller COPYING.txt)"),
+    "pydantic": ("mit", "read from pydantic dist-info (License-Expression: MIT)"),
+    "pydantic-core": ("mit", "read from pydantic_core dist-info (License-Expression: MIT)"),
+    "annotated-types": ("mit", "read from annotated_types dist-info (License-Expression: MIT)"),
+    "typing-extensions": ("psf-2.0", "read from typing_extensions dist-info (License-Expression: PSF-2.0)"),
+    "typing-inspection": ("mit", "read from typing_inspection dist-info (License-Expression: MIT)"),
+    "packaging": ("apache-2.0", "packaging is Apache-2.0 OR BSD-2-Clause; the Apache-2.0 arm is GPL-3.0-compatible"),
+    "setuptools": ("mit", "setuptools (MIT); includes the top-level _distutils_hack shim"),
+    "openssl": ("apache-2.0", "OpenSSL 3.x (libssl/libcrypto) is Apache-2.0"),
+    "zlib": ("zlib", "zlib data-compression library (Zlib licence)"),
+    "bzip2": ("bzip2", "bzip2 library (bzip2 licence)"),
+    "xz": ("0bsd", "liblzma / xz-utils library is public domain (0BSD)"),
+    "libffi": ("mit", "libffi (MIT)"),
+    "expat": ("mit", "libexpat (MIT)"),
+    "readline": ("gpl-3.0-or-later", "GNU Readline is GPL-3.0-or-later"),
+    "ncurses": ("mit", "ncurses / libtinfo is MIT/X11"),
+    "libgcc": ("gpl-3.0-or-later with gcc-runtime-library-exception", "GCC runtime (libgcc_s) carries the GCC Runtime Library Exception"),
+}
+
+# Top-level module name -> component.  Only *named* third-party packages are
+# listed; a non-stdlib top-level module that is not here is unrecognised.
+BUNDLE_PACKAGE_COMPONENT: dict[str, str] = {
+    "gatepack": "gatepack",
+    "pydantic": "pydantic",
+    "pydantic_core": "pydantic-core",
+    "annotated_types": "annotated-types",
+    "typing_extensions": "typing-extensions",
+    "typing_inspection": "typing-inspection",
+    "packaging": "packaging",
+    "setuptools": "setuptools",
+    "_distutils_hack": "setuptools",
+}
+
+# CPython-runtime-provided top-level modules that are not in
+# sys.stdlib_module_names but are generated or OS-provided, not third-party.
+_CPYTHON_PROVIDED = frozenset({"sitecustomize", "usercustomize"})
+_CPYTHON_PROVIDED_PREFIXES = ("_sysconfigdata_",)
+
+# Shared-library name prefix -> component.
+BUNDLE_LIB_PREFIX: list[tuple[str, str]] = [
+    ("libpython", "cpython"),
+    ("libssl", "openssl"),
+    ("libcrypto", "openssl"),
+    ("libz.", "zlib"),
+    ("libbz2", "bzip2"),
+    ("liblzma", "xz"),
+    ("libffi", "libffi"),
+    ("libexpat", "expat"),
+    ("libreadline", "readline"),
+    ("libtinfo", "ncurses"),
+    ("libgcc_s", "libgcc"),
+]
+
+
+def _classify_bundle_module(name: str, stdlib: frozenset[str]) -> str | None:
+    top = name.split(".")[0]
+    if top in BUNDLE_PACKAGE_COMPONENT:
+        return BUNDLE_PACKAGE_COMPONENT[top]
+    if top in stdlib or top in _CPYTHON_PROVIDED:
+        return "cpython"
+    if any(top.startswith(prefix) for prefix in _CPYTHON_PROVIDED_PREFIXES):
+        return "cpython"
+    return None
+
+
+def _classify_bundle_entry(name: str, typecode: str, stdlib: frozenset[str]) -> str | None:
+    if name == "base_library.zip" or name.startswith("pyimod") or name.startswith("pyiboot"):
+        return "pyinstaller-bootloader"
+    if name.startswith("pyi_rth_"):
+        return "pyinstaller-runtime-hooks"
+    if "/lib-dynload/" in name or name.startswith("libpython"):
+        return "cpython"
+    if name.startswith("_gatepack_entry") or name.startswith("gatepack") or name.startswith("examples/"):
+        return "gatepack"
+    if name.startswith("pydantic_core"):
+        return "pydantic-core"
+    if name.startswith("pydantic"):
+        return "pydantic"
+    if name.startswith("setuptools") or name.startswith("_distutils_hack"):
+        return "setuptools"
+    if name.startswith("lib"):
+        for prefix, component in BUNDLE_LIB_PREFIX:
+            if name.startswith(prefix):
+                return component
+        return None  # an unrecognised shared library: fail
+    if typecode in "mMs":
+        return _classify_bundle_module(name, stdlib)
+    return None
+
+
+def audit_bundle(bundle: Path, *, out=print) -> tuple[int, int]:
+    """Audit a PyInstaller onefile bundle. Returns (failures, component_count)."""
+    try:
+        modules, entries = _enumerate_bundle(bundle)
+    except BundleFormatError as exc:
+        out(f"FAIL [bundle] {bundle.name}: {exc}")
+        return 1, 0
+    except (OSError, ValueError, EOFError, struct.error) as exc:
+        out(f"FAIL [bundle] {bundle.name}: could not be parsed ({exc})")
+        return 1, 0
+
+    stdlib = frozenset(sys.stdlib_module_names)
+    per_component: dict[str, list[str]] = {}
+    unrecognised: list[str] = []
+
+    for mod in modules:
+        component = _classify_bundle_module(mod, stdlib)
+        if component is None:
+            unrecognised.append(mod)
+        else:
+            per_component.setdefault(component, []).append(mod)
+
+    for typecode, name in entries:
+        if name == "PYZ.pyz":
+            continue  # the PYZ is a container, not a component; its modules are walked above
+        component = _classify_bundle_entry(name, typecode, stdlib)
+        if component is None:
+            unrecognised.append(name)
+        else:
+            per_component.setdefault(component, []).append(name)
+
+    failures = 0
+    for name in sorted(unrecognised):
+        out(
+            f"FAIL [bundle] {name}: unrecognised — the bundle ships a component "
+            f"with no licence on record; identify its licence and add it to the "
+            f"audit after review (never default it to compatible)"
+        )
+        failures += 1
+
+    for component in sorted(per_component):
+        if component not in BUNDLE_COMPONENTS:
+            out(f"FAIL [bundle] {component}: unrecognised — no licence on record")
+            failures += 1
+            continue
+        licence, rationale = BUNDLE_COMPONENTS[component]
+        verdict, vrationale = _verdict_for_key(component, licence, True, licence)
+        if verdict in ("incompatible", "unrecognised"):
+            out(f"FAIL [bundle] {component}: {licence!r} — {vrationale}")
+            failures += 1
+        else:
+            count = len(per_component[component])
+            out(
+                f"ok   [bundle] {component}: {licence!r} ({verdict}) — {rationale} "
+                f"({count} file(s)/module(s))"
+            )
+
+    return failures, len(per_component)
 
 
 # --- installed-tree walking --------------------------------------------------
@@ -494,6 +765,16 @@ def main(argv: list[str] | None = None) -> int:
         help="audit the default app/node_modules and fail if it is absent or empty",
     )
     parser.add_argument(
+        "--bundle",
+        default=None,
+        help="PyInstaller onefile core bundle to audit (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--require-bundle",
+        action="store_true",
+        help="audit the default bundled core and fail if it is absent or empty",
+    )
+    parser.add_argument(
         "--pack-config",
         default=str(REPO / "app" / "electron-builder.yml"),
         help="electron-builder.yml whose 'files' excludes determine what packs "
@@ -554,6 +835,27 @@ def main(argv: list[str] | None = None) -> int:
         )
         total_failures += node_failures
 
+    # The bundled-core audit is opt-in for the same reason as the node tree:
+    # the `test` job has no PyInstaller and no bundle, so it audits the manifest
+    # only.  --require-bundle selects the default bundle and demands it.
+    if args.bundle is not None:
+        bundle = Path(args.bundle)
+    elif args.require_bundle:
+        bundle = DEFAULT_BUNDLE
+    else:
+        bundle = None
+
+    bundle_failures = 0
+    bundle_components = 0
+    if bundle is None:
+        print("note: bundled-core audit not requested (pass --require-bundle or --bundle)")
+    elif not bundle.is_file():
+        print(f"error: bundled core not present: {bundle}", file=sys.stderr)
+        return 1
+    else:
+        bundle_failures, bundle_components = audit_bundle(bundle, out=lambda s: print(s))
+        total_failures += bundle_failures
+
     if total_failures:
         print(
             f"licence audit: {total_failures} dependency(s) not GPL-3.0-compatible",
@@ -567,9 +869,13 @@ def main(argv: list[str] | None = None) -> int:
         node_note = "installed tree not requested"
     else:
         node_note = "installed tree empty"
+    if bundle is None:
+        bundle_note = "bundle not requested"
+    else:
+        bundle_note = f"bundle {bundle_components} component(s)"
     print(
-        f"licence audit: {manifest_count + shipped_count + dev_count} dependency(s) "
-        f"GPL-3.0-compatible ({manifest_count} manifest, {node_note})"
+        f"licence audit: {manifest_count + shipped_count + dev_count + bundle_components} "
+        f"dependency(s) GPL-3.0-compatible ({manifest_count} manifest, {node_note}, {bundle_note})"
     )
     return 0
 

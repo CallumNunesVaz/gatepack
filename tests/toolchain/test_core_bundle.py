@@ -161,3 +161,25 @@ def test_scrub_is_scrubbing(bundled_core, tmp_path):
         )
     finally:
         shutil.move(str(hidden), str(BUNDLE))
+
+
+def test_bundle_passes_licence_audit(bundled_core):
+    """The §4 audit sees the bundle's real contents, not the declared list.
+
+    This is the licence side of the same claim the rest of this module makes:
+    the bundle is opened and enumerated, and the components that make it
+    GPL-3.0-compatible — pydantic (MIT), CPython (PSF) and the PyInstaller
+    bootloader's bootloader exception — must all be named by the audit, not
+    assumed from ``pyproject.toml``.
+    """
+    proc = subprocess.run(
+        [sys.executable, str(REPO / "scripts" / "licence_audit.py"), "--bundle", str(BUNDLE)],
+        cwd=str(REPO),
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "pyinstaller-bootloader" in proc.stdout
+    assert "bootloader-exception" in proc.stdout
+    assert "pydantic: 'mit'" in proc.stdout
+    assert "cpython: 'python-2.0'" in proc.stdout

@@ -41,12 +41,25 @@ run_audit() {
   echo $?
 }
 
-# -- the committed installed tree is audited and its one known finding is pinned
-#    (spdx-exceptions ships via netlistsvg's yargs CLI tree; see BUILD-NOTES-m18)
-rc=$(run_audit "$WORK/committed.txt" --require-node-tree)
-check_eq "committed tree audit runs (exit 1: one shipped finding)" "1" "$rc"
-check "committed tree finding names spdx-exceptions" grep -q "spdx-exceptions" "$WORK/committed.txt"
-check "shipped elkjs EPL-1.0 survives as conditional" grep -q "EPL-1.0" "$WORK/committed.txt"
+# -- the committed installed tree is audited and is now clean: the two findings
+#    from BUILD-NOTES-m18 (a shipped spdx-exceptions CC-BY-3.0, and a shipped
+#    elkjs EPL-1.0) were both remediated — spdx-exceptions is packed out by
+#    electron-builder.yml's `files` excludes, and netlistsvg is pinned onto the
+#    EPL-2.0 elkjs 0.9.3 by an npm override.  The audit exits 0 and still names
+#    the things it guards: spdx-exceptions as a non-blocking "excluded" warning,
+#    and the EPL-2.0 elkjs as *conditional* (never silently permissive).
+#    This check needs the installed npm tree, which the `test` CI job does not
+#    have (no `npm ci`); it is skipped there rather than failing on a tree that
+#    was never expected to exist.
+if [ -d "$REPO_ROOT/app/node_modules" ]; then
+  rc=$(run_audit "$WORK/committed.txt" --require-node-tree)
+  check_eq "committed tree audit runs (exit 0: tree is clean)" "0" "$rc"
+  check "spdx-exceptions is reported not-shipped (excluded)" grep -q "spdx-exceptions" "$WORK/committed.txt"
+  check "spdx-exceptions is non-blocking (not shipped)" grep -q "not shipped" "$WORK/committed.txt"
+  check "shipped elkjs EPL-2.0 survives as conditional" grep -q "EPL-2.0" "$WORK/committed.txt"
+else
+  echo "  note: app/node_modules absent — committed-tree audit checks skipped"
+fi
 
 # -- a shipped GPL-2.0-only package fails --------------------------------------
 T="$WORK/gpl20"; mkdir -p "$T/node_modules"
@@ -115,5 +128,19 @@ check_eq "SPDX OR expression accepted" "0" "$rc"
 # -- --require-node-tree fails when the tree is absent -------------------------
 rc=$(run_audit "$WORK/req.txt" --node-tree "$WORK/does-not-exist" --require-node-tree)
 check_eq "--require-node-tree fails on a missing tree" "1" "$rc"
+
+# -- the bundled-core audit (PyInstaller onefile) ------------------------------
+#    A file that is not a PyInstaller onefile is rejected, never assumed to be
+#    compatible.  The synthetic-bundle pass/fail cases live in
+#    tests/unit/test_licence_audit_bundle.py (this harness is bash and cannot
+#    build one); here we pin the two CLI-level guards.
+printf '%s\n' 'this is not a PyInstaller onefile binary' > "$WORK/not-a-bundle"
+rc=$(run_audit "$WORK/notbundle.txt" --bundle "$WORK/not-a-bundle")
+check_eq "a non-PyInstaller bundle is rejected" "1" "$rc"
+check "bundle rejection names PyInstaller" grep -q "PyInstaller" "$WORK/notbundle.txt"
+
+# -- --require-bundle fails when the bundled core is absent --------------------
+rc=$(run_audit "$WORK/reqb.txt" --bundle "$WORK/does-not-exist" --require-bundle)
+check_eq "--require-bundle fails on a missing bundle" "1" "$rc"
 
 finish
