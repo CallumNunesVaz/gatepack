@@ -22,6 +22,16 @@
  *   GATEPACK_FAKE_FAIL        — comma-separated list of commands that should
  *                               answer with a well-formed `ok: false` envelope
  *                               and exit non-zero (exercises error surfacing).
+ *   GATEPACK_FAKE_NONZERO_OK  — comma-separated list of commands that should
+ *                               answer with a well-formed `ok: true` envelope
+ *                               and STILL exit non-zero. The real core does this
+ *                               for exactly one command: `verify`, whose exit
+ *                               code encodes all-green-ness while the envelope
+ *                               stays the authoritative answer (missing tools ->
+ *                               `not_run` checks with `skippedReason`). This
+ *                               hook models that, so e2e can prove the app
+ *                               renders the check list rather than discarding
+ *                               the envelope as "core exited 1".
  *
  * `project explode` / `project bundle` are raw verbs (no `--json`): the fake
  * copies `design.yaml` exactly as the real project verbs move the spec, so the
@@ -109,6 +119,47 @@ function verifyData() {
       { name: 'property never_walk_with_traffic', kind: 'property', status: 'passed', durationMs: 0 },
     ],
     allPassed: true,
+  };
+}
+
+// The real core's `verify` output when the toolchain is absent: the command
+// executed and this envelope is its answer (`ok: true`), but the checks that
+// need yosys/iverilog/sby could not run, so `allPassed` is false and each
+// `not_run` check names its missing tool. The core exits 1 to signal "not
+// all-green" — a legitimate state, not a lying core.
+function verifyNotRunData() {
+  return {
+    checks: [
+      {
+        name: 'equivalence',
+        kind: 'equivalence',
+        status: 'not_run',
+        skippedReason: 'yosys not installed (logic synthesis, §C3)',
+        durationMs: 0,
+      },
+      {
+        name: 'exhaustive simulation',
+        kind: 'simulation',
+        status: 'not_run',
+        skippedReason: 'iverilog not installed (Icarus — compiles the simulation testbench)',
+        durationMs: 0,
+      },
+      {
+        name: 'mutation',
+        kind: 'mutation',
+        status: 'not_run',
+        skippedReason: 'yosys + iverilog required (synthesis + simulation)',
+        durationMs: 0,
+      },
+      {
+        name: 'property never_walk_with_traffic',
+        kind: 'property',
+        status: 'not_run',
+        skippedReason: 'sby not found on PATH (SymbiYosys — runs the §11 formal property checks)',
+        durationMs: 0,
+      },
+    ],
+    allPassed: false,
   };
 }
 
@@ -374,6 +425,16 @@ async function main() {
 
   if (failList.includes(cmd)) {
     emit(err(cmd, 'GP1003', 'yosys is not available; synthesis cannot run'), 1);
+    return;
+  }
+
+  const nonzeroOkList = (process.env.GATEPACK_FAKE_NONZERO_OK || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (nonzeroOkList.includes(cmd) && cmd === 'verify') {
+    emit(ok('verify', verifyNotRunData()), 1);
     return;
   }
 

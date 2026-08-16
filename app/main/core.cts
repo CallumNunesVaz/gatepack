@@ -237,14 +237,31 @@ export function runEnvelope<T>(
         }
         if (onProgress) onProgress('done');
         const envelope = parseEnvelope(schema, stdout, command);
-        // A non-zero exit that still claims `ok: true` is a lying core: never
-        // pass it through. Prefer a visible error envelope.
-        if (code !== 0 && envelope.ok) {
+        // Contract resolution (docs/BUILD-NOTES-exitcode.md): `ok` answers
+        // "did the command execute, and is this envelope its answer?" — a
+        // schema-valid envelope is authoritative regardless of the exit code.
+        // The exit code is the core's *additional* all-green signal for shell
+        // and CI use: `verify` exits non-zero with `ok: true` whenever not every
+        // check ran or passed, and that is a legitimate, visible state (§C15),
+        // not a lying core. So a valid `ok: true` envelope always reaches the
+        // renderer intact, with its check list and skip reasons.
+        //
+        // The failure the old guard was written for — a core that dies mid-run
+        // and leaves a truncated or missing envelope — is caught below:
+        // `parseEnvelope` turns an absent/unparseable envelope into `GP9002` /
+        // `GP9003`. When the core also exited non-zero we annotate that error
+        // with the exit code and stderr, so a crashed core never surfaces as a
+        // silent empty result.
+        if (
+          code !== 0 &&
+          !envelope.ok &&
+          (envelope.error.code === 'GP9002' || envelope.error.code === 'GP9003')
+        ) {
           resolve(
             errorEnvelope(
               command,
-              'GP9004',
-              `core exited ${code === null ? 'abnormally' : code}` +
+              envelope.error.code,
+              `${envelope.error.message}; core exited ${code === null ? 'abnormally' : code}` +
                 (stderr.trim() ? `: ${stderr.trim()}` : ''),
             ),
           );
