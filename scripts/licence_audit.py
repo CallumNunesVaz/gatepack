@@ -28,10 +28,14 @@ Two inputs, both audited against the same POLICY table:
      ``netlistsvg``'s real ``yargs@6`` subtree); when no lock file is present a
      flat-tree fallback is used instead.
    * **not shipped** (devDependencies, build tooling, extraneous hoisted
-     packages) — these do not ship, so an *incompatible* licence is reported as
+     packages, and packages packed out by ``app/electron-builder.yml`` ``files``
+     excludes) — these do not ship, so an *incompatible* licence is reported as
      a warning, not a failure (conflating the two drowns the signal in build
-     tooling).  An *unrecognised* licence is still a hard failure everywhere:
-     a licence the table cannot name is a hole in the audit, not a pass.
+     tooling).  The ``files`` excludes are read from the same
+     ``electron-builder.yml`` that electron-builder itself reads, so the audit's
+     "shipped" set tracks the actual asar instead of drifting from it.  An
+     *unrecognised* licence is still a hard failure everywhere: a licence the
+     table cannot name is a hole in the audit, not a pass.
 
 SPDX ``OR`` / ``AND`` expressions are evaluated properly (an ``OR`` is
 acceptable when any alternative is; an ``AND`` when every part is).  Licences
@@ -76,7 +80,7 @@ POLICY: dict[str, tuple[str, str]] = {
     "gpl-3.0+": ("compatible", "same family as GPL-3.0-or-later"),
     "gpl-3.0-or-later": ("compatible", "the project licence itself"),
     "epl-2.0": ("conditional", "weak copyleft at file scope; requires unmodified library use"),
-    "epl-1.0": ("conditional", "weak copyleft at file scope; requires unmodified library use (the shipped elkjs is EPL-1.0, not the EPL-2.0 §4 records — see docs/BUILD-NOTES-m18.md)"),
+    "epl-1.0": ("incompatible", "EPL-1.0 has no secondary-licence provision (unlike EPL-2.0) and is not GPL-compatible (FSF); §4's elkjs argument does not transfer"),
     "mpl-2.0": ("conditional", "weak copyleft at file scope; requires unmodified library use"),
     "lgpl-2.1": ("conditional", "weak copyleft; requires unmodified library use (dynamic or independent)"),
     "lgpl-2.1+": ("conditional", "weak copyleft; requires unmodified library use"),
@@ -279,6 +283,58 @@ def package_name(rel_path: str) -> str:
     return parts[-1] if parts else rel_path
 
 
+def electron_builder_excludes(pack_config: Path) -> list[str]:
+    """Extract node_modules exclude prefixes from an ``electron-builder.yml``.
+
+    The audit must reflect what electron-builder actually packs.  Its
+    node-module matcher honours only the *negative* ``!node_modules/.../**``
+    globs in the ``files:`` block (positive patterns are dropped for
+    ``node_modules``), so this reads exactly those and returns the package-path
+    prefixes they name (e.g. ``node_modules/netlistsvg/node_modules/yargs``).
+    A missing or unreadable config yields no exclusions, which is the same
+    behaviour as a config that excludes nothing.
+    """
+    if not pack_config.is_file():
+        return []
+    prefixes: list[str] = []
+    in_files = False
+    for line in pack_config.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if not in_files:
+            if stripped == "files:" or line.startswith("files:"):
+                in_files = True
+            continue
+        # Leave the ``files:`` block at the next top-level key.
+        if line and not line[0].isspace() and not stripped.startswith("-"):
+            break
+        if stripped.startswith("- "):
+            item = stripped[2:].strip().strip("'\"").strip()
+            if item.startswith("!node_modules/"):
+                prefix = item[1:]  # drop the '!'
+                for suffix in ("/**/*", "/**"):
+                    if prefix.endswith(suffix):
+                        prefix = prefix[: -len(suffix)]
+                        break
+                prefix = prefix.rstrip("/")
+                if prefix:
+                    prefixes.append(prefix)
+    return prefixes
+
+
+def package_is_excluded(rel_path: str, prefixes: list[str]) -> bool:
+    """True if the package at ``rel_path`` (relative to the node tree) is packed
+    out by one of the electron-builder exclude prefixes."""
+    if not prefixes:
+        return False
+    path = f"node_modules/{rel_path}"
+    for prefix in prefixes:
+        if path == prefix or path.startswith(prefix + "/"):
+            return True
+    return False
+
+
 def shipping_paths_from_lock(lock: dict) -> set[str]:
     """Return the set of install paths npm records as production (non-dev).
 
@@ -336,6 +392,7 @@ def audit_node_tree(
     app_manifest: dict,
     lockfile: Path | None,
     *,
+    exclude_prefixes: list[str] | None = None,
     out=print,
 ) -> tuple[int, int, int]:
     """Audit installed packages. Returns (failures, shipped_count, dev_count)."""
@@ -347,13 +404,16 @@ def audit_node_tree(
     else:
         shipped = compute_shipping_set_fallback(app_manifest, by_name)
 
+    exclude_prefixes = exclude_prefixes or []
+
     failures = 0
     shipped_count = 0
     dev_count = 0
 
     for rel, pkg in packages:
         name = package_name(rel)
-        ships = rel in shipped
+        excluded = package_is_excluded(rel, exclude_prefixes)
+        ships = (rel in shipped) and not excluded
         if ships:
             shipped_count += 1
         else:
@@ -365,7 +425,7 @@ def audit_node_tree(
         else:
             verdict, rationale = classify_node_licence(name, lic, unmodified=True)
 
-        marker = "ships" if ships else "dev  "
+        marker = "ships" if ships else ("excl " if excluded else "dev  ")
         if verdict == "unrecognised":
             failures += 1
             out(f"FAIL [{marker}] {name}: {lic!r} — {rationale}")
@@ -378,8 +438,9 @@ def audit_node_tree(
             out(f"ok   [{marker}] {name}: {lic!r} (conditional, unmodified) — {rationale}")
         elif ships:
             out(f"ok   [{marker}] {name}: {lic!r} (compatible) — {rationale}")
-        # dev-compatible packages are counted but not printed: they are the
-        # build-tooling noise this audit is specifically told not to drown in.
+        # dev/excluded-compatible packages are counted but not printed: they
+        # are the build-tooling and packed-out noise this audit is told not to
+        # drown in.
 
     return failures, shipped_count, dev_count
 
@@ -432,6 +493,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="audit the default app/node_modules and fail if it is absent or empty",
     )
+    parser.add_argument(
+        "--pack-config",
+        default=str(REPO / "app" / "electron-builder.yml"),
+        help="electron-builder.yml whose 'files' excludes determine what packs "
+        "(default: %(default)s); a missing file means no exclusions",
+    )
     args = parser.parse_args(argv)
 
     manifest = Path(args.manifest)
@@ -482,6 +549,7 @@ def main(argv: list[str] | None = None) -> int:
             node_tree,
             app_manifest,
             lockfile,
+            exclude_prefixes=electron_builder_excludes(Path(args.pack_config)),
             out=print,
         )
         total_failures += node_failures

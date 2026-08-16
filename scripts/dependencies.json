@@ -46,10 +46,11 @@
     },
     {
       "name": "elkjs",
-      "licence": "EPL-2.0",
-      "integration": "transitive via netlistsvg",
+      "licence": "EPL-1.0",
+      "version": "0.3.0",
+      "integration": "transitive via netlistsvg, baked into the renderer bundle",
       "unmodified": true,
-      "note": "weak-copyleft at file scope, consumed unmodified as a library (\u00a74)"
+      "note": "the copy that ships is netlistsvg's nested elkjs@0.3.0 (EPL-1.0), not the top-level elkjs@0.9.3 (EPL-2.0) that app/package.json declares; the top-level copy is unused and excluded from the asar. EPL-1.0 has no secondary-licence provision, so §4's EPL-2.0 argument does not transfer (§4)"
     },
     {
       "name": "React Flow",
