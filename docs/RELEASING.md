@@ -8,11 +8,15 @@ and the desktop app (Electron) are versioned together and released from one tree
 - **The desktop app packages and launches** — `app/electron-builder.yml` builds
   Linux (AppImage + deb), macOS (dmg, arm64 + x64) and Windows (nsis). A
   `--linux dir` build has been run here and starts.
-- **The licence audit now sees the real tree and has found a real issue.**
-  `spdx-exceptions` (CC-BY-3.0) ships inside the asar via netlistsvg's yargs CLI
-  dependency subtree, so `scripts/licence_audit.py --require-node-tree` (and the
-  `desktop-packaging` CI job) fails until it is remediated. See
-  `docs/BUILD-NOTES-m18.md` for the analysis and the two options.
+- **The licence audit sees the real tree and the bundled core.** It walks the
+  installed npm tree (`--require-node-tree`) and opens the PyInstaller binary
+  (`--require-bundle`), enumerating what each actually contains rather than the
+  declared dependency list. Both are clean today: the two findings it surfaced
+  when first pointed at the tree — `spdx-exceptions` (CC-BY-3.0) and an EPL-1.0
+  elkjs — were remediated (`spdx-exceptions` is packed out by
+  `electron-builder.yml`'s `files` excludes, and netlistsvg is pinned onto the
+  EPL-2.0 elkjs 0.9.3 by an npm override). See `docs/BUILD-NOTES-m18.md` and
+  `docs/BUILD-NOTES-m18-release.md`.
 - **Signing is configured but not populated.** No identity, certificate or
   notarisation credentials exist in the tree, and none are fabricated. Until a
   maintainer supplies them, macOS/Windows builds are unsigned and will trip
@@ -34,11 +38,13 @@ and the desktop app (Electron) are versioned together and released from one tree
   reproducibility, and the declared-manifest licence audit.
 - `toolchain` — runs the real Yosys/sby/Icarus/z3 toolchain in a container and
   fails if any toolchain test *skips*.
-- `desktop-packaging` — `npm ci`, version-consistency check, licence audit over
-  the *installed* npm tree (`--require-node-tree`), app build, and an unsigned
-  `electron-builder --linux dir` package. It does **not** yet run
-  `scripts/bundle_core.py` (the core-bundle step is in the manual release
-  steps above); wiring it in is a follow-up.
+- `desktop-packaging` — `npm ci`, version-consistency check, builds the bundled
+  core (`scripts/bundle_core.py`), licence audit over the *installed* npm tree
+  and the bundle (`--require-node-tree --require-bundle`), the bundle acceptance
+  test, renderer/main typechecks, vitest, and a `GATEPACK_PACKAGING=1` packaging
+  test that runs `electron-builder --linux dir` and asserts the core is inside
+  the unpacked tree. A skip in the bundle or packaging tests is a failure here,
+  not an expectation.
 
 ## Cutting v0.1.0
 
@@ -47,16 +53,18 @@ and the desktop app (Electron) are versioned together and released from one tree
    `toolchain` is red.
 2. **Bump the version in both files, together** — `pyproject.toml` and
    `app/package.json`. `scripts/version_check.py` (run in CI) fails if they
-   drift, so they cannot be released out of step. Update `CHANGELOG`-worthy
-   notes if one exists.
-3. **Run the licence audit yourself**, not just CI:
-   `python3 scripts/licence_audit.py --require-node-tree`. It walks the real
-   installed tree and fails on any unrecognised licence. If it reports one, add
-   the licence to `POLICY` in `scripts/licence_audit.py` *by name, after
-   review* — never by defaulting it to compatible.
-4. **Build the bundled core**: `python3 scripts/bundle_core.py` (needs
+   drift, so they cannot be released out of step. Update `CHANGELOG.md` (the
+   v0.1.0 section) to match.
+3. **Build the bundled core**: `python3 scripts/bundle_core.py` (needs
    PyInstaller in the build environment). It refuses to install a broken binary,
    and the acceptance test (`tests/toolchain/test_core_bundle.py`) re-proves it.
+4. **Run the licence audit yourself**, not just CI:
+   `python3 scripts/licence_audit.py --require-node-tree --require-bundle`. It
+   walks the real installed tree *and* opens the bundled core, enumerating what
+   each actually contains, and fails on any unrecognised or incompatible
+   licence. If it reports one, add the licence to `POLICY` — or, for a bundle
+   component, to `BUNDLE_COMPONENTS` — in `scripts/licence_audit.py` *by name,
+   after review* — never by defaulting it to compatible.
 5. **Build the app** from `app/`: `npm ci && npm run build`.
 6. **Package the targets**:
    - Linux: `npx electron-builder --linux`

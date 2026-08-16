@@ -1,18 +1,30 @@
 # CI — gatepack core (§14, principle 7).
 #
-# Nothing in this workflow depends on the desktop application.  It exercises
-# the pure-Python core (pytest), the shell harness, the library citation check,
-# the §5.5 reproducibility check, and the §4 licence audit.  Yosys/ABC/sby/
-# Icarus are intentionally *not* installed in the `test` job: anything needing
-# them skips with an explicit reason (see docs/TESTING.md), so that job is the
-# "no GUI, no external toolchain" floor.
+# Four jobs, one per layer of honesty:
 #
-# The `toolchain` job below is the ceiling, and it exists because the floor has
-# repeatedly reported green over machinery that had never touched a real tool:
-# generated Verilog that Yosys rejected outright, properties asserted over
-# undriven wires, and an equivalence check that errored out before comparing
-# anything — each with a full suite passing. Unit tests with fake runners
-# cannot catch that class of defect. Only running the binaries can.
+#   * `test`             — the pure-Python floor: unit/golden/contract tests,
+#                          shell harness, citation check, reproducibility, and
+#                          the declared-manifest licence audit.  No GUI, no
+#                          external toolchain, no PyInstaller, no electron.
+#   * `toolchain`        — the ceiling: the toolchain tests are run *on the
+#                          host*, where they drive `docker run gatepack-toolchain:m6`
+#                          themselves.  A toolchain test that skips is a failure,
+#                          because a skip is indistinguishable from the test not
+#                          existing.
+#   * `desktop-packaging` — the app: npm ci, version check, the bundled Python
+#                          core (PyInstaller), the licence audit over the real
+#                          npm tree *and* the bundle, the bundle acceptance test,
+#                          the renderer/main typechecks and vitest, and an
+#                          unsigned electron-builder package that is asserted to
+#                          contain the core.
+#
+# The `toolchain` job exists because the floor has repeatedly reported green over
+# machinery that had never touched a real tool: generated Verilog that Yosys
+# rejected outright, properties asserted over undriven wires, and an equivalence
+# check that errored out before comparing anything — each with a full suite
+# passing.  Unit tests with fake runners cannot catch that class of defect.
+# Only running the binaries can, which is why each of the three higher jobs is
+# wired to fail if the thing it claims to measure does not actually run.
 
 name: CI
 
@@ -36,8 +48,11 @@ jobs:
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/python -m pip install -e . pytest
 
+      # Explicitly the pure-Python layers: tests/toolchain is the ceiling's
+      # business, and collecting it here would only ever skip it (a skip this
+      # job is allowed to make, but a misleading one — so it is not made).
       - name: Unit, golden and contract tests
-        run: .venv/bin/pytest -q
+        run: .venv/bin/pytest tests/unit tests/golden tests/contract -q
 
       - name: Shell harness
         run: bash scripts/tests/run.sh
@@ -48,28 +63,46 @@ jobs:
       - name: Reproducibility check
         run: .venv/bin/python scripts/repro_check.py
 
-      - name: Licence audit
+      - name: Licence audit (declared manifest)
         run: .venv/bin/python scripts/licence_audit.py
 
   toolchain:
-    # Runs the real thing: Yosys 0.23, Icarus, sby and z3, with the CLI itself
-    # executing inside the image. This job is allowed to be slow; it is not
-    # allowed to be skipped.
+    # Runs the real thing: Yosys 0.23, Icarus, sby and z3.  The tests in
+    # tests/toolchain are written to run on the *host* — they `docker run` the
+    # `gatepack-toolchain:m6` image themselves — so pytest runs here on the host,
+    # not inside the container (the image carries no pytest and no docker).  This
+    # job is allowed to be slow; it is not allowed to skip.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e . pytest
 
       - name: Build the measurement toolchain image
         run: docker build -f Dockerfile.probe -t gatepack-toolchain:m6 .
 
       - name: Toolchain-dependent tests (must not skip)
         run: |
-          docker run --rm -v "$PWD:/repo" -w /repo gatepack-toolchain:m6 \
-            bash -c 'python3 -m pytest tests/toolchain -q -rs'
+          set -euo pipefail
+          mkdir -p .gpout
+          .venv/bin/pytest tests/toolchain -rs \
+            --ignore=tests/toolchain/test_core_bundle.py \
+            --ignore=tests/toolchain/test_packaging.py \
+            2>&1 | tee .gpout/toolchain-pytest.log
           # A skip here means the image did not provide what the test needed,
-          # which is indistinguishable from the test not existing. Fail loudly.
-          docker run --rm -v "$PWD:/repo" -w /repo gatepack-toolchain:m6 \
-            bash -c 'python3 -m pytest tests/toolchain -q 2>&1 | grep -q "skipped" && exit 1 || exit 0'
+          # which is indistinguishable from the test not existing.  Fail loudly.
+          if grep -q "skipped" .gpout/toolchain-pytest.log; then
+            echo "a toolchain test skipped; a skip is indistinguishable from the test not existing" >&2
+            exit 1
+          fi
 
       - name: Verify the goldens against real binaries
         run: |
@@ -92,17 +125,17 @@ jobs:
                        --library libraries/74aup.csv --out .gpout/pelican-out'
 
   desktop-packaging:
-    # Builds the unpacked Electron app (unsigned) and audits the *installed* npm
-    # tree.  The `test` job's licence audit can only see the 16-entry declared
-    # manifest; this job sees the ~500 packages that actually ship inside the
-    # renderer bundle and the asar.  `--require-node-tree` makes a missing tree
-    # a failure for the same reason the `toolchain` job fails on a skipped test:
+    # Builds the bundled Python core and the unpacked Electron app (unsigned),
+    # audits the *installed* npm tree AND the bundle, and runs the app's own
+    # tests.  The `test` job's licence audit can only see the 16-entry declared
+    # manifest; this job sees the ~500 packages that actually ship in the
+    # renderer/asar and the components that actually ship in the PyInstaller
+    # binary.  `--require-node-tree` / `--require-bundle` make a missing input a
+    # failure for the same reason the `toolchain` job fails on a skipped test:
     # an audit that ran over nothing is indistinguishable from one that did not
-    # run.
-    #
-    # This job is expected to be RED until the finding the audit surfaces is
-    # resolved: `spdx-exceptions` (CC-BY-3.0) ships inside the asar via
-    # netlistsvg's yargs CLI dependency subtree.  See docs/BUILD-NOTES-m18.md.
+    # run.  `test_core_bundle.py` and `test_packaging.py` are run with their
+    # preconditions satisfied (PyInstaller, GATEPACK_PACKAGING=1) so a skip here
+    # is a real failure, not an expected one.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -119,16 +152,36 @@ jobs:
         working-directory: app
         run: npm ci
 
+      - name: Install core + bundler
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e . pyinstaller pytest
+
       - name: Version consistency (core vs app)
-        run: python3 scripts/version_check.py
+        run: .venv/bin/python scripts/version_check.py
 
-      - name: Licence audit over the installed tree
-        run: python3 scripts/licence_audit.py --require-node-tree
+      - name: Build the bundled core (PyInstaller)
+        run: .venv/bin/python scripts/bundle_core.py
 
-      - name: Build the app (main + preload + renderer)
+      - name: Licence audit over installed tree + bundled core
+        run: .venv/bin/python scripts/licence_audit.py --require-node-tree --require-bundle
+
+      - name: Bundled-core acceptance test (must not skip)
+        run: .venv/bin/pytest tests/toolchain/test_core_bundle.py -q
+
+      - name: Typecheck (renderer + main)
         working-directory: app
-        run: npm run build
+        run: |
+          npx tsc --noEmit -p tsconfig.json
+          npx tsc --noEmit -p tsconfig.main.json
 
-      - name: Package unpacked Linux build (unsigned)
+      - name: Renderer + main tests (vitest)
         working-directory: app
-        run: npx electron-builder --linux dir
+        run: npx vitest run
+
+      - name: Package unpacked Linux build and verify the core is inside (must not skip)
+        # test_packaging.py does the app build + electron-builder itself and then
+        # asserts resources/resources/bin/gatepack is present, executable, and
+        # outside the asar — a real check on real output, not a config read.
+        run: GATEPACK_PACKAGING=1 .venv/bin/pytest tests/toolchain/test_packaging.py -q

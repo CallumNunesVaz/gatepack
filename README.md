@@ -57,17 +57,27 @@ establish the proof is not vacuous.
 
 ## Status
 
-**Pre-release. Not yet v0.1.0.** The core pipeline runs end to end against a
-real toolchain — every golden design verifies, the must-fail goldens fail, and
-two clean builds are byte-identical including the netlist and BOM. The desktop
-application launches and renders.
+**v0.1.0, unsigned.** Every milestone closes except the two corners of M18 that
+no build can self-verify: signed installers (no signing credentials exist, so
+nothing is fabricated) and a bundled *native* toolchain (yosys/sby/iverilog are
+still host tools, reported honestly by `gatepack doctor` rather than stubbed).
+
+The core pipeline runs end to end against a real toolchain — every golden
+design verifies, the must-fail goldens fail, and two clean builds are
+byte-identical including the mapped netlist and BOM. Provenance coverage is
+measured and reported on every golden (M11b). The GUI milestones (M12–M17) have
+been audited by driving the real application — `docs/GUI-AUDIT.md` — and all
+close. The Python core ships inside the app as a self-contained PyInstaller
+binary (`scripts/bundle_core.py`), and the licence audit now enumerates what
+that binary actually contains rather than the declared dependency list. A
+walkthrough from specification to BOM is in `docs/worked-example.md`.
 
 `docs/MILESTONE-AUDIT.md` is the honest status of every milestone, checked by
 running things rather than by counting tests. Read it before relying on
-anything here. Still open: provenance coverage is computed but not reported,
-packaging and signed installers do not exist, and the GUI milestones have not
-been audited the way the core was. "KiCad import clean" has never been tested
-by importing anything into KiCad.
+anything here. Two things remain open, both recorded there: "KiCad import
+clean" has never been tested by importing anything into KiCad (M10), and
+installers build **unsigned** until a maintainer supplies signing identities
+(M18).
 
 This project records what it has *measured* rather than what it assumes.
 `docs/M0-FINDINGS.md` and `docs/M6-FINDINGS.md` hold results from real Yosys and
