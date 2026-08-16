@@ -1,0 +1,67 @@
+{
+  "design": "pelican",
+  "schema_version": 1,
+  "timing_model": "synchronous",
+  "tool": "gatepack",
+  "tool_version": "0.1.0",
+  "verification": {
+    "checks": [
+      {
+        "detail": "/repo/dv/cells_sim.v:122: ERROR: Re-definition of module `\\INV'!",
+        "name": "equivalence",
+        "status": "failed"
+      },
+      {
+        "detail": "/repo/dv/cells_sim.v:122: error: 'INV' has already been declared in this scope.\n/repo/dv/cells_sim.v:5:      : It was declared here as a module.\n/repo/dv/cells_sim.v:127: Module INV was already declared here: /repo/dv/cells_sim.v:5\n\n/repo/dv/cells_sim.v:129: error: 'INV' has already been declared in this scope.\n/repo/dv/cells_sim.v:5:      : It was declared here as a module.\n/repo/dv/cells_sim.v:134: Module INV was already declared here: /repo/dv/cells_sim.v:5\n\n/repo/dv/cells_sim.v:136: error: 'NAND2' has already been declared in this scope.\n/repo/dv/cells_sim.v:19:      : It was declared here as a module.\n/repo/dv/cells_sim.v:142: Module NAND2 was already declared here: /repo/dv/cells_sim.v:19\n\n/repo/dv/cells_sim.v:144: error: 'NOR2' has already been declared in this scope.\n/repo/dv/cells_sim.v:36:      : It was declared here as a module.\n/repo/dv/cells_sim.v:150: Module NOR2 was already declared here: /repo/dv/cells_sim.v:36\n\n/repo/dv/cells_sim.v:152: error: 'AND2' has already been declared in this scope.\n/repo/dv/cells_sim.v:53:      : It was declared here as a module.\n/repo/dv/cells_sim.v:158: Module AND2 was already declared here: /repo/dv/cells_sim.v:53\n\n/repo/dv/cells_sim.v:160: error: 'OR2' has already been declared in this scope.\n/repo/dv/cells_sim.v:70:      : It was declared here as a module.\n/repo/dv/cells_sim.v:166: Module OR2 was already declared here: /repo/dv/cells_sim.v:70",
+        "name": "exhaustive simulation",
+        "status": "failed"
+      },
+      {
+        "detail": "all applicable mutations detected",
+        "name": "mutation",
+        "status": "passed"
+      },
+      {
+        "detail": "",
+        "name": "flop reset connectivity",
+        "status": "passed"
+      },
+      {
+        "detail": "",
+        "name": "supervisor parameters",
+        "status": "passed"
+      },
+      {
+        "detail": "",
+        "name": "property never_walk_with_traffic",
+        "status": "passed"
+      },
+      {
+        "detail": "",
+        "name": "property one_traffic_aspect",
+        "status": "passed"
+      }
+    ],
+    "mutations": [
+      {
+        "applicable": true,
+        "detail": "equivalence=failed, simulation=failed",
+        "detected": true,
+        "mutation": "nand_to_and"
+      },
+      {
+        "applicable": true,
+        "detail": "equivalence=failed, simulation=failed",
+        "detected": true,
+        "mutation": "flop_d_invert"
+      },
+      {
+        "applicable": true,
+        "detail": "equivalence=failed, simulation=failed",
+        "detected": true,
+        "mutation": "reset_polarity_flip"
+      }
+    ],
+    "overall": "failed"
+  }
+}

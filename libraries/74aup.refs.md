@@ -10,6 +10,20 @@
 > `revision` and `table/page` columns are filled in from a real, pinned
 > document revision. See `docs/BUILD-NOTES.md`.
 
+> **Multi-gate packages (added 2026-08-16) carry an extra unverified claim.**
+> `74AUP2G00`, `74AUP2G02`, `74AUP2G04`, `74AUP2G08`, `74AUP2G32` and
+> `74AUP3G04` assert a **gate count and a package** as well as electrical
+> values. A dual 2-input gate needs eight pins and a dual inverter six, so the
+> `VSSOP-8`/`SOT-363` split below is a plausible placeholder and nothing more.
+> Pin count, package and gate count must all be confirmed against a datasheet
+> before any of these appear on a real BOM — a wrong `gates_per_pkg` produces a
+> netlist that cannot be built, which is a worse failure than a wrong tPD.
+>
+> `area` for these rows is **not** datasheet data at all: it is gatepack's own
+> cost weight, chosen so a larger package costs more in total but less per
+> gate. It is a design decision, documented here so it is not mistaken for a
+> measurement.
+
 `gatepack lib check` fails if a row in `74aup.csv` has no entry in this table.
 
 | cell | datasheet | revision | table/page | electrical status |

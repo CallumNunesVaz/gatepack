@@ -1,0 +1,8 @@
+part_number,manufacturers,equivalents,package,quantity,refdes,tier,unit_price
+74AUP1G04,TI;Nexperia;Diodes,,SOT-353,1,U1,G,
+74AUP1G11,TI;Nexperia,,SOT-353,1,U2,G,
+74AUP1G175,TI;Nexperia,,SOT-353,11,U3;U4;U5;U6;U7;U8;U9;U10;U11;U12;U13,F,
+74AUP1G27,TI;Nexperia,,SOT-353,1,U14,G,
+74AUP2G00,TI;Nexperia,,VSSOP-8,1,U15,G,
+74AUP2G08,TI;Nexperia,,VSSOP-8,2,U16;U17,G,
+74AUP2G32,TI;Nexperia,,VSSOP-8,3,U18;U19;U20,G,

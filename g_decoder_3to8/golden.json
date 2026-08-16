@@ -1,0 +1,570 @@
+{
+  "creator": "Yosys 0.23 (git sha1 7ce5011c24b)",
+  "modules": {
+    "decoder_3to8": {
+      "attributes": {
+        "gp_src": "decoder_3to8.yaml:1:name",
+        "top": "00000000000000000000000000000001",
+        "src": "/repo/g_decoder_3to8/generated.v:5.1-81.10"
+      },
+      "ports": {
+        "clk": {
+          "direction": "input",
+          "bits": [ 2 ]
+        },
+        "rst_n": {
+          "direction": "input",
+          "bits": [ 3 ]
+        },
+        "s0": {
+          "direction": "input",
+          "bits": [ 4 ]
+        },
+        "s1": {
+          "direction": "input",
+          "bits": [ 5 ]
+        },
+        "s2": {
+          "direction": "input",
+          "bits": [ 6 ]
+        },
+        "y0": {
+          "direction": "output",
+          "bits": [ 7 ]
+        },
+        "y1": {
+          "direction": "output",
+          "bits": [ 8 ]
+        },
+        "y2": {
+          "direction": "output",
+          "bits": [ 9 ]
+        },
+        "y3": {
+          "direction": "output",
+          "bits": [ 10 ]
+        },
+        "y4": {
+          "direction": "output",
+          "bits": [ 11 ]
+        },
+        "y5": {
+          "direction": "output",
+          "bits": [ 12 ]
+        },
+        "y6": {
+          "direction": "output",
+          "bits": [ 13 ]
+        },
+        "y7": {
+          "direction": "output",
+          "bits": [ 14 ]
+        }
+      },
+      "cells": {
+        "$auto$simplemap.cc:38:simplemap_not$121": {
+          "hide_name": 1,
+          "type": "$_NOT_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:67.31-67.34"
+          },
+          "port_directions": {
+            "A": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 6 ],
+            "Y": [ 15 ]
+          }
+        },
+        "$auto$simplemap.cc:38:simplemap_not$125": {
+          "hide_name": 1,
+          "type": "$_NOT_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:73.25-73.28"
+          },
+          "port_directions": {
+            "A": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 5 ],
+            "Y": [ 16 ]
+          }
+        },
+        "$auto$simplemap.cc:38:simplemap_not$127": {
+          "hide_name": 1,
+          "type": "$_NOT_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:76.20-76.23"
+          },
+          "port_directions": {
+            "A": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 4 ],
+            "Y": [ 17 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$116": {
+          "hide_name": 1,
+          "type": "$_AND_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:58.18-58.41"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 18 ],
+            "B": [ 15 ],
+            "Y": [ 7 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$117": {
+          "hide_name": 1,
+          "type": "$_AND_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:61.19-61.29"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 4 ],
+            "B": [ 16 ],
+            "Y": [ 19 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$118": {
+          "hide_name": 1,
+          "type": "$_AND_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:61.18-61.38"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 19 ],
+            "B": [ 15 ],
+            "Y": [ 8 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$119": {
+          "hide_name": 1,
+          "type": "$_AND_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:64.19-64.29"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 17 ],
+            "B": [ 5 ],
+            "Y": [ 20 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$120": {
+          "hide_name": 1,
+          "type": "$_AND_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:64.18-64.38"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 20 ],
+            "B": [ 15 ],
+            "Y": [ 9 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$122": {
+          "hide_name": 1,
+          "type": "$_AND_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:67.18-67.35"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 21 ],
+            "B": [ 15 ],
+            "Y": [ 10 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$123": {
+          "hide_name": 1,
+          "type": "$_AND_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:70.19-70.32"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 17 ],
+            "B": [ 16 ],
+            "Y": [ 18 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$124": {
+          "hide_name": 1,
+          "type": "$_AND_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:70.18-70.38"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 18 ],
+            "B": [ 6 ],
+            "Y": [ 11 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$126": {
+          "hide_name": 1,
+          "type": "$_AND_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:73.18-73.35"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 19 ],
+            "B": [ 6 ],
+            "Y": [ 12 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$128": {
+          "hide_name": 1,
+          "type": "$_AND_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:76.18-76.35"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 20 ],
+            "B": [ 6 ],
+            "Y": [ 13 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$129": {
+          "hide_name": 1,
+          "type": "$_AND_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:79.19-79.26"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 4 ],
+            "B": [ 5 ],
+            "Y": [ 21 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$130": {
+          "hide_name": 1,
+          "type": "$_AND_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:79.18-79.32"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 21 ],
+            "B": [ 6 ],
+            "Y": [ 14 ]
+          }
+        }
+      },
+      "netnames": {
+        "$and$/repo/g_decoder_3to8/generated.v:58$10_Y": {
+          "hide_name": 1,
+          "bits": [ 18 ],
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:58.19-58.32"
+          }
+        },
+        "$and$/repo/g_decoder_3to8/generated.v:61$14_Y": {
+          "hide_name": 1,
+          "bits": [ 19 ],
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:61.19-61.29"
+          }
+        },
+        "$and$/repo/g_decoder_3to8/generated.v:64$18_Y": {
+          "hide_name": 1,
+          "bits": [ 20 ],
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:64.19-64.29"
+          }
+        },
+        "$and$/repo/g_decoder_3to8/generated.v:67$21_Y": {
+          "hide_name": 1,
+          "bits": [ 21 ],
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:67.19-67.26"
+          }
+        },
+        "$not$/repo/g_decoder_3to8/generated.v:58$11_Y": {
+          "hide_name": 1,
+          "bits": [ 15 ],
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:58.37-58.40"
+          }
+        },
+        "$not$/repo/g_decoder_3to8/generated.v:58$8_Y": {
+          "hide_name": 1,
+          "bits": [ 17 ],
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:58.20-58.23"
+          }
+        },
+        "$not$/repo/g_decoder_3to8/generated.v:58$9_Y": {
+          "hide_name": 1,
+          "bits": [ 16 ],
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:58.28-58.31"
+          }
+        },
+        "clk": {
+          "hide_name": 0,
+          "bits": [ 2 ],
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:6.14-6.17"
+          }
+        },
+        "rst_n": {
+          "hide_name": 0,
+          "bits": [ 3 ],
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:7.14-7.19"
+          }
+        },
+        "rst_n_i": {
+          "hide_name": 0,
+          "bits": [ 22 ],
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:36.8-36.15",
+            "unused_bits": "0 "
+          }
+        },
+        "rst_n_s2": {
+          "hide_name": 0,
+          "bits": [ 22 ],
+          "attributes": {
+            "gp_src": "decoder_3to8.yaml:4:reset",
+            "src": "/repo/g_decoder_3to8/generated.v:26.7-26.15",
+            "unused_bits": "0 "
+          }
+        },
+        "s0": {
+          "hide_name": 0,
+          "bits": [ 4 ],
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:8.14-8.16"
+          }
+        },
+        "s1": {
+          "hide_name": 0,
+          "bits": [ 5 ],
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:9.14-9.16"
+          }
+        },
+        "s2": {
+          "hide_name": 0,
+          "bits": [ 6 ],
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:10.14-10.16"
+          }
+        },
+        "y0": {
+          "hide_name": 0,
+          "bits": [ 7 ],
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:11.15-11.17"
+          }
+        },
+        "y0_int": {
+          "hide_name": 0,
+          "bits": [ 7 ],
+          "attributes": {
+            "gp_src": "decoder_3to8.yaml:24:output_logic.y0",
+            "src": "/repo/g_decoder_3to8/generated.v:58.8-58.14"
+          }
+        },
+        "y1": {
+          "hide_name": 0,
+          "bits": [ 8 ],
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:12.15-12.17"
+          }
+        },
+        "y1_int": {
+          "hide_name": 0,
+          "bits": [ 8 ],
+          "attributes": {
+            "gp_src": "decoder_3to8.yaml:25:output_logic.y1",
+            "src": "/repo/g_decoder_3to8/generated.v:61.8-61.14"
+          }
+        },
+        "y2": {
+          "hide_name": 0,
+          "bits": [ 9 ],
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:13.15-13.17"
+          }
+        },
+        "y2_int": {
+          "hide_name": 0,
+          "bits": [ 9 ],
+          "attributes": {
+            "gp_src": "decoder_3to8.yaml:26:output_logic.y2",
+            "src": "/repo/g_decoder_3to8/generated.v:64.8-64.14"
+          }
+        },
+        "y3": {
+          "hide_name": 0,
+          "bits": [ 10 ],
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:14.15-14.17"
+          }
+        },
+        "y3_int": {
+          "hide_name": 0,
+          "bits": [ 10 ],
+          "attributes": {
+            "gp_src": "decoder_3to8.yaml:27:output_logic.y3",
+            "src": "/repo/g_decoder_3to8/generated.v:67.8-67.14"
+          }
+        },
+        "y4": {
+          "hide_name": 0,
+          "bits": [ 11 ],
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:15.15-15.17"
+          }
+        },
+        "y4_int": {
+          "hide_name": 0,
+          "bits": [ 11 ],
+          "attributes": {
+            "gp_src": "decoder_3to8.yaml:28:output_logic.y4",
+            "src": "/repo/g_decoder_3to8/generated.v:70.8-70.14"
+          }
+        },
+        "y5": {
+          "hide_name": 0,
+          "bits": [ 12 ],
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:16.15-16.17"
+          }
+        },
+        "y5_int": {
+          "hide_name": 0,
+          "bits": [ 12 ],
+          "attributes": {
+            "gp_src": "decoder_3to8.yaml:29:output_logic.y5",
+            "src": "/repo/g_decoder_3to8/generated.v:73.8-73.14"
+          }
+        },
+        "y6": {
+          "hide_name": 0,
+          "bits": [ 13 ],
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:17.15-17.17"
+          }
+        },
+        "y6_int": {
+          "hide_name": 0,
+          "bits": [ 13 ],
+          "attributes": {
+            "gp_src": "decoder_3to8.yaml:30:output_logic.y6",
+            "src": "/repo/g_decoder_3to8/generated.v:76.8-76.14"
+          }
+        },
+        "y7": {
+          "hide_name": 0,
+          "bits": [ 14 ],
+          "attributes": {
+            "src": "/repo/g_decoder_3to8/generated.v:18.15-18.17"
+          }
+        },
+        "y7_int": {
+          "hide_name": 0,
+          "bits": [ 14 ],
+          "attributes": {
+            "gp_src": "decoder_3to8.yaml:31:output_logic.y7",
+            "src": "/repo/g_decoder_3to8/generated.v:79.8-79.14"
+          }
+        }
+      }
+    }
+  }
+}

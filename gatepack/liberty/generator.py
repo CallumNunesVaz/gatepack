@@ -112,6 +112,9 @@ def generate(
     if not included:
         raise LibertyError("no cells eligible for the Liberty file")
 
+    # One block per distinct cell — see parts.representative_parts for why.
+    included = parts_mod.representative_parts(included)
+
     blocks = [_cell_block(part) for part in included]
     text = _library_text(library_name, blocks)
 

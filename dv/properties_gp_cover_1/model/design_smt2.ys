@@ -1,0 +1,6 @@
+# running in /repo/dv/properties_gp_cover_1/model/
+read_ilang design_prep.il
+hierarchy -smtcheck
+dffunmap
+stat
+write_smt2 -wires design_smt2.smt2

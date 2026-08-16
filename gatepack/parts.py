@@ -245,6 +245,40 @@ def select_for_liberty(
     return included, excluded
 
 
+def representative_parts(parts: Sequence[Part]) -> list[Part]:
+    """One part per distinct cell — the representative of that logic function.
+
+    A function can be offered by several packages (74AUP1G00 holds one NAND2,
+    74AUP2G00 holds two). Liberty and ``cells_sim.v`` describe *functions*, so
+    each must appear exactly once in both; which physical package provides it
+    is the packer's decision, made later and separately.
+
+    Emitting one entry per part instead produces a Liberty file with two
+    `cell (NAND2)` groups — malformed in the way R1 warns about, since it
+    parses and silently keeps the last — and a `cells_sim.v` with duplicate
+    module definitions, which Icarus rejects outright.
+
+    The representative is the fewest gates per package, then the lowest part
+    suffix, so it does not depend on CSV row order. Order of the result is
+    first appearance: sorting would change the emitted library for every
+    existing design and perturb both ABC's mapping and the §5.5
+    byte-reproducibility check, for no benefit.
+    """
+    chosen: dict[str, Part] = {}
+    order: list[str] = []
+    for part in parts:
+        current = chosen.get(part.cell)
+        if current is None:
+            chosen[part.cell] = part
+            order.append(part.cell)
+        elif (part.gates_per_pkg, part.part_suffix) < (
+            current.gates_per_pkg,
+            current.part_suffix,
+        ):
+            chosen[part.cell] = part
+    return [chosen[name] for name in order]
+
+
 def _split_semicolon(raw: str | None) -> list[str]:
     if raw is None:
         return []

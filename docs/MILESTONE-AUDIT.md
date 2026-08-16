@@ -17,7 +17,7 @@ tool closes, the only evidence that counts is that tool closing.
 | M5 | Equivalence closes on all goldens; exhaustive sim; mutation | **met** (2026-08-16) |
 | M6 | sby discharges invariants/reachability/liveness; covers guard vacuity | **met** (2026-08-16) |
 | M8 | CNT4 + SUPERVISOR + tie-off; shared behavioural models | **met** |
-| M9 | `pack_cost`; spare avoidance; deterministic; override works | **met, but inert** |
+| M9 | `pack_cost`; spare avoidance; deterministic; override works | **met** (2026-08-16) |
 | M10 | KiCad import clean; SCOAP delta; stuck-at classification | **partial** — analysis met, KiCad import unverified |
 | M11a | Two clean builds hash-identical | **met** (2026-08-16) |
 | M11b | Provenance coverage measured and reported on every golden | **NOT MET** |
@@ -82,7 +82,7 @@ traffic_light   passed — an honest mutex is not rejected
 Liveness is emitted as a bounded check reporting `bounded` with its depth,
 never `passed`.
 
-## M9 — met, but structurally inert with the shipped library
+## M9 — met (2026-08-16), after the library gained multi-gate parts
 
 The packer works and is deterministic. It also cannot ever save anything,
 because **every part in `libraries/74aup.csv` is one gate per package**:
@@ -103,9 +103,36 @@ parts exist (`74AUP2G00`, `74AUP2G08`, `74AUP3G04` …) in SOT-363/SOT-363-6 and
 similar. Until at least one is added with its datasheet citation, C5 is dead
 weight in every build and its exit criterion is unfalsifiable.
 
-Two honest options, and the choice should be deliberate rather than drift:
-add multi-gate parts and let the packer earn its place, or state in §12 C5 that
-packing is inert for v0.1.0's library and defer it.
+**Resolved by adding the parts.** `74AUP2G00/2G02/2G04/2G08/2G32` and
+`74AUP3G04` are now in the library, and the packer immediately earns its place
+on the showcase:
+
+```
+before   23 package(s), 0 spare gate(s), pack_cost 23
+after    20 package(s), 3 spare gate(s), pack_cost 32
+```
+
+Spare gates can now exist, so "spare avoidance" is falsifiable and `pack_cost`
+is no longer just the package count. Every golden still verifies and the build
+is still byte-reproducible (10 artefacts).
+
+Two defects surfaced the moment a function was offered by more than one
+package, both the same shape and neither reachable before:
+
+- the Liberty generator emitted **one block per part**, so a second `NAND2`
+  row produced two `cell (NAND2)` groups — malformed in exactly the way R1
+  warns about, since it parses and silently keeps the last;
+- `cells_sim.v` emitted duplicate module definitions, which Icarus rejects
+  outright — equivalence and exhaustive simulation both failed instantly.
+
+Both now go through one shared `parts.representative_parts`, because the whole
+point of generating the two artefacts from the same source is that they cannot
+drift.
+
+The electrical values, the packages and the gate counts are all placeholders
+pending citation, marked as such in `74aup.refs.md` — a wrong `gates_per_pkg`
+yields a netlist that cannot be built, which is a worse failure than a wrong
+tPD, so it is called out separately there.
 
 ## M10 — not met
 

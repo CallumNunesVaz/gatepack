@@ -1,0 +1,57 @@
+{
+  "design": "vacuous_mutex",
+  "schema_version": 1,
+  "timing_model": "synchronous",
+  "tool": "gatepack",
+  "tool_version": "0.1.0",
+  "verification": {
+    "checks": [
+      {
+        "detail": "",
+        "name": "equivalence",
+        "status": "passed"
+      },
+      {
+        "detail": "",
+        "name": "exhaustive simulation",
+        "status": "passed"
+      },
+      {
+        "detail": "one or more mutations NOT detected: reset_polarity_flip",
+        "name": "mutation",
+        "status": "failed"
+      },
+      {
+        "detail": "",
+        "name": "flop reset connectivity",
+        "status": "passed"
+      },
+      {
+        "detail": "vacuous pass rejected (signal 'b' asserted): the property holds only because its antecedent never occurs \u2014 cover statement gp_cover_0_1 not reached (vacuous antecedent)",
+        "name": "property never_both",
+        "status": "failed"
+      }
+    ],
+    "mutations": [
+      {
+        "applicable": true,
+        "detail": "equivalence=failed, simulation=failed",
+        "detected": true,
+        "mutation": "nand_to_and"
+      },
+      {
+        "applicable": true,
+        "detail": "equivalence=failed, simulation=failed",
+        "detected": true,
+        "mutation": "flop_d_invert"
+      },
+      {
+        "applicable": true,
+        "detail": "equivalence=failed, simulation=passed",
+        "detected": false,
+        "mutation": "reset_polarity_flip"
+      }
+    ],
+    "overall": "failed"
+  }
+}

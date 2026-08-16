@@ -1,0 +1,989 @@
+{
+  "creator": "Yosys 0.23 (git sha1 7ce5011c24b)",
+  "modules": {
+    "pelican": {
+      "attributes": {
+        "gp_src": "design.yaml:23:name",
+        "top": "00000000000000000000000000000001",
+        "src": "/repo/g_design/generated.v:5.1-134.10"
+      },
+      "ports": {
+        "clk": {
+          "direction": "input",
+          "bits": [ 2 ]
+        },
+        "rst_n": {
+          "direction": "input",
+          "bits": [ 3 ]
+        },
+        "request": {
+          "direction": "input",
+          "bits": [ 4 ]
+        },
+        "hold": {
+          "direction": "input",
+          "bits": [ 5 ]
+        },
+        "traffic_red": {
+          "direction": "output",
+          "bits": [ 6 ]
+        },
+        "traffic_amber": {
+          "direction": "output",
+          "bits": [ 7 ]
+        },
+        "traffic_green": {
+          "direction": "output",
+          "bits": [ 8 ]
+        },
+        "walk": {
+          "direction": "output",
+          "bits": [ 9 ]
+        }
+      },
+      "cells": {
+        "$auto$ff.cc:266:slice$137": {
+          "hide_name": 1,
+          "type": "$_DFF_PN0_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:102.3-116.6"
+          },
+          "port_directions": {
+            "C": "input",
+            "D": "input",
+            "Q": "output",
+            "R": "input"
+          },
+          "connections": {
+            "C": [ 2 ],
+            "D": [ 10 ],
+            "Q": [ 8 ],
+            "R": [ 11 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$138": {
+          "hide_name": 1,
+          "type": "$_DFF_PN0_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:102.3-116.6"
+          },
+          "port_directions": {
+            "C": "input",
+            "D": "input",
+            "Q": "output",
+            "R": "input"
+          },
+          "connections": {
+            "C": [ 2 ],
+            "D": [ 12 ],
+            "Q": [ 7 ],
+            "R": [ 11 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$139": {
+          "hide_name": 1,
+          "type": "$_DFF_PN0_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:102.3-116.6"
+          },
+          "port_directions": {
+            "C": "input",
+            "D": "input",
+            "Q": "output",
+            "R": "input"
+          },
+          "connections": {
+            "C": [ 2 ],
+            "D": [ 13 ],
+            "Q": [ 14 ],
+            "R": [ 11 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$140": {
+          "hide_name": 1,
+          "type": "$_DFF_PN0_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:102.3-116.6"
+          },
+          "port_directions": {
+            "C": "input",
+            "D": "input",
+            "Q": "output",
+            "R": "input"
+          },
+          "connections": {
+            "C": [ 2 ],
+            "D": [ 15 ],
+            "Q": [ 9 ],
+            "R": [ 11 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$141": {
+          "hide_name": 1,
+          "type": "$_DFF_PN0_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:102.3-116.6"
+          },
+          "port_directions": {
+            "C": "input",
+            "D": "input",
+            "Q": "output",
+            "R": "input"
+          },
+          "connections": {
+            "C": [ 2 ],
+            "D": [ 9 ],
+            "Q": [ 16 ],
+            "R": [ 11 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$142": {
+          "hide_name": 1,
+          "type": "$_DFF_PN0_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:52.3-60.6"
+          },
+          "port_directions": {
+            "C": "input",
+            "D": "input",
+            "Q": "output",
+            "R": "input"
+          },
+          "connections": {
+            "C": [ 2 ],
+            "D": [ "1" ],
+            "Q": [ 17 ],
+            "R": [ 3 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$143": {
+          "hide_name": 1,
+          "type": "$_DFF_PN0_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:52.3-60.6"
+          },
+          "port_directions": {
+            "C": "input",
+            "D": "input",
+            "Q": "output",
+            "R": "input"
+          },
+          "connections": {
+            "C": [ 2 ],
+            "D": [ 17 ],
+            "Q": [ 11 ],
+            "R": [ 3 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$144": {
+          "hide_name": 1,
+          "type": "$_DFF_PN0_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:36.3-44.6"
+          },
+          "port_directions": {
+            "C": "input",
+            "D": "input",
+            "Q": "output",
+            "R": "input"
+          },
+          "connections": {
+            "C": [ 2 ],
+            "D": [ 5 ],
+            "Q": [ 18 ],
+            "R": [ 3 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$145": {
+          "hide_name": 1,
+          "type": "$_DFF_PN0_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:36.3-44.6"
+          },
+          "port_directions": {
+            "C": "input",
+            "D": "input",
+            "Q": "output",
+            "R": "input"
+          },
+          "connections": {
+            "C": [ 2 ],
+            "D": [ 18 ],
+            "Q": [ 19 ],
+            "R": [ 3 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$146": {
+          "hide_name": 1,
+          "type": "$_DFF_PN0_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:21.3-29.6"
+          },
+          "port_directions": {
+            "C": "input",
+            "D": "input",
+            "Q": "output",
+            "R": "input"
+          },
+          "connections": {
+            "C": [ 2 ],
+            "D": [ 4 ],
+            "Q": [ 20 ],
+            "R": [ 3 ]
+          }
+        },
+        "$auto$ff.cc:266:slice$147": {
+          "hide_name": 1,
+          "type": "$_DFF_PN0_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:21.3-29.6"
+          },
+          "port_directions": {
+            "C": "input",
+            "D": "input",
+            "Q": "output",
+            "R": "input"
+          },
+          "connections": {
+            "C": [ 2 ],
+            "D": [ 20 ],
+            "Q": [ 21 ],
+            "R": [ 3 ]
+          }
+        },
+        "$auto$simplemap.cc:38:simplemap_not$121": {
+          "hide_name": 1,
+          "type": "$_NOT_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:77.28-77.38"
+          },
+          "port_directions": {
+            "A": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 21 ],
+            "Y": [ 22 ]
+          }
+        },
+        "$auto$simplemap.cc:38:simplemap_not$124": {
+          "hide_name": 1,
+          "type": "$_NOT_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:81.29-81.36"
+          },
+          "port_directions": {
+            "A": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 19 ],
+            "Y": [ 23 ]
+          }
+        },
+        "$auto$simplemap.cc:38:simplemap_not$133": {
+          "hide_name": 1,
+          "type": "$_NOT_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:101.23-101.36"
+          },
+          "port_directions": {
+            "A": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 24 ],
+            "Y": [ 25 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$119": {
+          "hide_name": 1,
+          "type": "$_AND_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:75.27-75.48"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 21 ],
+            "B": [ 23 ],
+            "Y": [ 26 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$120": {
+          "hide_name": 1,
+          "type": "$_AND_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:75.15-75.49"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 8 ],
+            "B": [ 26 ],
+            "Y": [ 12 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$122": {
+          "hide_name": 1,
+          "type": "$_OR_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:77.27-77.48"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 22 ],
+            "B": [ 19 ],
+            "Y": [ 27 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$123": {
+          "hide_name": 1,
+          "type": "$_AND_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:77.15-77.49"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 8 ],
+            "B": [ 27 ],
+            "Y": [ 28 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$125": {
+          "hide_name": 1,
+          "type": "$_AND_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:81.15-81.37"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 14 ],
+            "B": [ 23 ],
+            "Y": [ 15 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$126": {
+          "hide_name": 1,
+          "type": "$_AND_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:83.15-83.34"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 14 ],
+            "B": [ 19 ],
+            "Y": [ 29 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$127": {
+          "hide_name": 1,
+          "type": "$_OR_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:89.18-89.27"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 28 ],
+            "B": [ 16 ],
+            "Y": [ 10 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$128": {
+          "hide_name": 1,
+          "type": "$_OR_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:93.20-93.29"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 7 ],
+            "B": [ 29 ],
+            "Y": [ 30 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$129": {
+          "hide_name": 1,
+          "type": "$_OR_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:99.24-99.45"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 8 ],
+            "B": [ 7 ],
+            "Y": [ 31 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$130": {
+          "hide_name": 1,
+          "type": "$_OR_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:99.24-99.58"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 31 ],
+            "B": [ 14 ],
+            "Y": [ 32 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$131": {
+          "hide_name": 1,
+          "type": "$_OR_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:99.24-99.72"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 32 ],
+            "B": [ 9 ],
+            "Y": [ 33 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$132": {
+          "hide_name": 1,
+          "type": "$_OR_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:99.24-99.86"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 33 ],
+            "B": [ 16 ],
+            "Y": [ 24 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$134": {
+          "hide_name": 1,
+          "type": "$_OR_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:112.21-112.45"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 30 ],
+            "B": [ 25 ],
+            "Y": [ 13 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$135": {
+          "hide_name": 1,
+          "type": "$_OR_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:119.28-119.52"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 14 ],
+            "B": [ 9 ],
+            "Y": [ 34 ]
+          }
+        },
+        "$auto$simplemap.cc:86:simplemap_bitop$136": {
+          "hide_name": 1,
+          "type": "$_OR_",
+          "parameters": {
+          },
+          "attributes": {
+            "src": "/repo/g_design/generated.v:119.27-119.67"
+          },
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 34 ],
+            "B": [ 16 ],
+            "Y": [ 6 ]
+          }
+        }
+      },
+      "netnames": {
+        "$0\\state_STOP[0:0]": {
+          "hide_name": 1,
+          "bits": [ 13 ],
+          "attributes": {
+            "src": "/repo/g_design/generated.v:102.3-116.6"
+          }
+        },
+        "$and$/repo/g_design/generated.v:75$8_Y": {
+          "hide_name": 1,
+          "bits": [ 26 ],
+          "attributes": {
+            "src": "/repo/g_design/generated.v:75.27-75.48"
+          }
+        },
+        "$not$/repo/g_design/generated.v:75$7_Y": {
+          "hide_name": 1,
+          "bits": [ 23 ],
+          "attributes": {
+            "src": "/repo/g_design/generated.v:75.40-75.47"
+          }
+        },
+        "$not$/repo/g_design/generated.v:77$10_Y": {
+          "hide_name": 1,
+          "bits": [ 22 ],
+          "attributes": {
+            "src": "/repo/g_design/generated.v:77.28-77.38"
+          }
+        },
+        "$or$/repo/g_design/generated.v:119$29_Y": {
+          "hide_name": 1,
+          "bits": [ 34 ],
+          "attributes": {
+            "src": "/repo/g_design/generated.v:119.28-119.52"
+          }
+        },
+        "$or$/repo/g_design/generated.v:77$11_Y": {
+          "hide_name": 1,
+          "bits": [ 27 ],
+          "attributes": {
+            "src": "/repo/g_design/generated.v:77.27-77.48"
+          }
+        },
+        "$or$/repo/g_design/generated.v:99$21_Y": {
+          "hide_name": 1,
+          "bits": [ 31 ],
+          "attributes": {
+            "src": "/repo/g_design/generated.v:99.24-99.45"
+          }
+        },
+        "$or$/repo/g_design/generated.v:99$22_Y": {
+          "hide_name": 1,
+          "bits": [ 32 ],
+          "attributes": {
+            "src": "/repo/g_design/generated.v:99.24-99.58"
+          }
+        },
+        "$or$/repo/g_design/generated.v:99$23_Y": {
+          "hide_name": 1,
+          "bits": [ 33 ],
+          "attributes": {
+            "src": "/repo/g_design/generated.v:99.24-99.72"
+          }
+        },
+        "clk": {
+          "hide_name": 0,
+          "bits": [ 2 ],
+          "attributes": {
+            "src": "/repo/g_design/generated.v:6.14-6.17"
+          }
+        },
+        "hold": {
+          "hide_name": 0,
+          "bits": [ 5 ],
+          "attributes": {
+            "src": "/repo/g_design/generated.v:9.14-9.18"
+          }
+        },
+        "hold_i": {
+          "hide_name": 0,
+          "bits": [ 19 ],
+          "attributes": {
+            "src": "/repo/g_design/generated.v:45.8-45.14"
+          }
+        },
+        "hold_s1": {
+          "hide_name": 0,
+          "bits": [ 18 ],
+          "attributes": {
+            "gp_src": "design.yaml:45:inputs[1]",
+            "src": "/repo/g_design/generated.v:33.7-33.14"
+          }
+        },
+        "hold_s2": {
+          "hide_name": 0,
+          "bits": [ 19 ],
+          "attributes": {
+            "gp_src": "design.yaml:45:inputs[1]",
+            "src": "/repo/g_design/generated.v:35.7-35.14"
+          }
+        },
+        "next_CLEAR": {
+          "hide_name": 0,
+          "bits": [ 9 ],
+          "attributes": {
+            "gp_src": "design.yaml:55:states",
+            "src": "/repo/g_design/generated.v:97.8-97.18"
+          }
+        },
+        "next_CROSS": {
+          "hide_name": 0,
+          "bits": [ 15 ],
+          "attributes": {
+            "gp_src": "design.yaml:55:states",
+            "src": "/repo/g_design/generated.v:95.8-95.18"
+          }
+        },
+        "next_GO": {
+          "hide_name": 0,
+          "bits": [ 10 ],
+          "attributes": {
+            "gp_src": "design.yaml:55:states",
+            "src": "/repo/g_design/generated.v:89.8-89.15"
+          }
+        },
+        "next_STOP": {
+          "hide_name": 0,
+          "bits": [ 30 ],
+          "attributes": {
+            "gp_src": "design.yaml:55:states",
+            "src": "/repo/g_design/generated.v:93.8-93.17"
+          }
+        },
+        "next_WARN": {
+          "hide_name": 0,
+          "bits": [ 12 ],
+          "attributes": {
+            "gp_src": "design.yaml:55:states",
+            "src": "/repo/g_design/generated.v:91.8-91.17"
+          }
+        },
+        "request": {
+          "hide_name": 0,
+          "bits": [ 4 ],
+          "attributes": {
+            "src": "/repo/g_design/generated.v:8.14-8.21"
+          }
+        },
+        "request_i": {
+          "hide_name": 0,
+          "bits": [ 21 ],
+          "attributes": {
+            "src": "/repo/g_design/generated.v:30.8-30.17"
+          }
+        },
+        "request_s1": {
+          "hide_name": 0,
+          "bits": [ 20 ],
+          "attributes": {
+            "gp_src": "design.yaml:43:inputs[0]",
+            "src": "/repo/g_design/generated.v:18.7-18.17"
+          }
+        },
+        "request_s2": {
+          "hide_name": 0,
+          "bits": [ 21 ],
+          "attributes": {
+            "gp_src": "design.yaml:43:inputs[0]",
+            "src": "/repo/g_design/generated.v:20.7-20.17"
+          }
+        },
+        "rst_n": {
+          "hide_name": 0,
+          "bits": [ 3 ],
+          "attributes": {
+            "src": "/repo/g_design/generated.v:7.14-7.19"
+          }
+        },
+        "rst_n_i": {
+          "hide_name": 0,
+          "bits": [ 11 ],
+          "attributes": {
+            "src": "/repo/g_design/generated.v:61.8-61.15"
+          }
+        },
+        "rst_n_s1": {
+          "hide_name": 0,
+          "bits": [ 17 ],
+          "attributes": {
+            "gp_src": "design.yaml:31:reset",
+            "src": "/repo/g_design/generated.v:49.7-49.15"
+          }
+        },
+        "rst_n_s2": {
+          "hide_name": 0,
+          "bits": [ 11 ],
+          "attributes": {
+            "gp_src": "design.yaml:31:reset",
+            "src": "/repo/g_design/generated.v:51.7-51.15"
+          }
+        },
+        "set_feedback": {
+          "hide_name": 0,
+          "bits": [ 25 ],
+          "attributes": {
+            "gp_src": "design.yaml:55:states",
+            "src": "/repo/g_design/generated.v:101.8-101.20"
+          }
+        },
+        "state_CLEAR": {
+          "hide_name": 0,
+          "bits": [ 16 ],
+          "attributes": {
+            "gp_src": "design.yaml:55:states",
+            "src": "/repo/g_design/generated.v:73.7-73.18"
+          }
+        },
+        "state_CROSS": {
+          "hide_name": 0,
+          "bits": [ 9 ],
+          "attributes": {
+            "gp_src": "design.yaml:55:states",
+            "src": "/repo/g_design/generated.v:71.7-71.18"
+          }
+        },
+        "state_GO": {
+          "hide_name": 0,
+          "bits": [ 8 ],
+          "attributes": {
+            "gp_src": "design.yaml:55:states",
+            "src": "/repo/g_design/generated.v:65.7-65.15"
+          }
+        },
+        "state_STOP": {
+          "hide_name": 0,
+          "bits": [ 14 ],
+          "attributes": {
+            "gp_src": "design.yaml:55:states",
+            "src": "/repo/g_design/generated.v:69.7-69.17"
+          }
+        },
+        "state_WARN": {
+          "hide_name": 0,
+          "bits": [ 7 ],
+          "attributes": {
+            "gp_src": "design.yaml:55:states",
+            "src": "/repo/g_design/generated.v:67.7-67.17"
+          }
+        },
+        "state_active": {
+          "hide_name": 0,
+          "bits": [ 24 ],
+          "attributes": {
+            "gp_src": "design.yaml:55:states",
+            "src": "/repo/g_design/generated.v:99.8-99.20"
+          }
+        },
+        "t_0": {
+          "hide_name": 0,
+          "bits": [ 12 ],
+          "attributes": {
+            "gp_src": "design.yaml:60:transitions[0]",
+            "src": "/repo/g_design/generated.v:75.8-75.11"
+          }
+        },
+        "t_1": {
+          "hide_name": 0,
+          "bits": [ 28 ],
+          "attributes": {
+            "gp_src": "design.yaml:61:transitions[1]",
+            "src": "/repo/g_design/generated.v:77.8-77.11"
+          }
+        },
+        "t_2": {
+          "hide_name": 0,
+          "bits": [ 7 ],
+          "attributes": {
+            "gp_src": "design.yaml:63:transitions[2]",
+            "src": "/repo/g_design/generated.v:79.8-79.11"
+          }
+        },
+        "t_3": {
+          "hide_name": 0,
+          "bits": [ 15 ],
+          "attributes": {
+            "gp_src": "design.yaml:64:transitions[3]",
+            "src": "/repo/g_design/generated.v:81.8-81.11"
+          }
+        },
+        "t_4": {
+          "hide_name": 0,
+          "bits": [ 29 ],
+          "attributes": {
+            "gp_src": "design.yaml:65:transitions[4]",
+            "src": "/repo/g_design/generated.v:83.8-83.11"
+          }
+        },
+        "t_5": {
+          "hide_name": 0,
+          "bits": [ 9 ],
+          "attributes": {
+            "gp_src": "design.yaml:67:transitions[5]",
+            "src": "/repo/g_design/generated.v:85.8-85.11"
+          }
+        },
+        "t_6": {
+          "hide_name": 0,
+          "bits": [ 16 ],
+          "attributes": {
+            "gp_src": "design.yaml:68:transitions[6]",
+            "src": "/repo/g_design/generated.v:87.8-87.11"
+          }
+        },
+        "traffic_amber": {
+          "hide_name": 0,
+          "bits": [ 7 ],
+          "attributes": {
+            "src": "/repo/g_design/generated.v:11.15-11.28"
+          }
+        },
+        "traffic_amber_int": {
+          "hide_name": 0,
+          "bits": [ 7 ],
+          "attributes": {
+            "gp_src": "design.yaml:75:output_logic.traffic_amber",
+            "src": "/repo/g_design/generated.v:122.8-122.25"
+          }
+        },
+        "traffic_green": {
+          "hide_name": 0,
+          "bits": [ 8 ],
+          "attributes": {
+            "src": "/repo/g_design/generated.v:12.15-12.28"
+          }
+        },
+        "traffic_green_int": {
+          "hide_name": 0,
+          "bits": [ 8 ],
+          "attributes": {
+            "gp_src": "design.yaml:76:output_logic.traffic_green",
+            "src": "/repo/g_design/generated.v:125.8-125.25"
+          }
+        },
+        "traffic_red": {
+          "hide_name": 0,
+          "bits": [ 6 ],
+          "attributes": {
+            "src": "/repo/g_design/generated.v:10.15-10.26"
+          }
+        },
+        "traffic_red_int": {
+          "hide_name": 0,
+          "bits": [ 6 ],
+          "attributes": {
+            "gp_src": "design.yaml:74:output_logic.traffic_red",
+            "src": "/repo/g_design/generated.v:119.8-119.23"
+          }
+        },
+        "walk": {
+          "hide_name": 0,
+          "bits": [ 9 ],
+          "attributes": {
+            "src": "/repo/g_design/generated.v:13.15-13.19"
+          }
+        },
+        "walk_int": {
+          "hide_name": 0,
+          "bits": [ 9 ],
+          "attributes": {
+            "gp_src": "design.yaml:77:output_logic.walk",
+            "src": "/repo/g_design/generated.v:128.8-128.16"
+          }
+        }
+      }
+    }
+  }
+}
