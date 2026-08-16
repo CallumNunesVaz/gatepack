@@ -16,12 +16,15 @@ tool closes, the only evidence that counts is that tool closing.
 | M4 | Sync path through the interface; async refuses cleanly | **met** |
 | M5 | Equivalence closes on all goldens; exhaustive sim; mutation | **met** (2026-08-16) |
 | M6 | sby discharges invariants/reachability/liveness; covers guard vacuity | **met** (2026-08-16) |
-| M8 | CNT4 + SUPERVISOR + tie-off; shared behavioural models | **met** |
+| M8 | CNT4 + SUPERVISOR + tie-off; shared behavioural models | **met**, depth unverified |
 | M9 | `pack_cost`; spare avoidance; deterministic; override works | **met** (2026-08-16) |
 | M10 | KiCad import clean; SCOAP delta; stuck-at classification | **partial** — analysis met, KiCad import unverified |
 | M11a | Two clean builds hash-identical | **met** (2026-08-16) |
-| M11b | Provenance coverage measured and reported on every golden | **NOT MET** |
+| M11b | Provenance coverage measured and reported on every golden | **met** (2026-08-16) |
 | M12 | Project opens; core invoked; §5.2 posture verified | **met** |
+| M13–M16 | Spec editor, truth table, schematic, linked selection | **unaudited** |
+| M17 | C13 packing override, C14 dashboard, C15 tri-state | **met** (2026-08-16) |
+| M18 | Signed installers; worked example; CI green | **partial** — packaging builds, licence defects open, core does not ship |
 
 ## M5 — met (2026-08-16)
 
@@ -196,20 +199,77 @@ measured. Without Yosys the script still runs but reports explicitly that the
 criterion is **not** fully exercised, so a partial run cannot be mistaken for a
 full one. Wired into the CI `toolchain` job.
 
-## M11b — not met
+## M11b — met (2026-08-16)
 
-The machinery exists — `provenance/match.py` computes `coverage_by_carrier` —
-but nothing reports it. No golden test measures coverage, and the generated
-report has no provenance section at all. The criterion is explicitly "coverage
-measured and **reported** on every golden; partial links explicit".
+The report now carries a measured provenance section. On the showcase:
 
-This matters more than a missing report section: M11b is what M16's linked
-selection consumes, and the measured coverage is uneven in a way a user must be
-told about — 16/22 nets on the traffic light, but only **2 of 5 transitions**
-(M0-FINDINGS §4a). A UI that silently highlights nothing for 3 of 5 transitions
-reads as a bug.
+```
+kind            total  exact  inferred  absent
+states            1      1       0         0
+transitions       7      5       0         2
+output_logic      4      4       0         0
+inputs            2      2       0         0
+reset             1      1       0         0
 
-**Not yet delegated.** It is the obvious next piece of work.
+Constructs with no link: transitions[1], transitions[4]
+```
+
+The unlinked constructs are **named** rather than hidden behind the 86.7%
+aggregate, and the section says so: "the per-kind table is the figure that
+matters; the aggregate conceals a weak axis such as transitions at 2/5".
+
+Two name-space mismatches were fixed on the way, and a third was found from
+outside its own scope by the same delegation: `map.ts` asked for `states[i]`
+while C1 emits the bare token `states`, so **every state selection read "no
+link"** despite states having the best provenance of any construct kind. See
+the M13–M16 entry — that is a GUI defect that the GUI's own tests did not
+catch.
+
+## M13–M16 — unaudited
+
+Merged on their test counts, which is the same evidence that failed on M5, M10
+and M9. Never driven as a real application. The `states[i]` defect above is one
+already-known example of what that misses: it was found by a core agent reading
+the renderer, not by the renderer's 147 passing tests.
+
+Being audited now (`deepseek/gui2`).
+
+## M17 — met (2026-08-16)
+
+C13 renders package cards with drag-to-regroup persisting to
+`packing.force_groups` in `design.yaml`; C14 renders metrics against the
+constraints block, red on `Metric.violated` (taken from the core, never
+recomputed in the renderer); C15 already used the four-state badge.
+
+Two things had to be fixed for it to be true rather than merely present:
+
+- the "grouping is inert" note was **hardcoded**, and became a false statement
+  about the user's design an hour later when the library gained multi-gate
+  parts. `BomLine.gatesPerPackage` now carries the fact and the view derives
+  the claim. The test checks both directions.
+- `force_groups` had never worked at all (see M9), so the override the view
+  persists would have been refused on every rebuild.
+
+## M18 — partial
+
+`electron-builder` config exists and `--linux dir` builds an app that launches.
+`scripts/version_check.py` prevents pyproject/package.json drift. The licence
+audit now walks the full installed npm tree instead of a 16-entry manifest, and
+immediately found two real §4 defects:
+
+- **`spdx-exceptions` (CC-BY-3.0) ships in the asar**, via netlistsvg's `yargs`
+  CLI subtree. Not GPL-compatible. The audit fails on it, exit 1.
+- **The shipped `elkjs` is EPL-1.0, not the EPL-2.0 §4 records.** netlistsvg
+  bundles its own `elkjs@0.3.0`. §4's argument for accepting elkjs rests on
+  EPL-2.0's secondary-licence provision, which EPL-1.0 does not have.
+
+CI's `desktop-packaging` job is expected red until both are remediated
+(`deepseek/licence2`).
+
+**The Python core does not ship inside the app.** `resources/bin/` is empty and
+bundling Python plus yosys/sby/espresso/iverilog per platform is a separate
+milestone. Stated in `docs/RELEASING.md` rather than papered over — but it
+means "signed installers" cannot be claimed as met.
 
 ## What changed as a result
 
