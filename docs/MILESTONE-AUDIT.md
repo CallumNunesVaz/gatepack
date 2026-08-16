@@ -26,7 +26,7 @@ tool closes, the only evidence that counts is that tool closing.
 | M14 | C11 truth table — divergence highlighting | **met** (2026-08-16, was NOT met) |
 | M15 | C12 schematic — all layers | **NOT MET** — layers are text notices; `mappedNetlist()` calls a missing subcommand |
 | M16 | Linked selection — §15.2 cross-highlights | **NOT MET** — `provenance()`/`analyse()`/`mappedNetlist()` all call missing subcommands |
-| M17 | C13 packing override, C14 dashboard, C15 tri-state | **partial** — override does not round-trip |
+| M17 | C13 packing override, C14 dashboard, C15 tri-state | **met** (2026-08-16) |
 | M18 | Signed installers; worked example; CI green | **partial** — packaging builds, licence defects open, core does not ship |
 
 ## M5 — met (2026-08-16)
@@ -253,12 +253,19 @@ Now measured against a real netlist: correct netlist agrees on all four
 minterms; `XOR2` swapped for `AND2` diverges on exactly the three minterms
 where AND and XOR differ (`tests/toolchain/test_simulate_divergence.py`).
 
-## M17 — partial
+## M17 — met (2026-08-16, after being wrongly marked met, then partial)
 
-**Corrected the same day it was marked met, which was premature.** The
-drag-to-regroup persists **instance** names into `packing.force_groups`, and
-the packer resolves that field against **stable** names — so every override the
-view writes is refused on the next build with "unknown cell".
+The drag-to-regroup persisted **instance** names into `packing.force_groups`
+while the packer resolves that field against **stable** names, so every
+override was refused on the next build. Now translated through
+`BuildResult.stableCellNames`, and the test asserts the stable name is in the
+YAML rather than merely asserting *something* is — the previous assertion
+passed either way because the fixture's name map was empty.
+
+A second case fell out of writing that test: before any build there is no
+stable-name map at all. The view now **refuses** to record an override then,
+saying so, rather than writing an instance name that the packer rejects later
+and that would point at a different gate if it did not.
 
 I added `BuildResult.stableCellNames` to the contract precisely so the renderer
 could translate, then marked the milestone met without checking that the

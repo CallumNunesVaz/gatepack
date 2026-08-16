@@ -69,11 +69,37 @@ export function BomView() {
         return;
       }
       setRefusal(null);
-      const next = groupsToForceGroups(result.groups);
+
+      // Translate to STABLE names before persisting. `force_groups` is
+      // resolved by the packer against stable cone-hash names; everything the
+      // renderer sees from `mappedNetlist()` is an ABC instance name
+      // (`$abc$148$...$154`) which is renumbered by every synthesis. Writing
+      // one into design.yaml is refused on the next build — and would point at
+      // a *different gate* if it were not.
+      const stable: Record<string, string> =
+        build.state.status === 'success' && build.state.data
+          ? build.state.data.stableCellNames
+          : {};
+
+      // Without the map there is nothing safe to write. Persisting the
+      // instance name is not a lesser option: the packer refuses it on the
+      // next build, and if it did not it would name a different gate. Say so
+      // rather than writing something that quietly fails later.
+      if (Object.keys(stable).length === 0) {
+        setRefusal(
+          'Run a build before regrouping — an override recorded now would name ' +
+            'gates that do not survive the next synthesis.',
+        );
+        return;
+      }
+
+      const next = groupsToForceGroups(result.groups).map((group) =>
+        group.map((name) => stable[name] ?? name),
+      );
       const { text } = setPackingForceGroups(specText, next);
       setSpecText(text);
     },
-    [groups, specText, setSpecText],
+    [groups, specText, setSpecText, build.state],
   );
 
   const data = build.state.status === 'success' ? build.state.data : null;

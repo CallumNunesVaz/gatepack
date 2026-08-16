@@ -33,7 +33,12 @@ function buildResult(): BuildResult {
     packageCount: 3,
     spareCount: 0,
     packCost: 3,
-    stableCellNames: {},
+    // As a real build returns: instance name -> stable cone-hash name.
+    stableCellNames: {
+      g0: 'NOR2__a1b2c3',
+      g1: 'NOR2__d4e5f6',
+      g2: 'NAND2__99aabb',
+    },
     bom: [
       {
         partNumber: '74AUP1G02',
@@ -98,6 +103,10 @@ describe('BomView — C13 packing and BOM', () => {
     await waitFor(() => expect(screen.getByTestId('packing-cell-g0')).toBeTruthy());
     expect(fake.specText).not.toContain('force_groups');
 
+    // A build must have run: it is what supplies the stable-name map.
+    fireEvent.click(screen.getByText('Run build'));
+    await waitFor(() => expect(screen.getByTestId('single-source-marker')).toBeTruthy());
+
     fireEvent.dragStart(screen.getByTestId('packing-cell-g0'), {
       dataTransfer: fakeDataTransfer('g0'),
     } as never);
@@ -106,8 +115,13 @@ describe('BomView — C13 packing and BOM', () => {
     } as never);
 
     await waitFor(() => expect(fake.specText).toContain('force_groups'));
-    expect(fake.specText).toContain('g0');
-    expect(fake.specText).toContain('g1');
+    // STABLE names must be persisted, never the mapped-netlist instance names:
+    // the packer resolves force_groups against stable names, and ABC renumbers
+    // instance names on every synthesis, so a persisted `g0` is both refused
+    // now and pointing at a different gate later.
+    expect(fake.specText).toContain('NOR2__a1b2c3');
+    expect(fake.specText).toContain('NOR2__d4e5f6');
+    expect(fake.specText).not.toMatch(/force_groups[\s\S]*\bg0\b/);
     expect(fake.specText).not.toContain('position');
     expect(fake.specText).not.toContain('layout');
   });
@@ -180,5 +194,29 @@ describe('BomView — C13 packing and BOM', () => {
     fireEvent.click(screen.getByText('Run build'));
     await waitFor(() => expect(screen.getByTestId('single-source-marker')).toBeTruthy());
     expect(screen.queryByTestId('packing-inert')).toBeNull();
+  });
+
+  it('refuses to record an override before a build, rather than writing a name that will be rejected', async () => {
+    // The stable-name map comes from the build. Without it the only thing the
+    // renderer knows is the ABC instance name, which the packer refuses and
+    // which points at a different gate after the next synthesis.
+    const fake = new FakeGatepack();
+    fake.setOk('mappedNetlist', mappedJson());
+    fake.setOk('build', buildResult());
+
+    renderBom(fake);
+    await waitFor(() => expect(screen.getByTestId('packing-cell-g0')).toBeTruthy());
+
+    fireEvent.dragStart(screen.getByTestId('packing-cell-g0'), {
+      dataTransfer: fakeDataTransfer('g0'),
+    } as never);
+    fireEvent.drop(screen.getByTestId('packing-group-g1'), {
+      dataTransfer: fakeDataTransfer('g0'),
+    } as never);
+
+    await waitFor(() => expect(screen.getByTestId('packing-refusal')).toBeTruthy());
+    expect(screen.getByTestId('packing-refusal').textContent).toMatch(/run a build/i);
+    expect(fake.specText).not.toContain('force_groups');
+    expect(fake.specText).not.toContain('g0');
   });
 });
