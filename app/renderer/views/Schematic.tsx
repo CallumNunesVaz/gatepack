@@ -25,6 +25,7 @@ export function Schematic() {
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisSummary | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   const [showMapped, setShowMapped] = useState(true);
   const [showPacked, setShowPacked] = useState(false);
@@ -32,8 +33,15 @@ export function Schematic() {
 
   useEffect(() => {
     let cancelled = false;
+    setError(null);
     api.mappedNetlist().then((env) => {
-      if (cancelled || !env.ok) return;
+      if (cancelled) return;
+      if (!env.ok) {
+        // A failed netlist fetch must be reported, never shown as a perpetual
+        // "laying out the netlist…" spinner (§15: report the state you have).
+        setError(env.error.message);
+        return;
+      }
       renderInWorker(env.data)
         .then((s) => {
           if (!cancelled) setSvg(s);
@@ -49,9 +57,11 @@ export function Schematic() {
 
   useEffect(() => {
     let cancelled = false;
+    setAnalysisError(null);
     api.analyse().then((env) => {
-      if (cancelled && env.ok) return;
+      if (cancelled) return;
       if (env.ok) setAnalysis(env.data);
+      else setAnalysisError(env.error.message);
     });
     return () => {
       cancelled = true;
@@ -103,6 +113,10 @@ export function Schematic() {
             data-testid="schematic-svg"
             dangerouslySetInnerHTML={{ __html: svg }}
           />
+        ) : error ? (
+          <div className="schematic__canvas schematic__canvas--empty">
+            <span className="muted">schematic unavailable — {error}</span>
+          </div>
         ) : (
           <div className="schematic__canvas schematic__canvas--empty">
             <span className="muted">laying out the netlist…</span>
@@ -119,14 +133,22 @@ export function Schematic() {
 
       {showOverlay ? (
         <div className="schematic__overlay" data-testid="schematic-overlay">
-          <div>
-            <strong>test points:</strong>{' '}
-            {testPoints.length ? testPoints.join(', ') : '(none declared)'}
-          </div>
-          <div>
-            <strong>unobservable nets (SCOAP CO = 0):</strong>{' '}
-            {unobservableNets.length ? unobservableNets.join(', ') : '(none reported)'}
-          </div>
+          {analysisError ? (
+            <div className="error-note" data-testid="schematic-analysis-error">
+              analysis unavailable — {analysisError}
+            </div>
+          ) : (
+            <>
+              <div>
+                <strong>test points:</strong>{' '}
+                {testPoints.length ? testPoints.join(', ') : '(none declared)'}
+              </div>
+              <div>
+                <strong>unobservable nets (SCOAP CO = 0):</strong>{' '}
+                {unobservableNets.length ? unobservableNets.join(', ') : '(none reported)'}
+              </div>
+            </>
+          )}
         </div>
       ) : null}
     </section>
