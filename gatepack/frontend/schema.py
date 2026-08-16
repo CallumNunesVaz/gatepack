@@ -127,6 +127,25 @@ class Constraints(BaseModel):
         return v
 
 
+class Packing(BaseModel):
+    """§12 C5 packing overrides, persisted in ``design.yaml``.
+
+    The packer has always accepted ``force_groups``; there was no way to
+    *record* one, so an override made in the application died with the session.
+    §C13 requires the opposite: "overrides persist in design.yaml", because a
+    packing decision is a physical-adjacency judgement the engineer made and
+    must be able to defend at review.
+
+    Each group names mapped cells that must share a package. The packer still
+    refuses a group whose cells are not the same function — an override may
+    express a preference, never an impossibility.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    force_groups: list[list[str]] = Field(default_factory=list)
+
+
 class Design(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
@@ -148,6 +167,7 @@ class Design(BaseModel):
     macros: list[MacroSpec] = Field(default_factory=list)
     fundamental_mode: FundamentalMode | None = None
     constraints: Constraints = Field(default_factory=Constraints)
+    packing: Packing = Field(default_factory=Packing)
 
     @field_validator("name")
     @classmethod

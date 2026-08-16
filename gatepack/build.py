@@ -276,6 +276,9 @@ def run_build(
     weight = spare_leakage_weight if spare_leakage_weight is not None else DEFAULT_SPARE_LEAKAGE_WEIGHT
     config = AssembleConfig(
         design_name=design.name,
+        # §C13: packing overrides come from the specification, so a regrouping
+        # made in the application survives the session and shows up in review.
+        force_groups=tuple(tuple(g) for g in design.packing.force_groups),
         timing_model=design.timing_model,
         spare_leakage_weight=weight,
         freq_hz=design.clock.freq_hz if design.clock else None,
