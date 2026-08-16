@@ -17,6 +17,14 @@
 #                          the renderer/main typechecks and vitest, and an
 #                          unsigned electron-builder package that is asserted to
 #                          contain the core.
+#   * `e2e`                — the Electron app driven for real: the Playwright
+#                          suite (app/tests/e2e) launches the actual main
+#                          process under xvfb and asserts the §5.2 security
+#                          posture, the full IPC envelope contract, and the
+#                          doctor/error/status-bar surfaces.  A test that cannot
+#                          start Electron is a hard failure, and a skipped test
+#                          fails the job — a skip is indistinguishable from the
+#                          test not existing.
 #
 # The `toolchain` job exists because the floor has repeatedly reported green over
 # machinery that had never touched a real tool: generated Verilog that Yosys
@@ -185,3 +193,55 @@ jobs:
         # asserts resources/resources/bin/gatepack is present, executable, and
         # outside the asar — a real check on real output, not a config read.
         run: GATEPACK_PACKAGING=1 .venv/bin/pytest tests/toolchain/test_packaging.py -q
+
+  e2e:
+    # The app tested end to end: Playwright drives the real Electron main
+    # process (`_electron.launch`, no downloaded Playwright browser — the suite
+    # uses Electron directly) under xvfb.  The suite ships its own hermetic fake
+    # core (app/tests/e2e/fake-core.cjs) for the bridge-level specs and uses the
+    # real Python core (`.venv/bin/python`) for the GUI-audit regressions, so
+    # this job installs the core as well as the app.  Electron failing to start
+    # is a real failure (the launch throws, Playwright reports it, and no `||
+    # true` anywhere swallows it); a skipped test is also a failure, for the same
+    # reason the toolchain job treats a skip as "the test did not run".
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install app dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Install core (for the real-core GUI-audit specs)
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e .
+
+      - name: Build main + renderer
+        working-directory: app
+        run: |
+          npm run build:main
+          npx vite build
+
+      - name: Electron end-to-end tests (must not skip)
+        working-directory: app
+        run: |
+          set -euo pipefail
+          mkdir -p ../.gpout
+          xvfb-run -a npx playwright test --config playwright.config.cjs 2>&1 | tee ../.gpout/e2e.log
+          # A skip here means the suite did not really exercise what it claims
+          # to (the GUI-audit specs skip when the real core is missing), which is
+          # indistinguishable from the test not existing.  Fail loudly.
+          if grep -qi "skipped" ../.gpout/e2e.log; then
+            echo "an e2e test skipped; a skip is indistinguishable from the test not existing" >&2
+            exit 1
+          fi
