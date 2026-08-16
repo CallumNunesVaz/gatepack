@@ -29,6 +29,7 @@ silently as a pass.
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,8 +37,9 @@ from typing import Mapping, Sequence
 
 from gatepack.frontend.model import CompiledDesign
 from gatepack.frontend.verilog import (
+    CoverSpec,
     property_assert_label,
-    property_cover_label,
+    property_cover_specs,
 )
 from gatepack.toolchain import sby_command
 from gatepack.verify.base import (
@@ -62,27 +64,38 @@ class PropertyTask:
     index: int  # position in design.properties
     kind: str  # invariant|mutex|reachability|liveness
     role: str  # "assert" | "cover"
-    mode: str  # "prove" (k-induction) | "bmc" (bounded)
+    mode: str  # "prove" (k-induction) | "cover" (bounded reachability)
     depth: int
-    label: str  # the SVA label emitted by C1 (gp_assert_N / gp_cover_N)
+    label: str  # gp_assert_N (assert) or gp_cover_N (the cover group's file stem)
+    covers: tuple[CoverSpec, ...] = ()  # the covers this task discharges (cover role)
+
+
+def _cover_group_label(index: int) -> str:
+    """The one-task-per-file cover stem: the group label, never a per-signal one."""
+    return f"gp_cover_{index}"
 
 
 def property_tasks(compiled: CompiledDesign) -> list[PropertyTask]:
     """Enumerate the sby tasks for a compiled design's properties.
 
     * ``invariant`` / ``mutex``: one ``mode prove`` task for the assertion plus
-      one ``mode cover`` task for the antecedent cover (the vacuity guard).
+      one ``mode cover`` task discharging every vacuity-guard cover (the
+      antecedent, or the individually-asserted signals of a mutex /
+      antecedent-free invariant) in a single run.
     * ``reachability`` / ``liveness``: one ``mode cover`` task for the target
-      cover (bounded reachability; §21.5).
+      (bounded reachability; §21.5).  Liveness is always reported ``bounded``,
+      never ``passed`` — its bound is the §21.5 default depth.
 
     ``mode cover`` (not ``mode bmc``) is used for every cover — measured
-    (docs/M6-FINDINGS.md §4): ``mode cover`` reports the step at which the cover
-    statement was reached.
+    (docs/M6-FINDINGS.md §4): ``mode cover`` reports each cover statement as
+    ``Reached ... in step N`` or ``Unreached ...``, which is exactly the
+    information the vacuity guard needs.
     """
     state_count = len(compiled.state_order)
     depth = default_depth(state_count)
     tasks: list[PropertyTask] = []
     for index, prop in enumerate(compiled.design.properties):
+        covers = property_cover_specs(compiled, index, prop)
         if prop.kind in ("invariant", "mutex"):
             tasks.append(
                 PropertyTask(
@@ -95,6 +108,7 @@ def property_tasks(compiled: CompiledDesign) -> list[PropertyTask]:
                     label=property_assert_label(index),
                 )
             )
+        if covers:
             tasks.append(
                 PropertyTask(
                     name=prop.name,
@@ -103,19 +117,8 @@ def property_tasks(compiled: CompiledDesign) -> list[PropertyTask]:
                     role="cover",
                     mode="cover",
                     depth=depth,
-                    label=property_cover_label(index),
-                )
-            )
-        else:  # reachability, liveness
-            tasks.append(
-                PropertyTask(
-                    name=prop.name,
-                    index=index,
-                    kind=prop.kind,
-                    role="cover",
-                    mode="cover",
-                    depth=depth,
-                    label=property_cover_label(index),
+                    label=_cover_group_label(index),
+                    covers=tuple(covers),
                 )
             )
     return tasks
@@ -153,7 +156,19 @@ def build_sby_file(
         # wrapper module cannot see the design's signals: Yosys turns
         # `dut.<sig>` into a new undriven wire and the property then checks a
         # free variable connected to nothing (M6-FINDINGS §6).
-        f"read_verilog -sv -formal -DGP_FORMAL {generated_v}",
+        #
+        # Asserts and covers are compiled out by `ifdef: `mode cover` still
+        # *checks* assertions, so a cover task must not see the assertion (or a
+        # cover reachable only through the asserted-away state reports FAIL for
+        # the wrong reason). The prove task selects asserts, the cover task
+        # selects covers.
+        #
+        # The read command runs from the task's `src/` directory, where sby has
+        # copied the [files] entries under their *basenames* — so the script
+        # reads the basename, not the cwd-relative [files] path (which does not
+        # exist under src/). Measured against real sby in the toolchain image.
+        f"read_verilog -sv -formal -DGP_FORMAL -D{_task_define(task)} "
+        f"{os.path.basename(generated_v)}",
         f"prep -top {top}",
         # The design uses async-assert/sync-de-assert reset (§9.3); smtbmc
         # cannot model an async reset, and without this the reset is simply
@@ -166,6 +181,11 @@ def build_sby_file(
     ]
     return "\n".join(lines) + "\n"
 
+
+def _task_define(task: PropertyTask) -> str:
+    """The `GP_*` define that selects the task's statements in properties.sv."""
+    return "GP_PROVE" if task.role == "assert" else "GP_COVER"
+
 @dataclass(frozen=True)
 class TaskResult:
     status: str  # "passed" | "bounded" | "failed" | "not_run"
@@ -174,7 +194,7 @@ class TaskResult:
 
 
 def parse_sby(stdout: str, tasks: Sequence[PropertyTask]) -> dict[str, TaskResult]:
-    """Parse sby output into one :class:`TaskResult` per task label.
+    """Parse sby output into one :class:`TaskResult` per assert/cover label.
 
     The format follows the **measured** sby output (docs/M6-FINDINGS.md §3–4):
 
@@ -187,15 +207,22 @@ def parse_sby(stdout: str, tasks: Sequence[PropertyTask]) -> dict[str, TaskResul
       (k-induction did not close; BMC passed to ``depth``).
     * ``mode prove`` with basecase fail → ``failed`` (a real counterexample, or
       the missing-reset signature of M6-FINDINGS §2).
-    * ``mode cover`` with ``Reached cover statement ... in step N`` → ``bounded``
-      with ``bound = N``.
-    * ``mode cover`` otherwise failing → ``failed`` (unreached cover — vacuity).
+    * ``mode cover`` reports each cover individually: ``Reached cover statement
+      at <label> in step N`` → ``bounded`` with ``bound = N``; ``Unreached cover
+      statement at <label>`` → ``failed`` (vacuity — the antecedent never occurs).
     * no status line → ``not_run``.
+
+    Results are keyed by the **individual SVA label**: ``gp_assert_N`` for an
+    assertion, ``gp_cover_N`` (single cover) or ``gp_cover_N_j`` (multi-signal)
+    for each vacuity/target cover.
     """
     results: dict[str, TaskResult] = {}
     for task in tasks:
         chunk = _task_chunk(stdout, task.label)
-        results[task.label] = _parse_task_chunk(chunk, task)
+        if task.role == "assert":
+            results[task.label] = _parse_prove(chunk, task)
+        else:
+            results.update(_parse_cover_group(chunk, task))
     return results
 
 
@@ -223,17 +250,11 @@ def _task_chunk(stdout: str, label: str) -> str:
     return "\n".join(wanted)
 
 
-def _parse_task_chunk(chunk: str, task: PropertyTask) -> TaskResult:
+def _parse_prove(chunk: str, task: PropertyTask) -> TaskResult:
     if not chunk.strip():
         return TaskResult(
             "not_run", f"no status line for task {task.label!r} in sby output"
         )
-    if task.role == "assert":
-        return _parse_prove(chunk, task)
-    return _parse_cover(chunk, task)
-
-
-def _parse_prove(chunk: str, task: PropertyTask) -> TaskResult:
     basecase = "returned pass for basecase" in chunk
     induction = "returned pass for induction" in chunk
     if basecase and induction:
@@ -259,22 +280,49 @@ def _parse_prove(chunk: str, task: PropertyTask) -> TaskResult:
     return TaskResult("not_run", f"unrecognized sby output for {task.label!r}")
 
 
-def _parse_cover(chunk: str, task: PropertyTask) -> TaskResult:
-    reached = re.search(r"Reached cover statement at \S+ in step (\d+)", chunk)
+def _parse_cover_group(chunk: str, task: PropertyTask) -> dict[str, TaskResult]:
+    """Parse a ``mode cover`` run into one result per cover statement.
+
+    ``mode cover`` reaches **every** cover in the design in a single run, and
+    sby reports each one individually (``Reached ... in step N`` / ``Unreached
+    ...``).  The vacuity guard therefore needs exactly one cover run per
+    property, not one per signal — and can name the exact signal whose cover
+    failed.
+    """
+    out: dict[str, TaskResult] = {}
+    if not chunk.strip():
+        for spec in task.covers:
+            out[spec.label] = TaskResult(
+                "not_run", f"no status line for task {task.label!r} in sby output"
+            )
+        return out
+    for spec in task.covers:
+        out[spec.label] = _parse_cover_result(chunk, spec.label, task)
+    return out
+
+
+def _parse_cover_result(chunk: str, label: str, task: PropertyTask) -> TaskResult:
+    reached = re.search(
+        rf"Reached cover statement at {re.escape(label)} in step (\d+)", chunk
+    )
     if reached:
         step = int(reached.group(1))
         return TaskResult(
             "bounded",
-            f"cover reached in step {step} (M6-FINDINGS §4)",
+            f"cover {label} reached in step {step} (M6-FINDINGS §4)",
             bound=step,
         )
-    if "FAIL" in chunk or "DONE (FAIL" in chunk:
-        return TaskResult("failed", "cover statement not reached")
+    if f"Unreached cover statement at {label}" in chunk:
+        return TaskResult(
+            "failed", f"cover statement {label} not reached (vacuous antecedent)"
+        )
     if "DONE (PASS" in chunk or "returned pass" in chunk:
-        # A cover task that reported a pass without an explicit "Reached ... in
-        # step N" line still means the antecedent is reachable (bounded).
-        return TaskResult("bounded", "cover satisfied", bound=task.depth)
-    return TaskResult("not_run", f"unrecognized sby output for {task.label!r}")
+        # A cover task that reported a pass without an explicit per-cover line
+        # still means the antecedent is reachable (bounded).
+        return TaskResult("bounded", f"cover {label} satisfied", bound=task.depth)
+    if "FAIL" in chunk or "DONE (FAIL" in chunk:
+        return TaskResult("failed", f"cover statement {label} not reached")
+    return TaskResult("not_run", f"unrecognized sby output for {label!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -401,7 +449,6 @@ def _combine_property(
 
     if assert_task is not None:
         ar = results.get(assert_task.label)
-        cr = results.get(cover_task.label) if cover_task is not None else None
         if ar is None:
             return CheckResult(name, CheckStatus.NOT_RUN, "sby not found on PATH", kind="property")
         if ar.status == "failed":
@@ -412,35 +459,49 @@ def _combine_property(
             )
         if ar.status == "not_run":
             return CheckResult(name, CheckStatus.NOT_RUN, ar.detail, kind="property")
-        # assertion passed — now the vacuity guard
-        if cr is not None and cr.status == "failed":
-            return CheckResult(
-                name,
-                CheckStatus.FAILED,
-                "antecedent unreachable (vacuous pass — §11): the property holds "
-                "only because its precondition never occurs",
-                kind="property",
-            )
-        if cr is not None and cr.status == "not_run":
+        # Assertion passed — now the vacuity guard: EVERY cover must be reached.
+        if cover_task is None or not cover_task.covers:
             return CheckResult(
                 name,
                 CheckStatus.NOT_RUN,
-                "vacuity cover did not run; cannot confirm the antecedent is "
-                "reachable",
+                "property references no signals; the vacuity guard cannot be "
+                "established",
                 kind="property",
             )
+        for spec in cover_task.covers:
+            cr = results.get(spec.label)
+            if cr is None or cr.status == "not_run":
+                return CheckResult(
+                    name,
+                    CheckStatus.NOT_RUN,
+                    "vacuity cover did not run; cannot confirm the antecedent is "
+                    "reachable",
+                    kind="property",
+                )
+            if cr.status == "failed":
+                return CheckResult(
+                    name,
+                    CheckStatus.FAILED,
+                    f"vacuous pass rejected ({spec.description}): the property holds "
+                    f"only because its antecedent never occurs — {cr.detail}",
+                    kind="property",
+                )
         return CheckResult(name, CheckStatus.PASSED, kind="property")
 
-    # reachability / liveness: a single cover task
-    cover_task = tasks[0] if tasks else None
-    if cover_task is None:
+    # reachability / liveness: a single cover task (bounded, never passed)
+    if cover_task is None or not cover_task.covers:
         return CheckResult(name, CheckStatus.NOT_RUN, "sby not found on PATH", kind="property")
-    cr = results.get(cover_task.label)
+    spec = cover_task.covers[0]
+    cr = results.get(spec.label)
     if cr is None:
         return CheckResult(name, CheckStatus.NOT_RUN, "sby not found on PATH", kind="property")
     if cr.status == "bounded":
+        # Liveness is bounded reachability: its bound is the §21.5 default depth,
+        # never the reached step — a bounded liveness result is exactly the
+        # "bounded pass" the four-state model exists to distinguish.
+        bound = cover_task.depth if prop.kind == "liveness" else cr.bound
         return CheckResult(
-            name, CheckStatus.BOUNDED_PASS, cr.detail, cr.bound, kind="property"
+            name, CheckStatus.BOUNDED_PASS, cr.detail, bound, kind="property"
         )
     if cr.status == "failed":
         return CheckResult(

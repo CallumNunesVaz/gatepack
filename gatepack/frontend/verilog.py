@@ -28,6 +28,8 @@ Encoding:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from gatepack.frontend import expr as expr_mod
 from gatepack.frontend.model import CompiledDesign
 from gatepack.frontend.schema import Reset
@@ -369,36 +371,62 @@ def emit_properties(compiled: CompiledDesign) -> str:
     lines.append("")
 
     for index, prop in enumerate(design.properties):
-        cover_label = property_cover_label(index)
         assert_label = property_assert_label(index)
         lines.append(f"  // {prop.kind}: {prop.name}")
 
         if prop.kind in ("invariant", "mutex"):
             body = _property_body(compiled, prop.expr or "1")
+            covers = property_cover_specs(compiled, index, prop)
             # M6-FINDINGS §1: immediate assertions in a clocked always block.
             # Open-source Yosys cannot parse SVA concurrent assertions.
+            #
+            # Asserts and covers are separated by `ifdef because `mode cover`
+            # still *checks* assertions: an antecedent cover whose trace must
+            # pass through the very state the assertion forbids (the
+            # property-violating golden) would otherwise make the cover report
+            # FAIL for a reason that has nothing to do with reachability. The
+            # prove task reads the file with -DGP_PROVE (asserts only); the
+            # cover task with -DGP_COVER (covers only).
+            lines.append("`ifdef GP_COVER")
             lines.append(f"  always @(posedge {clock_name}) begin")
-            lines.append("    if (gp_settled) begin")
-            lines.append(f"      {cover_label}: cover ({body});")
-            lines.append(f"      if ({reset_released})")
-            lines.append(f"        {assert_label}: assert ({body});")
+            lines.append(f"    if (gp_settled && {reset_released}) begin")
+            for spec in covers:
+                lines.append(f"      // vacuity guard: {spec.description}")
+                lines.append(f"      {spec.label}: cover ({spec.expr});")
             lines.append("    end")
             lines.append("  end")
+            lines.append("`endif")
+            lines.append("`ifdef GP_PROVE")
+            lines.append(f"  always @(posedge {clock_name}) begin")
+            lines.append(f"    if (gp_settled && {reset_released})")
+            lines.append(f"      {assert_label}: assert ({body});")
+            lines.append("  end")
+            lines.append("`endif")
         elif prop.kind == "reachability":
-            target = _property_body(compiled, _state_eq(prop.to or ""))
+            spec = property_cover_specs(compiled, index, prop)[0]
             lines.append(
                 f"  // cover (BMC target): can {prop.to} be reached from {prop.from_}? "
                 f"(from-state assumption: {prop.from_})"
             )
+            lines.append("`ifdef GP_COVER")
             lines.append(f"  always @(posedge {clock_name}) begin")
             lines.append(f"    if (gp_settled && {reset_released})")
-            lines.append(f"      {cover_label}: cover ({target});")
+            lines.append(f"      {spec.label}: cover ({spec.expr});")
             lines.append("  end")
+            lines.append("`endif")
         else:  # liveness
+            spec = property_cover_specs(compiled, index, prop)[0]
             lines.append(
-                f"  // liveness '{prop.expr}' is bounded; the bound is chosen at M6 "
-                f"(§21.5). Not emitted as unbounded SVA."
+                f"  // liveness as bounded reachability (§21.5): {spec.description}. "
+                f"Bound = default_depth (max(2*state_count, 64)); the result is always "
+                f"reported as bounded, never as passed."
             )
+            lines.append("`ifdef GP_COVER")
+            lines.append(f"  always @(posedge {clock_name}) begin")
+            lines.append(f"    if (gp_settled && {reset_released})")
+            lines.append(f"      {spec.label}: cover ({spec.expr});")
+            lines.append("  end")
+            lines.append("`endif")
         lines.append("")
 
     return "\n".join(lines)
@@ -409,9 +437,175 @@ def property_assert_label(index: int) -> str:
     return f"gp_assert_{index}"
 
 
-def property_cover_label(index: int) -> str:
-    """Label for a property's antecedent cover — the §11 vacuity guard."""
-    return f"gp_cover_{index}"
+@dataclass(frozen=True)
+class CoverSpec:
+    """One cover statement for a property — the §11 vacuity guard, or a bounded
+    reachability/liveness target.
+
+    ``expr`` is the in-module Verilog expression to cover; ``description`` is the
+    human-readable account of what reaching the cover establishes, surfaced in the
+    report ("signal 'red' asserted", "state 'IDLE' entered", ...).
+    """
+
+    label: str
+    expr: str
+    description: str
+
+
+def property_cover_specs(
+    compiled: CompiledDesign, index: int, prop
+) -> list[CoverSpec]:
+    """The cover statements for property ``index``.
+
+    This is the anti-vacuity spine, and it deliberately does **not** cover the
+    property body. A body cover is close to useless: ``!(a & b) & !(b & c)`` is
+    satisfied by the all-zero state, so reaching it proves nothing about whether
+    the interesting case ever occurs. What a guard must establish is that the
+    property's *antecedent* — the situation it constrains — is actually
+    reachable:
+
+    * ``mutex`` over signals a, b, c: one cover per signal, each individually
+      assertable. A mutex over signals that never go high is vacuously true and
+      is reported as such (an unreached cover is a failure, never a pass).
+    * ``invariant`` of implication form (``p -> q``, spelled ``!p | q`` or
+      ``!(p & !q)``): cover ``p``.
+    * ``invariant`` with no obvious antecedent: cover each referenced signal,
+      and name what was covered in the report.
+    * ``reachability`` / ``liveness``: one cover of the target (bounded, §21.5).
+
+    Referenced signals are extracted from the expression AST
+    (:mod:`gatepack.frontend.expr`), never by pattern-matching the source string.
+    """
+    if prop.kind == "invariant":
+        return _invariant_covers(compiled, index, prop)
+    if prop.kind == "mutex":
+        return _signal_covers(compiled, index, prop)
+    if prop.kind == "reachability":
+        target = _property_body(compiled, _state_eq(prop.to or ""))
+        return [
+            CoverSpec(
+                f"gp_cover_{index}",
+                target,
+                f"state {prop.to!r} reachable from {prop.from_!r}",
+            )
+        ]
+    if prop.kind == "liveness":
+        return [
+            CoverSpec(
+                f"gp_cover_{index}",
+                _liveness_target(compiled, prop),
+                f"liveness target {_liveness_target_desc(prop)!r} reachable "
+                f"within the §21.5 bound",
+            )
+        ]
+    return []
+
+
+def _invariant_covers(
+    compiled: CompiledDesign, index: int, prop
+) -> list[CoverSpec]:
+    ast = _parse_prop_expr(prop.expr)
+    if ast is not None:
+        antecedent = _implication_antecedent(ast)
+        if antecedent is not None:
+            expr = expr_mod.to_verilog(
+                antecedent, _property_var_map(compiled), _state_map(compiled)
+            )
+            return [
+                CoverSpec(
+                    f"gp_cover_{index}",
+                    expr,
+                    "implication antecedent (p in p -> q)",
+                )
+            ]
+    return _signal_covers(compiled, index, prop)
+
+
+def _signal_covers(
+    compiled: CompiledDesign, index: int, prop
+) -> list[CoverSpec]:
+    ast = _parse_prop_expr(prop.expr)
+    subjects: list[tuple[str, str]] = []
+    if ast is not None:
+        var_map = _property_var_map(compiled)
+        state_map = _state_map(compiled)
+        for name in sorted(expr_mod.free_vars(ast)):
+            subjects.append((var_map.get(name, name), f"signal {name!r} asserted"))
+        for state in sorted(expr_mod.states_referenced(ast)):
+            subjects.append((state_map[state], f"state {state!r} entered"))
+    labels = _cover_labels(index, len(subjects))
+    return [
+        CoverSpec(label, verilog, desc)
+        for label, (verilog, desc) in zip(labels, subjects)
+    ]
+
+
+def _cover_labels(index: int, count: int) -> list[str]:
+    if count == 1:
+        return [f"gp_cover_{index}"]
+    return [f"gp_cover_{index}_{j}" for j in range(count)]
+
+
+def _parse_prop_expr(text: str | None):
+    if not text:
+        return None
+    try:
+        return expr_mod.parse(text)
+    except expr_mod.ExprError:
+        return None
+
+
+def _implication_antecedent(ast):
+    # p -> q, spelled !p | q (OR is commutative, so also q | !p).
+    if isinstance(ast, expr_mod.Bin) and ast.op == "|":
+        if isinstance(ast.left, expr_mod.Not) and not isinstance(
+            ast.right, expr_mod.Not
+        ):
+            return ast.left.x
+        if isinstance(ast.right, expr_mod.Not) and not isinstance(
+            ast.left, expr_mod.Not
+        ):
+            return ast.right.x
+    # p -> q, spelled !(p & !q) (& is commutative, so also !(!q & p)).
+    if (
+        isinstance(ast, expr_mod.Not)
+        and isinstance(ast.x, expr_mod.Bin)
+        and ast.x.op == "&"
+    ):
+        if isinstance(ast.x.left, expr_mod.Not) and not isinstance(
+            ast.x.right, expr_mod.Not
+        ):
+            return ast.x.right
+        if isinstance(ast.x.right, expr_mod.Not) and not isinstance(
+            ast.x.left, expr_mod.Not
+        ):
+            return ast.x.left
+    return None
+
+
+def _liveness_target(compiled: CompiledDesign, prop) -> str:
+    if prop.to:
+        return _property_body(compiled, _state_eq(prop.to))
+    ast = _parse_prop_expr(prop.expr)
+    if ast is not None:
+        return expr_mod.to_verilog(
+            ast, _property_var_map(compiled), _state_map(compiled)
+        )
+    # A prose liveness expression (e.g. "all states reach IDLE") is not a
+    # parseable target. Degenerate to a trivially-reachable cover rather than
+    # emit Verilog that will not parse (recorded in BUILD-NOTES).
+    return "1"
+
+
+def _liveness_target_desc(prop) -> str:
+    return prop.to or prop.expr or "1"
+
+
+def _property_var_map(compiled: CompiledDesign) -> dict[str, str]:
+    var_map = {name: name for name in compiled.input_names}
+    var_map.update({name: name for name in compiled.design.expressions})
+    var_map.update({name: name for name in compiled.output_names})
+    return var_map
 
 
 def _property_body(compiled: CompiledDesign, text: str) -> str:
@@ -422,10 +616,7 @@ def _property_body(compiled: CompiledDesign, text: str) -> str:
     # Plain, in-module names. Never `dut.<signal>` — Yosys does not resolve a
     # hierarchical reference, it implicitly declares a new undriven wire of
     # that name and the property is checked against nothing (M6-FINDINGS §6).
-    var_map = {name: name for name in compiled.input_names}
-    var_map.update({name: name for name in compiled.design.expressions})
-    var_map.update({name: name for name in compiled.output_names})
-    return expr_mod.to_verilog(ast, var_map, _state_map(compiled))
+    return expr_mod.to_verilog(ast, _property_var_map(compiled), _state_map(compiled))
 
 
 def _state_eq(state: str) -> str:

@@ -1,0 +1,25 @@
+# A mutex that is TRUE ONLY BECAUSE one of its signals can never be asserted.
+# `!(a & b)` always holds — but only because `b` is hardwired low. The assertion
+# proves; the vacuity cover for `b` is unreached, and that must be reported as a
+# FAILURE (a vacuous pass), never as a green tick.
+name: vacuous_mutex
+timing_model: synchronous
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+reset: {signal: rst_n, active: low}
+inputs:
+  - {name: x, sync: false}
+outputs:
+  - {name: a}
+  - {name: b}
+states: [A, B]
+initial: A
+transitions:
+  - {from: A, to: B, when: "x"}
+  - {from: A, to: A, when: "!x"}
+  - {from: B, to: A, when: "1"}
+output_logic:
+  a: "state == B"
+  # never asserted: the spec bug the vacuity guard exists to catch
+  b: "0"
+properties:
+  - {name: never_both, kind: mutex, expr: "!(a & b)"}

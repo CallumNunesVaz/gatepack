@@ -54,6 +54,69 @@ def _run_yosys(workdir: Path, script: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _run_sby(workdir: Path, sby_file: str) -> subprocess.CompletedProcess[str]:
+    """Run one generated `.sby` file against real sby in the toolchain image."""
+    return subprocess.run(
+        [
+            "docker", "run", "--rm",
+            "-v", f"{workdir}:/work",
+            IMAGE,
+            "bash", "-c", f"cd /work && sby -f {sby_file}",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+
+def _discharge_properties(design: str, workdir: Path):
+    """Run every property task for a design through real sby; return the checks."""
+    from gatepack.verify import properties as props
+
+    result = compile_design_file(DESIGNS / f"{design}.yaml")
+    compiled = result.compiled
+    build = workdir / "build"
+    build.mkdir(parents=True, exist_ok=True)
+    (build / "generated.v").write_text(result.verilog)
+    (build / "properties.sv").write_text(result.properties)
+
+    tasks = props.property_tasks(compiled)
+    results: dict[str, props.TaskResult] = {}
+    for task in tasks:
+        name = f"properties_{task.label}.sby"
+        (build / name).write_text(
+            props.build_sby_file(
+                compiled.design.name, "build/generated.v", "build/properties.sv", task
+            )
+        )
+        proc = _run_sby(workdir, f"build/{name}")
+        assert proc.returncode in (0, 2), (
+            f"sby rejected the generated task {name} (rc={proc.returncode}):\n"
+            f"{proc.stdout}\n{proc.stderr}"
+        )
+        results.update(props.parse_sby(proc.stdout, [task]))
+    return props.checks_from_sby(compiled, tasks, results)
+
+
+@requires_toolchain
+def test_properties_discharge_end_to_end(tmp_path: Path) -> None:
+    """The generated `.sby` files must run against real sby, not just parse.
+
+    This is the end-to-end discharge M6-FINDINGS never had: a correct mutex
+    proves (PASSED with its antecedent reachable), and a vacuously-true mutex
+    is reported as a FAILURE, never a pass.
+    """
+    from gatepack.verify.base import CheckStatus
+
+    good = {c.name: c for c in _discharge_properties("traffic_light", tmp_path / "good")}
+    assert good["property one_light_only"].status is CheckStatus.PASSED
+
+    vacuous = {
+        c.name: c for c in _discharge_properties("vacuous_mutex", tmp_path / "vacuous")
+    }
+    assert vacuous["property never_both"].status is CheckStatus.FAILED
+    assert "vacuous" in vacuous["property never_both"].detail
+
+
 @requires_toolchain
 @pytest.mark.parametrize("design", ["traffic_light", "xor2", "decoder_3to8"])
 def test_generated_verilog_is_accepted_by_yosys(design: str, tmp_path: Path) -> None:
@@ -74,7 +137,11 @@ def test_generated_verilog_is_accepted_by_yosys(design: str, tmp_path: Path) -> 
 
 
 @requires_toolchain
-def test_properties_file_is_accepted_by_yosys(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "design",
+    ["property_violating", "traffic_light", "liveness", "liveness_violating", "vacuous_mutex"],
+)
+def test_properties_file_is_accepted_by_yosys(design: str, tmp_path: Path) -> None:
     """The emitted properties must parse under `read_verilog -formal`.
 
     M6-FINDINGS §1: open-source Yosys does not implement SVA concurrent
@@ -85,11 +152,11 @@ def test_properties_file_is_accepted_by_yosys(tmp_path: Path) -> None:
     This is the check that distinguishes "we emit assertions" from "the prover
     can read our assertions".
     """
-    design = DESIGNS / "property_violating.yaml"
-    if not design.exists():  # pragma: no cover - golden set changed
+    path = DESIGNS / f"{design}.yaml"
+    if not path.exists():  # pragma: no cover - golden set changed
         pytest.skip("no golden design carrying a properties block")
 
-    result = compile_design_file(design)
+    result = compile_design_file(path)
     if not result.properties or not result.properties.strip():
         pytest.skip("golden design emitted no properties")
 
@@ -97,11 +164,14 @@ def test_properties_file_is_accepted_by_yosys(tmp_path: Path) -> None:
     (tmp_path / "properties.sv").write_text(result.properties)
 
     # properties.sv is `include`d into the design module under GP_FORMAL, so
-    # only generated.v is read and the top is the design itself.
+    # only generated.v is read and the top is the design itself.  GP_PROVE and
+    # GP_COVER select the assertion and cover statements respectively; both must
+    # be defined here or the property body is compiled out and this test would
+    # "pass" while checking nothing.
     proc = _run_yosys(
         tmp_path,
-        "read_verilog -sv -formal -DGP_FORMAL generated.v\n"
-        "prep -top property_violating\n",
+        "read_verilog -sv -formal -DGP_FORMAL -DGP_PROVE -DGP_COVER generated.v\n"
+        f"prep -top {design}\n",
     )
     assert proc.returncode == 0, (
         "Yosys rejected the emitted properties file. If the error is "
