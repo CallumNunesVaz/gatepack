@@ -20,6 +20,7 @@ import type {
   Envelope,
   EstimateResult,
   ProjectInfo,
+  PackedView,
   ProvenanceMap,
   SimulationTable,
   VerifyResult,
@@ -33,6 +34,7 @@ import {
   CompileResultSchema,
   EstimateResultSchema,
   MappedNetlistSchema,
+  PackedViewSchema,
   ProvenanceMapSchema,
   SimulationTableSchema,
   VerifyResultSchema,
@@ -50,7 +52,8 @@ export type CoreKind =
   | 'analyse'
   | 'provenance'
   | 'simulate'
-  | 'mappedNetlist';
+  | 'mappedNetlist'
+  | 'packedNetlist';
 
 export interface ProgressEvent {
   token: string;
@@ -132,6 +135,8 @@ export function buildCommandArgs(kind: CoreKind, project: ProjectState): string[
       return ['simulate', design, ...(hasLibrary ? ['--library', library] : []), '--build', buildDir];
     case 'mappedNetlist':
       return ['mapped-netlist', outDir];
+    case 'packedNetlist':
+      return ['packed-netlist', outDir];
   }
 }
 
@@ -429,6 +434,10 @@ export class SessionManager {
   provenance(): Promise<Envelope<ProvenanceMap>> {
     return this.invoke(ProvenanceMapSchema, 'provenance', 'provenance');
   }
+  packedNetlist(): Promise<Envelope<PackedView>> {
+    return this.invoke(PackedViewSchema, 'packedNetlist', 'packedNetlist');
+  }
+
   mappedNetlist(): Promise<Envelope<unknown>> {
     return this.invoke(MappedNetlistSchema, 'mappedNetlist', 'mappedNetlist');
   }

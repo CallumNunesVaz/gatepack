@@ -92,6 +92,7 @@ export function registerIpc(deps: IpcDeps): void {
   handle('gatepack:provenance', NoPayloadSchema, () => session.provenance());
   handle('gatepack:simulate', InvokeTokenSchema, (p) => session.simulate(p.token));
   handle('gatepack:mappedNetlist', NoPayloadSchema, () => session.mappedNetlist());
+  handle('gatepack:packedNetlist', NoPayloadSchema, () => session.packedNetlist());
 
   ipcMain.handle('gatepack:cancel', async (_event, raw: unknown) => {
     const parsed = CancelTokenSchema.safeParse(raw ?? {});

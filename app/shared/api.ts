@@ -157,8 +157,13 @@ export interface BomLine {
 
 /** §C12 packed layer — package boundaries drawn over the logical netlist. */
 export interface PackedView {
-  /** Yosys `write_json`, exactly as `mappedNetlist()` returns it. */
-  netlist: unknown;
+  /**
+   * Package boundaries only — deliberately NOT the netlist.
+   *
+   * The renderer already has it from `mappedNetlist()`, and returning a second
+   * copy here would give one circuit two representations that can disagree.
+   * These entries are an overlay keyed by the cells in that netlist.
+   */
   packages: Array<{
     refdes: string;
     partNumber: string;

@@ -125,6 +125,20 @@ export const BuildResultSchema = z.object({
   stableCellNames: z.record(z.string()),
 });
 
+export const PackedViewSchema = z.object({
+  packages: z.array(
+    z.object({
+      refdes: z.string(),
+      partNumber: z.string(),
+      cells: z.array(z.string()),
+      instanceCells: z.array(z.string()),
+      capacity: z.number(),
+      spare: z.number(),
+      rationale: z.string(),
+    }),
+  ),
+});
+
 export const ProvenanceMapSchema = z.object({
   entries: z.array(
     z.object({

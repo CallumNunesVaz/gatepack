@@ -19,6 +19,7 @@ import type {
   EstimateResult,
   GatepackApi,
   ProjectInfo,
+  PackedView,
   ProvenanceMap,
   SimulationTable,
   VerifyResult,
@@ -72,6 +73,8 @@ const api: GatepackApi = {
 
   mappedNetlist: () =>
     ipcRenderer.invoke('gatepack:mappedNetlist') as Promise<Envelope<unknown>>,
+  packedNetlist: () =>
+    ipcRenderer.invoke('gatepack:packedNetlist') as Promise<Envelope<PackedView>>,
 
   cancel: (token: string) => ipcRenderer.invoke('gatepack:cancel', { token }) as Promise<void>,
 
