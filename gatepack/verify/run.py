@@ -140,7 +140,17 @@ def run_verify(
     properties_only: bool = False,
 ) -> VerifyResult:
     design_path = Path(design_path)
-    build_dir = Path(build_dir).resolve()
+    # Deliberately NOT `.resolve()`. The generated `yosys.ys` embeds these
+    # paths, and §5.5 requires it byte-identical across build locations — an
+    # absolute path makes the script differ between two clean builds of the
+    # same commit. `build.py` keeps them relative for the same reason and runs
+    # Yosys from the invocation directory; the two must agree, or the script
+    # `verify` writes and the script `build` writes differ for one design.
+    #
+    # `.resolve()` here was also masking rather than fixing the nested-path
+    # bug: it made `--build x/y` work while leaving the reproducibility
+    # guarantee broken and the two code paths inconsistent.
+    build_dir = Path(build_dir)
     build_dir.mkdir(parents=True, exist_ok=True)
 
     compiled_result: CompileResult = compile_design_file(design_path)
@@ -189,7 +199,7 @@ def run_verify(
     yosys_script_path.write_text(yosys_script)
 
     if runner.available("yosys"):
-        runner.run(yosys_command(yosys_script), cwd=str(build_dir.parent or "."))
+        runner.run(yosys_command(yosys_script), cwd=".")
 
     config = VerifyConfig(
         top=compiled.design.name,
@@ -204,7 +214,7 @@ def run_verify(
         gate_v=str(mapped_v),
         golden_json=str(golden_json),
         testbench_v=str(testbench_v),
-        cwd=str(build_dir.parent or "."),
+        cwd=".",
     )
 
     strategy = SynchronousVerify()
@@ -252,7 +262,7 @@ def _run_properties_only(
         top=compiled.design.name,
         generated_v=str(generated_v),
         properties_sv=str(properties_sv),
-        cwd=str(build_dir.parent or "."),
+        cwd=".",
     )
     property_checks = properties_mod.run_properties(compiled, config, runner)
     report = VerificationReport(checks=property_checks, mutations=[])
