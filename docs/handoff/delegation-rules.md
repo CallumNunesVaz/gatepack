@@ -9,8 +9,12 @@
   contract, match it field for field.
 - **Stay inside your file scope.** Three other agents are writing in this repo
   right now, in the scopes listed as off-limits below.
-- **Never write outside the project directory, and never `&&`-chain a command
-  that might be refused.** Anything outside it is auto-rejected and the
+- **Never touch any path outside the project directory — READS INCLUDED — and
+  never `&&`-chain a command that might be refused.**
+  `cat /etc/os-release`, `ls /usr/lib`, `cp x /tmp/y` are all auto-rejected and
+  the refusal ENDS THE RUN mid-task. To learn about the host, use commands that
+  do not name an outside path (`uname -m`, `ldd --version`, `docker run ...`),
+  or read it inside a container and print the result. Anything outside it is auto-rejected and the
   refusal ENDS THE RUN — it has now killed three runs, two of them mid-task
   after real work. Use `.gpout/` **inside your worktree** for every scratch
   file, backup and build output. Do not `cp` to `/tmp`; do not use `../` paths
