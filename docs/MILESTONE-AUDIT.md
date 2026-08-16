@@ -16,7 +16,7 @@ tool closes, the only evidence that counts is that tool closing.
 | M4 | Sync path through the interface; async refuses cleanly | **met** |
 | M5 | Equivalence closes on all goldens; exhaustive sim; mutation | **met** (2026-08-16) |
 | M6 | sby discharges invariants/reachability/liveness; covers guard vacuity | **met** (2026-08-16) |
-| M8 | CNT4 + SUPERVISOR + tie-off; shared behavioural models | **NOT MET** — a wrong M-cell model is not caught |
+| M8 | CNT4 + SUPERVISOR + tie-off; shared behavioural models | **met** (2026-08-16) — a wrong M-cell model now fails equivalence |
 | M9 | `pack_cost`; spare avoidance; deterministic; override works | **met** (2026-08-16) |
 | M10 | KiCad import clean; SCOAP delta; stuck-at classification | **partial** — analysis met, KiCad import unverified |
 | M11a | Two clean builds hash-identical | **met** (2026-08-16) |
@@ -24,8 +24,8 @@ tool closes, the only evidence that counts is that tool closing.
 | M12 | Project opens; core invoked; §5.2 posture verified | **met** |
 | M13 | C10 spec editor — three-way sync, positions in sidecar | **met** (sidecar is localStorage, not `design.layout.json`) |
 | M14 | C11 truth table — divergence highlighting | **met** (2026-08-16, was NOT met) |
-| M15 | C12 schematic — all layers | **partial** — data paths fixed; packed layer not in the contract |
-| M16 | Linked selection — §15.2 cross-highlights | **partial** — provenance now reaches the renderer; package/property selections still map to nothing |
+| M15 | C12 schematic — all layers | **met** (2026-08-16) — packed and overlay layers render from `out/packed.json` |
+| M16 | Linked selection — §15.2 cross-highlights | **met** (2026-08-16) — package and property selections resolve |
 | M17 | C13 packing override, C14 dashboard, C15 tri-state | **met** (2026-08-16) |
 | M18 | Signed installers; worked example; CI green | **partial** — packaging builds, licence defects open, core does not ship |
 
@@ -88,36 +88,61 @@ traffic_light   passed — an honest mutex is not rejected
 Liveness is emitted as a bounded check reporting `bounded` with its depth,
 never `passed`.
 
-## M8 — not met
+## M8 — met (2026-08-16), after being the most serious defect in the project
 
-The M-cell path is **unverified in the way that matters**, measured
-2026-08-16:
+The M-cell path was **unverified in the way that matters**. Two defects, both
+measured 2026-08-16 and both now closed:
 
-- The front end emits a macro as a dangling `(* gp_src *)` attribute rather
-  than an instantiation, so `gatepack verify` on a macro design fails at C3
-  with `syntax error, unexpected TOK_ENDMODULE`.
-- More seriously: with a hand-built netlist that *does* instantiate `CNT4`, a
-  deliberately wrong model (`Q <= Q + 4'd2`) is **not caught**. Equivalence
-  reads `cells_sim.v` on both sides, so mutating the model changes both sides
-  identically and Yosys still reports "Equivalence successfully proven!".
+- The front end emitted a macro as a dangling `(* gp_src *)` attribute rather
+  than an instantiation, so `gatepack verify` on a macro design failed at C3
+  with `syntax error, unexpected TOK_ENDMODULE` and never reached C4.
+- More seriously: with a hand-built netlist that *did* instantiate `CNT4`, a
+  deliberately wrong model (`Q <= Q + 4'd2`) was **not caught**. Equivalence
+  read `cells_sim.v` on both sides, so mutating the model changed both sides
+  identically and Yosys still reported "Equivalence successfully proven!".
 
 §19 R25 requires one shared model file so that equivalence and simulation
-cannot drift. That control is satisfied — but only its trivial half. Sharing
-the file is precisely what makes a macro model **unable to be checked against
-anything**: for a black box, the specification side has no independent
-definition of the macro's behaviour, so the model is compared with itself.
+cannot drift. That control was satisfied — but only its trivial half. Sharing
+the file is precisely what made a macro model **unable to be checked against
+anything**: for a black box, the specification side had no independent
+definition of the macro's behaviour, so the model was compared with itself.
 
-This is the eighth piece of machinery in this project to report a status while
+This was the eighth piece of machinery in this project to report a status while
 measuring nothing, and the most serious, because the status it reports is the
-central claim: formal equivalence. It is sound for G- and F-cells, whose
-golden side is behavioural RTL derived from the specification. It is vacuous
-for M-cells.
+central claim: formal equivalence.
 
-Closing it needs an independent behavioural definition of each macro — derived
-from the specification's own semantics of a counter, not from the same file
-the netlist uses. Pinned meanwhile by `tests/toolchain/test_mcell_coverage.py`,
-which asserts the current broken behaviour so it is visible rather than
-forgotten.
+**The fix.** `gatepack/macros/specs.py` states each M-cell's required behaviour
+as data — width, step, reset contract, enable — and generates `cells_spec.v`
+from it. C4's golden side reads that; the gate side keeps reading
+`cells_sim.v`. The two files are produced by different paths, so mutating the
+implementation model moves only the gate side. `cells_sim.v` remains the single
+implementation model shared with exhaustive simulation, so R25 is unweakened.
+
+Measured directly against Yosys 0.23, not merely asserted by a test:
+
+```
+correct model (Q <= Q + 4'd1)   Equivalence successfully proven!            exit 0
+mutated model (Q <= Q + 4'd2)   ERROR: Found 4 unproven $equiv cells        exit 1
+```
+
+The Yosys log confirms the two sides read different files:
+`$add$cells_spec.v:16$80_gold` against `$add$cells_sim.v:4$92_gate`.
+
+**What this does not establish.** The specification model and the
+implementation model can still both be wrong in the same way, because a human
+wrote both. The spec side is derived from the cell's declared semantics rather
+than from the other file, which is the strongest available control short of a
+second independent source; it is not a proof that the declared semantics are
+what the datasheet part does.
+
+`CNT4` is also the *only* M-cell in the library, so "a wrong M-cell model is
+caught" is established on a sample of one. (`SUPERVISOR` is a tier-S supply
+supervisor, not a synthesised macro, and has no behavioural model by design.)
+The failure mode to watch is a macro added without a specification model:
+`get_spec` raises rather than silently falling back to the implementation
+model, so it fails loudly — but nothing yet *requires* a spec model to exist
+before a macro can be used, and that check is worth adding when the second
+M-cell arrives.
 
 ## M9 — met (2026-08-16), after the library gained multi-gate parts
 
