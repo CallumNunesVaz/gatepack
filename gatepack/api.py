@@ -256,6 +256,38 @@ def analysis_summary(compiled, result, cpld_blockers: Sequence[Diagnostic]) -> d
     }
 
 
+def packed_view_payload(assigned, stable_names) -> dict:
+    """The §C12 packed layer payload (``PackedView`` in app/shared/api.ts).
+
+    ``assigned`` is the ``(refdes, PackageGroup)`` list from
+    :func:`gatepack.emit.refdes.assign_refdes`; ``stable_names`` the
+    :class:`~gatepack.netlist.CellNames` instance -> stable mapping.
+
+    ``group.cells`` holds **stable** names (what ``packing.force_groups``
+    records), while ``instanceCells`` must be the mapped-netlist **instance**
+    names — that is what the rendered netlist is keyed by.  The conversion is
+    ``stable_names.to_instance``, the one reverse lookup owned by ``CellNames``;
+    it is never re-derived here (confusing the two spaces has caused four
+    separate defects).
+    """
+    packages = []
+    for ref, group in assigned:
+        packages.append(
+            {
+                "refdes": ref,
+                "partNumber": group.part.part_number or group.part.cell,
+                "cells": list(group.cells),
+                "instanceCells": [
+                    stable_names.to_instance(stable) for stable in group.cells
+                ],
+                "capacity": group.capacity,
+                "spare": group.spare,
+                "rationale": group.rationale,
+            }
+        )
+    return {"packages": packages}
+
+
 def build_payload(result, paths: Mapping[str, Path], mapped_json_path: str | Path) -> dict:
     bom_rows = collect_bom(result.assigned)
     return {
@@ -292,5 +324,6 @@ __all__ = [
     "estimate_payload",
     "mapped_cell_counts",
     "metric",
+    "packed_view_payload",
     "verify_payload",
 ]
