@@ -222,6 +222,18 @@ export class FakeGatepack implements GatepackApi {
     return this.invoke<DoctorReport>('doctor');
   }
 
+  currentProject(): Promise<Envelope<ProjectInfo | null>> {
+    // The fake always has a project unless a test explicitly clears it, which
+    // mirrors main: "nothing open" is data, never an error envelope.
+    return Promise.resolve({
+      ok: true,
+      command: 'currentProject',
+      schema: 1,
+      data: { ...this.project },
+      warnings: [],
+    });
+  }
+
   packedNetlist(): Promise<Envelope<PackedView>> {
     return this.invoke<PackedView>('packedNetlist');
   }

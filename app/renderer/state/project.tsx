@@ -38,16 +38,36 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    api.openProject().then((env) => {
-      if (cancelled || !env.ok) return;
+
+    // `onProjectChanged` is how the renderer learns which project is open —
+    // NOT `openProject()`, which shows a native file picker and is the user's
+    // "Open…" action. Calling that on mount popped a dialog at every launch,
+    // and because it reports a cancelled dialog as an error the project stayed
+    // null, so the status bar read "no project" while the showcase was open.
+    //
+    // Main deliberately re-broadcasts after the page loads (see index.cts:
+    // "so a renderer that subscribes after load still sees the project"), and
+    // nothing was subscribing to it. Subscribe before the first await so the
+    // re-broadcast cannot land in the gap.
+    const unsubscribe = api.onProjectChanged((info) => {
+      if (!cancelled) setProject(info);
+    });
+
+    // Subscribing is not enough on first launch: main broadcasts once, right
+    // after `loadURL` resolves, which is before React has run this effect. So
+    // also *ask*. The subscription then keeps it current.
+    api.currentProject().then((env) => {
+      if (cancelled || !env.ok || env.data === null) return;
       setProject(env.data);
     });
+
     api.readSpec().then((env) => {
       if (cancelled || !env.ok) return;
       setSpecTextState(env.data.text);
     });
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, [api]);
 

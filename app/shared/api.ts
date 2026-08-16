@@ -435,6 +435,18 @@ export interface GatepackApi {
   listExamples(): Promise<Envelope<ExamplesList>>;
   /** Open a bundled example into a new project (scratch copy, §18.1). */
   openExample(name: string): Promise<Envelope<ProjectInfo>>;
+  /**
+   * Which project is open right now, or null.
+   *
+   * A *query*, deliberately distinct from `openProject()`, which shows a native
+   * file picker and is the user's "Open…" action. The renderer needs to learn
+   * the current project on mount, and `onProjectChanged` alone cannot tell it:
+   * main broadcasts once after the page loads, which races the renderer's first
+   * effect and loses. Calling `openProject()` instead popped a dialog at every
+   * launch and reported a cancelled dialog as an error, leaving the app
+   * claiming "no project" with the showcase plainly loaded.
+   */
+  currentProject(): Promise<Envelope<ProjectInfo | null>>;
   /** Cancel an in-flight call started with this token (§16.1). */
   cancel(token: string): Promise<void>;
 

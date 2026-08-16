@@ -64,10 +64,10 @@ test('the §5.2 posture holds inside the renderer', async () => {
   // The bridge exposes exactly the documented methods, nothing else.
   expect(posture.gatepackKeys).toEqual([
     'analyse', 'build', 'cancel', 'checkLibrary', 'closeProject', 'compile',
-    'doctor', 'estimate', 'listExamples', 'mappedNetlist', 'onFileChanged',
-    'onProgress', 'onProjectChanged', 'openExample', 'openProject',
-    'openProjectPath', 'packedNetlist', 'provenance', 'readSpec', 'saveProject',
-    'saveProjectAs', 'simulate', 'verify', 'writeSpec',
+    'currentProject', 'doctor', 'estimate', 'listExamples', 'mappedNetlist',
+    'onFileChanged', 'onProgress', 'onProjectChanged', 'openExample',
+    'openProject', 'openProjectPath', 'packedNetlist', 'provenance', 'readSpec',
+    'saveProject', 'saveProjectAs', 'simulate', 'verify', 'writeSpec',
   ]);
 });
 

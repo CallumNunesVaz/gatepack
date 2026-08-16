@@ -79,6 +79,8 @@ const api: GatepackApi = {
   packedNetlist: () =>
     ipcRenderer.invoke('gatepack:packedNetlist') as Promise<Envelope<PackedView>>,
   doctor: () => ipcRenderer.invoke('gatepack:doctor') as Promise<Envelope<DoctorReport>>,
+  currentProject: () =>
+    ipcRenderer.invoke('gatepack:currentProject') as Promise<Envelope<ProjectInfo | null>>,
 
   checkLibrary: (path: string) =>
     ipcRenderer.invoke('gatepack:checkLibrary', { path }) as Promise<Envelope<LibraryCheckResult>>,

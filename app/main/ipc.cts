@@ -98,6 +98,8 @@ export function registerIpc(deps: IpcDeps): void {
 
   handle('gatepack:doctor', NoPayloadSchema, () => session.doctor());
 
+  handle('gatepack:currentProject', NoPayloadSchema, () => session.currentProject());
+
   handle('gatepack:checkLibrary', CheckLibrarySchema, (p) => session.checkLibrary(p.path));
   handle('gatepack:listExamples', NoPayloadSchema, () => session.listExamples());
   handle('gatepack:openExample', OpenExampleSchema, (p) => session.openExample(p.name));

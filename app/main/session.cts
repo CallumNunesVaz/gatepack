@@ -459,6 +459,19 @@ export class SessionManager {
   provenance(): Promise<Envelope<ProvenanceMap>> {
     return this.invoke(ProvenanceMapSchema, 'provenance', 'provenance');
   }
+  /** The open project, or a successful envelope carrying null. */
+  currentProject(): Promise<Envelope<ProjectInfo | null>> {
+    // `ok: true` with `data: null` — "nothing is open" is an answer, not a
+    // failure, and must not be reported as one.
+    return Promise.resolve({
+      ok: true,
+      command: 'currentProject',
+      schema: 1,
+      data: this.project === null ? null : this.info(this.project),
+      warnings: [],
+    });
+  }
+
   doctor(): Promise<Envelope<DoctorReport>> {
     return this.invoke(DoctorReportSchema, 'doctor', 'doctor');
   }
