@@ -238,15 +238,17 @@ def analysis_summary(compiled, result, cpld_blockers: Sequence[Diagnostic]) -> d
     ]
     return {
         "metrics": metrics,
-        # §13.1 SCOAP and §13.2 stuck-at are not computed by the analysis
-        # module yet (see gatepack/analysis/__init__.py); emitted honestly empty.
-        "scoap": [],
-        "faults": {
-            "detected": 0,
-            "undetected": 0,
-            "redundant": 0,
-            "untestable": 0,
-        },
+        # §13.1 SCOAP delta table and §13.2 stuck-at classification.  Computed
+        # by gatepack/analysis/{scoap,faults}.py over the resolved mapped
+        # netlist and carried on the BuildResult; when synthesis did not run
+        # there is no netlist and both degrade to an honest empty value (the
+        # reason is stated in report.md, never as a fabricated number).
+        "scoap": result.scoap.to_wire() if getattr(result, "scoap", None) else [],
+        "faults": (
+            result.faults.to_wire()
+            if getattr(result, "faults", None)
+            else {"detected": 0, "undetected": 0, "redundant": 0, "untestable": 0}
+        ),
         "cpldBlockers": [d.to_dict() for d in cpld_blockers],
     }
 

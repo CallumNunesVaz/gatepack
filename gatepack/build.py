@@ -16,6 +16,7 @@ from typing import Mapping, Sequence
 
 from gatepack.analysis.clock import timing_analysis
 from gatepack.analysis.cpld import lint_cpld
+from gatepack.analysis.faults import FaultReport, analyze_faults
 from gatepack.analysis.power import (
     DynamicCurrent,
     StaticCurrent,
@@ -23,6 +24,7 @@ from gatepack.analysis.power import (
     spare_leakage_ua,
     static_current_by_tier,
 )
+from gatepack.analysis.scoap import ScoapReport, analyze_scoap
 from gatepack.diagnostic import Diagnostic
 from gatepack.emit.bom import collect_bom, emit_bom
 from gatepack.emit.kicad import emit_netlist
@@ -75,6 +77,8 @@ class BuildResult:
     compiled: CompiledDesign | None = None
     verilog: str | None = None
     netlist: MappedNetlist | None = None
+    scoap: ScoapReport | None = None
+    faults: FaultReport | None = None
     cpld_blockers: list[Diagnostic] = field(default_factory=list)
 
 
@@ -84,6 +88,7 @@ def assemble(
     config: AssembleConfig | None = None,
     previous_refdes: Mapping[str, str] | None = None,
     verilog_text: str | None = None,
+    compiled: CompiledDesign | None = None,
 ) -> BuildResult:
     """Run C5 -> C6 -> C7 -> C8 on a resolved mapped netlist."""
     cfg = config or AssembleConfig()
@@ -127,6 +132,9 @@ def assemble(
     timing = timing_analysis(netlist)
     cpld_blockers = lint_cpld(verilog_text or "", netlist)
 
+    scoap = analyze_scoap(netlist)
+    faults = analyze_faults(netlist, compiled)
+
     report = emit_report(
         ReportInputs(
             design=cfg.design_name,
@@ -142,6 +150,8 @@ def assemble(
             packages=[(ref, g.rationale) for ref, g in assigned],
             notes=_build_notes(cfg, dropped),
             cpld_blockers=cpld_blockers,
+            scoap=scoap,
+            faults=faults,
         )
     )
 
@@ -159,6 +169,9 @@ def assemble(
         timing=timing,
         packages=list(packed.packed),
         assigned=list(assigned),
+        netlist=netlist,
+        scoap=scoap,
+        faults=faults,
         cpld_blockers=cpld_blockers,
     )
 
@@ -269,10 +282,16 @@ def run_build(
         vcc=vcc,
     )
     previous = load_previous_refdes(out)
-    result = assemble(netlist, parts, config, previous, verilog_text=compiled_result.verilog)
+    result = assemble(
+        netlist,
+        parts,
+        config,
+        previous,
+        verilog_text=compiled_result.verilog,
+        compiled=compiled,
+    )
     result.compiled = compiled
     result.verilog = compiled_result.verilog
-    result.netlist = netlist
     paths = write_build(out, result, previous)
     return result, paths
 

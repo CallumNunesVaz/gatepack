@@ -53,3 +53,49 @@ def test_report_bom_rows_rendered():
     text = emit_report(inp)
     assert "74AUP1G00" in text
     assert "U1;U2" in text
+
+
+def test_report_renders_scoap_and_fault_sections():
+    from gatepack.analysis.faults import FaultReport
+    from gatepack.analysis.scoap import ScoapNet, ScoapReport
+
+    scoap = ScoapReport(
+        nets=(ScoapNet("n", 2, 3, None),),
+        unobservable=("n",),
+        delta=(ScoapNet("n", 2, 3, None),),
+        note="absolute costs are not directly comparable",
+    )
+    faults = FaultReport(
+        uncollapsed=8, collapsed=4, detected=3, undetected=0,
+        redundant=1, untestable=0, exhaustive=True,
+        vectors_applied=4, vectors_total=4, note="single stuck-at",
+    )
+    inp = ReportInputs(
+        design="demo",
+        timing_model="synchronous",
+        packed_stats=_stats(),
+        unpacked_stats=_stats(),
+        scoap=scoap,
+        faults=faults,
+    )
+    text = emit_report(inp)
+    assert "## Testability (SCOAP, §13.1)" in text
+    assert "Unobservable nets" in text
+    assert "## Fault analysis (§13.2)" in text
+    assert "collapsed faults" in text
+    assert "redundant: 1" in text
+    assert "exhaustive (4 vectors)" in text
+
+
+def test_report_degrades_honestly_without_netlist():
+    inp = ReportInputs(
+        design="demo",
+        timing_model="synchronous",
+        packed_stats=_stats(),
+        unpacked_stats=_stats(),
+    )
+    text = emit_report(inp)
+    assert "SCOAP not computed (no mapped netlist)" in text
+    assert "fault analysis not computed (no mapped netlist)" in text
+    # never zeros presented as a measurement
+    assert "detected: 0" not in text

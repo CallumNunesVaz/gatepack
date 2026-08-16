@@ -1,10 +1,12 @@
-"""C7 analysis — power (§13.3) and clock/timing (§9.6).
+"""C7 analysis — power (§13.3), clock/timing (§9.6), SCOAP (§13.1) and stuck-at
+fault analysis (§13.2).
 
-SCOAP testability (§13.1) and stuck-at fault analysis (§13.2) are **not** here:
-they depend on C4's vector infrastructure (another milestone) and are left as a
-seam in ``gatepack/analysis`` (see ``__init__.py``).  This package only delivers
-the parts of C7 that do not need C4: static current by tier, spare-gate leakage,
-dynamic current (flagged), combinational depth and cumulative tPD.
+Every module here is a pure function over the *resolved* mapped netlist (the
+Yosys ``write_json`` form, parsed by :mod:`gatepack.netlist` and resolved against
+``parts.csv``), so none of it needs Yosys at analysis time.  SCOAP and fault
+analysis depend on C4's exhaustive-vector idea but implement their own
+enumeration here, so they run from the netlist alone (fault analysis takes the
+compiled design for the data-input/state split).
 """
 
 from gatepack.analysis.clock import (
@@ -22,6 +24,13 @@ from gatepack.analysis.cpld import (
     lint_netlist,
     lint_verilog,
 )
+from gatepack.analysis.faults import (
+    Fault,
+    FaultReport,
+    VECTOR_CAP,
+    analyze_faults,
+    enumerate_faults,
+)
 from gatepack.analysis.power import (
     DynamicCurrent,
     StaticCurrent,
@@ -29,17 +38,34 @@ from gatepack.analysis.power import (
     spare_leakage_ua,
     static_current_by_tier,
 )
+from gatepack.analysis.scoap import (
+    DELTA_LIMIT,
+    UNOBSERVABLE,
+    ScoapNet,
+    ScoapReport,
+    analyze_scoap,
+)
 
 __all__ = [
+    "DELTA_LIMIT",
     "DynamicCurrent",
+    "Fault",
+    "FaultReport",
+    "ScoapNet",
+    "ScoapReport",
     "StaticCurrent",
     "TimingReport",
+    "UNOBSERVABLE",
+    "VECTOR_CAP",
+    "analyze_faults",
+    "analyze_scoap",
     "blockers_summary",
     "clock_fanout",
     "combinational_depth",
     "cpld_alternative_flow",
     "cumulative_tpd_ns",
     "dynamic_current_ua",
+    "enumerate_faults",
     "flop_count",
     "lint_cpld",
     "lint_netlist",
