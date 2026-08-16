@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Sequence
 
 from gatepack import __version__
 from gatepack.frontend.frontend import CompileResult, compile_design_file
@@ -28,6 +28,8 @@ from gatepack.frontend.model import CompiledDesign
 from gatepack.liberty.generator import generate as generate_liberty
 from gatepack.liberty.sim import generate as generate_sim
 from gatepack.macros import load_models as load_m_cell_models
+from gatepack.netlist import parse_mapped_json, resolve_parts
+from gatepack.pack.packer import pack
 from gatepack.parts import Part, load_parts
 from gatepack.synth.base import SynthConfig
 from gatepack.synth.synchronous import SynchronousBackend
@@ -256,7 +258,7 @@ def run_estimate(
     runner = runner or ToolchainRunner()
     yosys_ran = False
     if runner.available("yosys"):
-        package_count = _run_yosys(runner, yosys_script, build_dir)
+        package_count = _run_yosys(runner, yosys_script, build_dir, parts)
         if package_count is not None:
             metrics["package_count"] = float(package_count)
             yosys_ran = True
@@ -289,15 +291,52 @@ def run_estimate(
     )
 
 
-def _run_yosys(runner: ToolchainRunner, script: str, build_dir: Path) -> int | None:
-    """Run Yosys and return the mapped cell count, or ``None`` on any failure."""
-    result = runner.run(yosys_command(script), cwd=str(build_dir.parent or "."))
+def _run_yosys(
+    runner: ToolchainRunner, script: str, build_dir: Path, parts: Sequence[Part]
+) -> int | None:
+    """Run Yosys and return the *packed* package count, or ``None`` on failure."""
+    # No cwd override.  The script names its inputs as `str(build_dir / ...)`,
+    # i.e. relative to the directory the CLI was invoked from — deliberately, so
+    # that yosys.ys is reproducible and does not embed absolute paths.  The old
+    # `cwd=build_dir.parent` was correct only for a single-segment build dir:
+    # for `--build a/b/c` it made Yosys look for `a/b/a/b/c/generated.v`, fail,
+    # and leave packageCount as a silent `None` beside a verdict computed
+    # without it.
+    result = runner.run(yosys_command(script), cwd=".")
     if result.returncode != 0:
         return None
-    return _count_mapped_cells(build_dir / "mapped.json")
+    return _count_packages(build_dir / "mapped.json", parts)
+
+
+def _count_packages(mapped_json: Path, parts: Sequence[Part]) -> int | None:
+    """Pack the mapped netlist and return the physical package count.
+
+    This is deliberately the same packer ``build`` runs, not an approximation of
+    it: the §6 verdict classifies a number someone will plan a board around, so
+    "green, ~18 packages" for a design that builds to 30 is worse than no
+    verdict at all.  Any failure returns ``None`` (reported as unknown) rather
+    than falling back to the gate count, which is the wrong number wearing the
+    right label.
+    """
+    try:
+        netlist = resolve_parts(parse_mapped_json(mapped_json.read_text()), list(parts))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+    if not netlist.cells:
+        return 0
+    try:
+        return pack(netlist.cells, list(parts)).packed_stats.package_count
+    except (KeyError, ValueError):
+        return None
 
 
 def _count_mapped_cells(mapped_json: Path) -> int | None:
+    """The *gate* count — one per mapped cell.
+
+    Kept because it is a distinct, meaningful quantity (and the two agree only
+    for a one-gate-per-package library), but it is no longer what the package
+    count metric reports.
+    """
     try:
         data = json.loads(mapped_json.read_text())
     except (OSError, json.JSONDecodeError):

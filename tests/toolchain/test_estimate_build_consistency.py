@@ -1,26 +1,21 @@
 """`estimate` vs `build` on the goldens (§6 verdict, §C5 packing).
 
 The §6 verdict is what an engineer commits to a design on, so the number it
-classifies must be the number the board ends up with.  ``estimate`` counts
-*mapped cells* as its ``packageCount``; ``build`` counts *packed packages*.  With
-a one-gate-per-package library the two coincide and the gap was invisible; since
-the library gained multi-gate parts (M9) they diverge.
+classifies must be the number the board ends up with.  ``estimate`` used to
+count *mapped cells* as its ``packageCount`` while ``build`` counted *packed
+packages*: with a one-gate-per-package library the two coincided and the gap was
+invisible, and once the library gained multi-gate parts (M9) they diverged —
+measured on the pelican showcase, ``estimate`` said 23 where ``build`` said 20.
 
-Measured on the pelican showcase (``libraries/74aup.csv``):
+``estimate`` now runs the same packer, so this is the agreement check.  It runs
+the real toolchain against the real showcase, which is the only place the two
+numbers can be compared honestly.
 
-* ``estimate`` reports ``packageCount`` = 23 (mapped cells);
-* ``build`` reports ``packageCount`` = 20 (packed packages, 3 spare gates).
-
-The verdict classifies the 23, not the 20 — both happen to be in the green band
-(<= 25) here, so no verdict flips, but a design near the boundary would get a
-"green, ~24 packages" verdict and build to fewer, or an "amber" verdict for a
-board that is comfortably green.  This is the finding the task asks to report:
-``estimate`` does not model multi-gate packing at all.
-
-A second, separate defect is also pinned: ``estimate`` runs Yosys with
-``cwd=build_dir.parent``, so a nested ``--build`` path makes Yosys fail silently
-and ``packageCount`` becomes ``None`` — no error, no zeros, just an absence that
-reads like "unknown" beside a verdict that was computed without it.
+A second, separate defect is pinned here too: ``estimate`` ran Yosys with
+``cwd=build_dir.parent``, which is correct only for a single-segment build dir.
+For a nested ``--build a/b/c`` it made Yosys look for ``a/b/a/b/c/generated.v``,
+fail, and leave ``packageCount`` as a silent ``None`` — no error, no zeros, just
+an absence that reads like "unknown" beside a verdict computed without it.
 """
 
 from __future__ import annotations
@@ -78,9 +73,7 @@ def _data(proc: subprocess.CompletedProcess) -> dict:
 
 
 @requires_toolchain
-def test_estimate_package_count_diverges_from_build():
-    # `estimate` needs a single-segment build dir (see the cwd defect below), so
-    # use `dv_est_showcase` at the repo root; `build` is happy with any path.
+def test_estimate_package_count_agrees_with_build():
     est_dir = "dv_est_showcase"
     out_dir = ".gpout/est_build_showcase"
     try:
@@ -92,35 +85,35 @@ def test_estimate_package_count_diverges_from_build():
     estimate_packages = est["packageCount"]
     build_packages = bld["packageCount"]
 
-    # Packing can only reduce or leave the count unchanged, so this invariant
-    # must hold for every design.  The *finding* is that they are not equal for
-    # the showcase: estimate counts 23 mapped cells, build packs them to 20.
-    assert estimate_packages >= build_packages
-    assert estimate_packages != build_packages, (
-        "estimate packageCount == build packageCount for the showcase. If "
-        "`estimate` now models multi-gate packing, this test becomes the "
-        "agreement check it was meant to be and this assertion should be "
-        "flipped to equality."
+    assert build_packages > 0
+    assert estimate_packages == build_packages, (
+        "estimate's packageCount must be the number build produces; a verdict "
+        "over the gate count is a verdict over the wrong number"
     )
 
-    # The estimate verdict classifies estimate_packages, not build_packages.
-    # Both are in the green band (<= 25) here, so the verdict is unchanged —
-    # but it is a verdict over the wrong number.
+    # And it must be the *packed* number, not the gate count that happens to
+    # equal it for a single-gate library — the showcase maps 23 cells into 20
+    # packages, so agreement here is only possible if the packer ran.
+    assert build_packages < sum(est["cellCounts"].values())
+
     assert est["verdict"] in ("green", "amber", "red")
-    assert 0 < build_packages < estimate_packages
 
 
 @requires_toolchain
 def test_estimate_nested_build_dir_silently_reports_none():
-    """The second defect: a nested ``--build`` path makes estimate's Yosys run
-    fail silently (its ``cwd=build_dir.parent`` resolves the script's relative
-    paths one level too deep), so ``packageCount`` is ``None`` with no error."""
-    nested = ".gpout/est_nested"
+    """A nested ``--build`` path must produce the same number as a flat one.
+
+    This fails if the `cwd` override comes back: Yosys then resolves the
+    script's relative paths one level too deep, fails, and `packageCount`
+    becomes `None` with no error and exit 0.
+    """
+    nested = ".gpout/a/b/est_nested"
+    flat = "dv_est_flat"
     try:
-        proc = _run("estimate", DESIGN, "--library", LIBRARY, "--build", nested, "--json")
-        data = json.loads(proc.stdout)["data"]
-        # the command itself succeeds (exit 0) while the number is silently absent
-        assert proc.returncode == 0
-        assert data["packageCount"] is None
+        deep = _data(_run("estimate", DESIGN, "--library", LIBRARY, "--build", nested, "--json"))
+        shallow = _data(_run("estimate", DESIGN, "--library", LIBRARY, "--build", flat, "--json"))
     finally:
-        _rm(nested)
+        _rm(".gpout/a", flat)
+
+    assert deep["packageCount"] is not None, "nested --build silently lost the count"
+    assert deep["packageCount"] == shallow["packageCount"]
