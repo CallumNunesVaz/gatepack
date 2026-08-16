@@ -84,9 +84,8 @@ def cell_from_part(
 def parse_mapped_json(text: str) -> MappedNetlist:
     """Parse a Yosys ``write_json`` document into a :class:`MappedNetlist`.
 
-    The parser is validated against hand-written fixtures in this environment;
-    it has not been run against real Yosys output (Yosys is not installed) and
-    should be exercised against the pinned Yosys at M0.
+    Exercised against real Yosys 0.23 output via the toolchain container as
+    well as hand-written fixtures.
     """
     data = json.loads(text)
     modules = data.get("modules", {})
@@ -102,6 +101,22 @@ def parse_mapped_json(text: str) -> MappedNetlist:
                 bit_to_net[bit] = net
 
     ports = module.get("ports", {})
+
+    # A bit can carry several net names. C1 deliberately emits `<out>_int`
+    # intermediates to hold provenance (M0-FINDINGS §1), so an output bit is
+    # named both `walk` and `walk_int`, and the loop above keeps whichever came
+    # last. Port names must win: `inputs`/`outputs` below are port names, and
+    # any consumer that compares a cell connection against them silently
+    # matches nothing otherwise.
+    #
+    # That is not hypothetical. It made SCOAP report every output-driving net
+    # as unobservable - including all four of the showcase's outputs - which
+    # reads as "this design is untestable".
+    for name, info in ports.items():
+        for bit in info.get("bits", []):
+            if isinstance(bit, int):
+                bit_to_net[bit] = name
+
     inputs = tuple(
         name for name, info in ports.items() if info.get("direction") == "input"
     )

@@ -92,3 +92,42 @@ def test_missing_yosys_says_so_rather_than_blaming_something_else() -> None:
     assert "yosys is not on PATH" in combined, combined
     # and it must still refuse rather than invent a netlist
     assert "never faked here" in combined
+
+
+@requires_toolchain
+def test_outputs_are_observable_on_a_real_netlist() -> None:
+    """SCOAP must not call a design's own outputs unobservable.
+
+    A bit can carry several net names, and C1 deliberately emits `<out>_int`
+    intermediates to hold provenance. The parser's bit->name map was
+    last-writer-wins, so cell connections resolved to `walk_int` while
+    `netlist.outputs` held the port name `walk` — and every output-driving net
+    came out unobservable. The report told the reader that all four of the
+    showcase's outputs could not be observed, i.e. that the design was
+    untestable.
+
+    Only a real netlist has the alias pairs that trigger it; the hand-written
+    fixtures do not.
+    """
+    out = ".gpout/t_observability"
+    proc = _build(out)
+    assert proc.returncode == 0, proc.stderr or proc.stdout
+
+    report = subprocess.run(
+        [
+            "docker", "run", "--rm", "-v", f"{REPO}:/repo", "-w", "/repo", IMAGE,
+            "cat", f"{out}/report.md",
+        ],
+        capture_output=True,
+        text=True,
+    ).stdout
+
+    line = next(
+        (ln for ln in report.splitlines() if ln.startswith("Unobservable nets")),
+        "",
+    )
+    for output_net in ("walk", "traffic_red", "traffic_green", "traffic_amber"):
+        assert output_net not in line, (
+            f"{output_net!r} is a primary output and cannot be unobservable; "
+            f"the bit->name resolution has regressed.\n{line}"
+        )

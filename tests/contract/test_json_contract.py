@@ -175,8 +175,23 @@ def test_build_json_envelope(tmp_path):
     # analysis shape
     analysis = data["analysis"]
     assert set(analysis) == {"metrics", "scoap", "faults", "cpldBlockers"}
-    assert analysis["scoap"] == []  # §13.1 not computed — honest empty
+    # §13.1 SCOAP delta table.  The fixture's lone INV has no output port, so
+    # both nets are unobservable — the honest finding, surfaced via the
+    # observability sentinel, never a fabricated "computed" value.
+    from gatepack.analysis.scoap import UNOBSERVABLE
+
+    assert [s["net"] for s in analysis["scoap"]] == ["n1", "x"]
+    for s in analysis["scoap"]:
+        assert set(s) == {"net", "controllability0", "controllability1", "observability"}
+        assert s["observability"] == UNOBSERVABLE
+        assert isinstance(s["controllability0"], int)
+        assert isinstance(s["controllability1"], int)
+    # §13.2 stuck-at classification: the dangling output makes both collapsed
+    # faults redundant (a real measurement for a present netlist, not zeros).
     assert set(analysis["faults"]) == {"detected", "undetected", "redundant", "untestable"}
+    assert analysis["faults"] == {
+        "detected": 0, "undetected": 0, "redundant": 2, "untestable": 0,
+    }
     assert analysis["cpldBlockers"] == []  # clean golden
     for metric in analysis["metrics"]:
         assert set(metric) == {"name", "value", "unit", "limit", "violated"}

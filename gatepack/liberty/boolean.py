@@ -8,6 +8,8 @@ input set), then re-emit fully parenthesised so precedence is unambiguous.
 
 from __future__ import annotations
 
+from typing import Mapping
+
 
 class BooleanError(ValueError):
     """A boolean function in ``parts.csv`` is malformed."""
@@ -173,3 +175,20 @@ def evaluate(func: str, inputs: int, assignment: dict[str, bool]) -> bool:
     if missing:
         raise BooleanError(f"assignment missing inputs {sorted(missing)!r}")
     return _eval_node(node, assignment)
+
+
+def parse_function(func: str, inputs: int) -> tuple:
+    """Parse and validate ``func`` once, returning the (opaque) AST node.
+
+    Hot loops (SCOAP, fault simulation) call :func:`evaluate` many times per
+    gate; re-tokenising and re-parsing the same string on every call dominates
+    the cost.  Callers that evaluate a gate repeatedly should parse once and
+    reuse the node with :func:`eval_function`.
+    """
+    node, _expected = _parse_and_validate(func, inputs)
+    return node
+
+
+def eval_function(node: tuple, assignment: Mapping[str, bool]) -> bool:
+    """Evaluate a node from :func:`parse_function` under ``assignment``."""
+    return _eval_node(node, dict(assignment))

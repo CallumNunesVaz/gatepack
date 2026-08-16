@@ -13,7 +13,9 @@ from typing import Sequence
 
 from gatepack.analysis.clock import TimingReport
 from gatepack.analysis.cpld import blockers_summary, cpld_alternative_flow
+from gatepack.analysis.faults import FaultReport
 from gatepack.analysis.power import DynamicCurrent, StaticCurrent
+from gatepack.analysis.scoap import ScoapReport
 from gatepack.diagnostic import Diagnostic
 from gatepack.emit.bom import BomRow
 from gatepack.emit.refdes import RefdesDelta
@@ -35,10 +37,16 @@ class ReportInputs:
     packages: Sequence[tuple[str, str]] = field(default_factory=list)  # (refdes, rationale)
     notes: Sequence[str] = field(default_factory=list)
     cpld_blockers: Sequence[Diagnostic] = field(default_factory=list)
+    scoap: ScoapReport | None = None
+    faults: FaultReport | None = None
 
 
 def _fmt(value: float) -> str:
     return f"{value:g}"
+
+
+def _scoap_value(value: int | None) -> str:
+    return "∞" if value is None else str(value)
 
 
 def emit_report(inp: ReportInputs) -> str:
@@ -138,6 +146,58 @@ def emit_report(inp: ReportInputs) -> str:
             lines.append("")
             for pkg_id, old, new in d.renumbered:
                 lines.append(f"  - {pkg_id}: {old} -> {new}")
+        lines.append("")
+
+    lines.append("## Testability (SCOAP, §13.1)")
+    lines.append("")
+    if inp.scoap is not None:
+        s = inp.scoap
+        lines.append(f"- {s.note}.")
+        lines.append("")
+        lines.append("| net | CC0 | CC1 | observability |")
+        lines.append("|---|---|---|---|")
+        for n in s.delta:
+            lines.append(
+                f"| {n.net} | {_scoap_value(n.controllability0)} | "
+                f"{_scoap_value(n.controllability1)} | {_scoap_value(n.observability)} |"
+            )
+        lines.append("")
+        if s.unobservable:
+            lines.append(
+                "Unobservable nets (no path to any primary output; rendered as an "
+                f"overlay by C12): {', '.join(s.unobservable)}"
+            )
+        else:
+            lines.append("Unobservable nets: none.")
+        lines.append("")
+    else:
+        lines.append("- SCOAP not computed (no mapped netlist).")
+        lines.append("")
+
+    lines.append("## Fault analysis (§13.2)")
+    lines.append("")
+    if inp.faults is not None:
+        f = inp.faults
+        lines.append(f"- single stuck-at; {f.note}.")
+        lines.append(f"- uncollapsed faults (nets + cell pins): {f.uncollapsed}")
+        lines.append(
+            f"- collapsed faults (equivalence + dominance): {f.collapsed}"
+        )
+        lines.append(
+            f"- detected: {f.detected}, undetected: {f.undetected}, "
+            f"redundant: {f.redundant}, untestable: {f.untestable}"
+        )
+        if f.exhaustive:
+            lines.append(f"- vector set: exhaustive ({f.vectors_applied} vectors)")
+        else:
+            lines.append(
+                f"- vector set: PARTIAL — {f.vectors_applied} of "
+                f"{f.vectors_total} vectors, so 'undetected' means a test may "
+                f"exist outside the applied set"
+            )
+        lines.append("")
+    else:
+        lines.append("- fault analysis not computed (no mapped netlist).")
         lines.append("")
 
     lines.append("## CPLD fallback (§24.1)")
