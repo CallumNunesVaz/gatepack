@@ -206,6 +206,21 @@ def _build_parser() -> argparse.ArgumentParser:
     build.add_argument(
         "--json", action="store_true", help="emit one machine-readable JSON object to stdout"
     )
+
+    analyse = sub.add_parser(
+        "analyse", help="C7 standalone: SCOAP + stuck-at over an existing build directory"
+    )
+    analyse.add_argument("dir", help="build/out directory containing mapped.json + cells.lib")
+    analyse.add_argument(
+        "--design", help="path to design.yaml (optional: exact flop count, constraints, data-input split)"
+    )
+    analyse.add_argument(
+        "--library", help="path to parts.csv (optional: package cost + static current metrics)"
+    )
+    analyse.add_argument(
+        "--json", action="store_true", help="emit one machine-readable JSON object to stdout"
+    )
+
     examples_p = sub.add_parser(
         "examples", help="bundled example projects (§18.1)"
     )
@@ -255,6 +270,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_simulate(args)
     if args.command == "build":
         return _cmd_build(args)
+    if args.command == "analyse":
+        return _cmd_analyse(args)
     if args.command == "examples":
         if args.examples_command == "list":
             return _cmd_examples_list(args)
@@ -593,6 +610,56 @@ def _cmd_build(args: argparse.Namespace) -> int:
           f"pack_cost {s.pack_cost:g}")
     for name, path in sorted(paths.items()):
         print(f"wrote {path}")
+    return EXIT_OK
+
+
+def _cmd_analyse(args: argparse.Namespace) -> int:
+    from gatepack.analysis.summary import (
+        AnalysisUnavailableError,
+        dir_only_payload,
+        full_analysis_payload,
+    )
+
+    try:
+        if args.design and args.library:
+            payload = full_analysis_payload(args.dir, args.design, args.library)
+        else:
+            payload = dir_only_payload(args.dir)
+    except AnalysisUnavailableError as exc:
+        if args.json:
+            _json_err("analyse", error(GP_IO, str(exc)))
+        else:
+            print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    except (
+        AsyncRefused,
+        CompileError,
+        parts_mod.PartError,
+        LibertyError,
+        VccIncompatibleError,
+        OSError,
+    ) as exc:
+        if args.json:
+            _json_err("analyse", _command_error(exc))
+        else:
+            print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    if args.json:
+        _json_ok("analyse", payload)
+        return EXIT_OK
+
+    faults = payload["faults"]
+    print(
+        "stuck-at: "
+        f"{faults['detected']} detected, {faults['undetected']} undetected, "
+        f"{faults['redundant']} redundant, {faults['untestable']} untestable"
+    )
+    print(f"SCOAP delta: {len(payload['scoap'])} worst net(s)")
+    for metric in payload["metrics"]:
+        print(f"  {metric['name'] + ':':22} {metric['value']!s:>10} {metric['unit']}")
+    if payload["cpldBlockers"]:
+        print(f"CPLD blockers: {len(payload['cpldBlockers'])}")
     return EXIT_OK
 
 

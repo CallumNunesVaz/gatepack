@@ -238,3 +238,28 @@ def test_compile_gpk_matches_exploded_design(tmp_path, name):
         t.to for t in from_yaml.design.transitions
     ]
     assert from_gpk.design.output_logic == from_yaml.design.output_logic
+
+
+def test_cnt4_macro_golden_compiles_and_counts_macro_flops():
+    result = compile_design_file(DESIGNS / "cnt4_macro.yaml")
+    c = result.compiled
+    # 2 one-hot state flops + 2 reset-deassert synchroniser flops + 4 CNT4 flops
+    assert c.flop_count == 8
+    assert c.macro_flops == 4
+    assert [(m.instance, m.cell) for m in c.design.macros] == [("dwell", "CNT4")]
+    assert c.clock_fanout == c.flop_count + 1  # one clock pin per macro
+
+
+def test_cnt4_macro_is_declared_but_not_instantiated():
+    # §9.4: M-cells are instantiated by hand and never inferred by Yosys.  The
+    # front-end must *emit* that instantiation for C4 to exercise it; today it
+    # emits only a comment, so the macro is absent from every netlist.  This is
+    # the M8 gap the toolchain test reports loudly — pinned here so a future
+    # emitter change that adds the instantiation also flips this assertion.
+    import re
+
+    result = compile_design_file(DESIGNS / "cnt4_macro.yaml")
+    v = result.verilog
+    assert "// M-cell dwell: CNT4" in v
+    # no `CNT4 dwell (...)` module instantiation anywhere in the emitted Verilog
+    assert re.search(r"^\s*CNT4\s+dwell\s*\(", v, re.MULTILINE) is None

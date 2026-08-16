@@ -1,0 +1,40 @@
+# CNT4 macro golden — §18 "4-bit counter (M-cell)" entry.
+#
+# Exercises the §9.4 M-cell path: the design declares a CNT4 macro so C1
+# validates it (known M-cell, clock matches the design clock, enable guard is
+# well-formed).  The macro itself is instantiated by hand and never inferred
+# by Yosys (§8, §9.4); this golden is the vehicle for the R25 shared-model
+# check in tests/toolchain/test_mcell_coverage.py.
+name: cnt4_macro
+timing_model: synchronous
+
+clock: {signal: clk, freq_hz: 1, source: OSC}
+
+reset:
+  signal: rst_n
+  active: low
+  async_assert: true
+  sync_deassert: true
+  source: SUPERVISOR
+
+encoding: one_hot
+
+inputs:
+  - {name: en, sync: false}
+
+outputs:
+  - {name: counting}
+
+states: [IDLE, COUNT]
+initial: IDLE
+
+transitions:
+  - {from: IDLE,  to: COUNT, when: "en"}
+  - {from: IDLE,  to: IDLE,  when: "!en"}
+  - {from: COUNT, to: IDLE,  when: "1"}
+
+output_logic:
+  counting: "state == COUNT"
+
+macros:
+  - {instance: dwell, cell: CNT4, clock: clk, enable: "state == COUNT"}
