@@ -101,8 +101,13 @@ function selectionPaths(selection: Selection, model: DesignModel): string[] {
       .map(({ i }) => `transitions[${i}]`);
   }
   if (selection.kind === 'state') {
+    // C1 emits the bare token `states` for every state register, not
+    // `states[i]` — all state bits share one pointer. Asking for an index
+    // matched nothing, so every state selection read "no link" even though
+    // states are the construct kind with the BEST provenance (exact, 1/1 on
+    // every golden). The link is therefore state-group-wide, not per-state.
     const i = model.states.indexOf(selection.id);
-    return i === -1 ? [] : [`states[${i}]`];
+    return i === -1 ? [] : ['states'];
   }
   if (selection.kind === 'input') {
     const i = model.inputs.findIndex((p) => p.name === selection.name);
@@ -119,10 +124,10 @@ function pathToSelections(path: string, model: DesignModel): Selection[] {
     const t = model.transitions[i];
     return t ? [{ kind: 'transition', from: t.from, to: t.to }] : [];
   }
-  const state = /^states\[(\d+)\]$/.exec(path);
-  if (state) {
-    const id = model.states[Number(state[1])];
-    return id ? [{ kind: 'state', id }] : [];
+  // `states` covers every state at once (see selectionToPaths): the reverse
+  // direction therefore selects them all rather than guessing one.
+  if (path === 'states') {
+    return model.states.map((id) => ({ kind: 'state', id }) as Selection);
   }
   const input = /^inputs\[(\d+)\]$/.exec(path);
   if (input) {

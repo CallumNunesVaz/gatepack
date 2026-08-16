@@ -33,6 +33,7 @@ function buildResult(): BuildResult {
     packageCount: 3,
     spareCount: 0,
     packCost: 3,
+    stableCellNames: {},
     bom: [
       {
         partNumber: '74AUP1G02',

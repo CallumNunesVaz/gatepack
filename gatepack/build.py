@@ -27,6 +27,7 @@ from gatepack.analysis.power import (
 from gatepack.analysis.scoap import ScoapReport, analyze_scoap
 from gatepack.diagnostic import Diagnostic
 from gatepack.emit.bom import collect_bom, emit_bom
+from gatepack.provenance.coverage import measure_coverage_from_dir
 from gatepack.emit.kicad import emit_netlist
 from gatepack.emit.refdes import (
     RefdesDelta,
@@ -96,6 +97,7 @@ def assemble(
     previous_refdes: Mapping[str, str] | None = None,
     verilog_text: str | None = None,
     compiled: CompiledDesign | None = None,
+    build_dir: str | Path | None = None,
 ) -> BuildResult:
     """Run C5 -> C6 -> C7 -> C8 on a resolved mapped netlist."""
     cfg = config or AssembleConfig()
@@ -159,6 +161,28 @@ def assemble(
             cpld_blockers=cpld_blockers,
             scoap=scoap,
             faults=faults,
+            # §15.1 / M11b. Measured from the captured netlists when they are
+            # on disk; `measure_coverage_from_dir` returns None otherwise and
+            # the report says "not computed" rather than printing zeros.
+            provenance=(
+                measure_coverage_from_dir(build_dir, module=cfg.design_name)
+                if build_dir is not None
+                else None
+            ),
+            # Lets the timing section render `U6 -> U19` instead of ABC's
+            # internal blifparse node names.
+            #
+            # Keyed by the mapped-netlist INSTANCE name, because that is what
+            # the timing path is built from. `group.cells` holds STABLE names,
+            # so this has to go back through `names` — the third place today
+            # where those two name spaces had to be reconciled deliberately.
+            cell_refdes={
+                instance: ref
+                for ref, group in assigned
+                for stable in group.cells
+                for instance, mapped_stable in names.items()
+                if mapped_stable == stable
+            },
         )
     )
 
@@ -300,6 +324,7 @@ def run_build(
         previous,
         verilog_text=compiled_result.verilog,
         compiled=compiled,
+        build_dir=out,
     )
     result.compiled = compiled
     result.verilog = compiled_result.verilog
