@@ -90,3 +90,45 @@ jobs:
           docker run --rm -v "$PWD:/repo" -w /repo gatepack-toolchain:m6 \
             bash -c 'python3 -m gatepack build examples/pelican/design.yaml \
                        --library libraries/74aup.csv --out .gpout/pelican-out'
+
+  desktop-packaging:
+    # Builds the unpacked Electron app (unsigned) and audits the *installed* npm
+    # tree.  The `test` job's licence audit can only see the 16-entry declared
+    # manifest; this job sees the ~500 packages that actually ship inside the
+    # renderer bundle and the asar.  `--require-node-tree` makes a missing tree
+    # a failure for the same reason the `toolchain` job fails on a skipped test:
+    # an audit that ran over nothing is indistinguishable from one that did not
+    # run.
+    #
+    # This job is expected to be RED until the finding the audit surfaces is
+    # resolved: `spdx-exceptions` (CC-BY-3.0) ships inside the asar via
+    # netlistsvg's yargs CLI dependency subtree.  See docs/BUILD-NOTES-m18.md.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install app dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Version consistency (core vs app)
+        run: python3 scripts/version_check.py
+
+      - name: Licence audit over the installed tree
+        run: python3 scripts/licence_audit.py --require-node-tree
+
+      - name: Build the app (main + preload + renderer)
+        working-directory: app
+        run: npm run build
+
+      - name: Package unpacked Linux build (unsigned)
+        working-directory: app
+        run: npx electron-builder --linux dir
