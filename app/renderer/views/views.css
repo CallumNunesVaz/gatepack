@@ -179,41 +179,8 @@
   max-width: 44ch;
 }
 
-/* --- spinner ------------------------------------------------------------- */
-.gp-spinner {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--gp-space-2);
-  color: var(--gp-text-muted);
-  font-size: var(--gp-text-sm);
-}
-
-.gp-spinner__ring {
-  width: var(--gp-space-4);
-  height: var(--gp-space-4);
-  animation: gp-spin 0.9s linear infinite;
-}
-
-.gp-spinner__ring circle {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-dasharray: 60;
-  stroke-dashoffset: 42;
-}
-
-@keyframes gp-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .gp-spinner__ring {
-    animation-duration: 2s;
-  }
-}
+/* The spinner lives in styles.css with the other ui/ primitives — a second
+ * definition of .gp-spinner here silently overrode it. */
 
 /* --- generic data grid --------------------------------------------------- */
 .view-grid {
@@ -1208,6 +1175,14 @@ th.sortable[aria-sort='descending'] .sort-indicator svg {
   flex-direction: column;
   gap: var(--gp-space-2);
   height: 100%;
+  /* The parent (.spec-editor__body) is a flex ROW. Without these the graph
+   * sizes to its content and collapses into a narrow column, leaving most of a
+   * 1920px window empty while the states pile up unreadably on top of one
+   * another. `min-width: 0` is the half that is easy to forget: a flex item's
+   * default `min-width: auto` refuses to shrink below its content, which
+   * reintroduces the overflow this is meant to prevent. */
+  flex: 1;
+  min-width: 0;
 }
 
 .fsm__toolbar {
@@ -1298,6 +1273,35 @@ th.sortable[aria-sort='descending'] .sort-indicator svg {
   font-family: var(--gp-font-mono);
   font-size: var(--gp-text-xs);
   fill: var(--gp-text);
+}
+
+/* React Flow draws a rect behind each edge label and leaves it the browser
+ * default white. On the dark theme that is a bright clipped box with the guard
+ * expression half-hidden inside it — the labels read as rendering artefacts
+ * rather than as the transition guards they are. */
+.react-flow__edge-textbg {
+  fill: var(--gp-surface);
+  stroke: var(--gp-border);
+  stroke-width: 1;
+  rx: 3;
+  ry: 3;
+}
+
+.react-flow__edge.fsm-edge--highlight .react-flow__edge-textbg,
+.react-flow__edge.fsm-edge--selected .react-flow__edge-textbg {
+  fill: var(--gp-surface-3);
+  stroke: var(--gp-select-ring);
+}
+
+/* A guard can be a long expression; keep the node label from being crowded off
+ * its own chip when several edges converge. */
+.react-flow__node {
+  font-family: var(--gp-font-mono);
+  font-size: var(--gp-text-sm);
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  min-width: 5.5rem;
+  text-align: center;
 }
 
 /* --- link badge (provenance confidence) ---------------------------------- */

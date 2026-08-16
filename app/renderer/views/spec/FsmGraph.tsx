@@ -53,6 +53,29 @@ export function FsmGraph() {
   const selectedTransition = selectedTransitionIndex >= 0 ? model.transitions[selectedTransitionIndex] : null;
   const selectedState = selection?.kind === 'state' ? selection.id : null;
 
+  // Default layout: a circle, not a row.
+  //
+  // The previous default was `{ x: i * 180, y: 0 }` — every state on one line,
+  // so a five-state machine rendered as a 900px-wide strip with every edge
+  // looping over the top of it and the guard labels colliding. An FSM is a
+  // cycle far more often than it is a pipeline (the showcase crossing is
+  // literally GO -> WARN -> STOP -> CROSS -> CLEAR -> GO), and on a circle
+  // every transition gets its own chord and the back edges are visible as
+  // themselves.
+  //
+  // Saved positions still win: this is only what an unpositioned state gets,
+  // and dragging one persists to the sidecar as before.
+  const ringRadius = Math.max(180, 62 * model.states.length);
+  const circleLayout = (i: number): { x: number; y: number } => {
+    // Start at the top and go clockwise, so the initial state — which sorts
+    // first in a well-written spec — lands where the eye starts.
+    const angle = (2 * Math.PI * i) / Math.max(1, model.states.length) - Math.PI / 2;
+    return {
+      x: Math.round(ringRadius * (1 + Math.cos(angle))),
+      y: Math.round(ringRadius * (1 + Math.sin(angle))),
+    };
+  };
+
   const nodes: Node[] = model.states.map((state, i) => {
     const classes = [
       state === model.initial ? 'fsm-node--initial' : '',
@@ -61,7 +84,7 @@ export function FsmGraph() {
     ].filter(Boolean).join(' ');
     return {
       id: state,
-      position: positions[state] ?? { x: i * 180, y: 0 },
+      position: positions[state] ?? circleLayout(i),
       data: { label: state },
       className: classes || undefined,
     };

@@ -412,14 +412,66 @@ button:disabled { opacity: 0.5; cursor: default; }
 .gp-empty__desc { margin: 0; font-size: var(--gp-text-xs); }
 
 /* --- Spinner (Spinner.tsx) -------------------------------------------- */
+/* The ONLY definition of .gp-spinner. views.css previously carried a second,
+ * incompatible one; whichever loaded last won and the spinner rendered as a
+ * static dot. */
 .gp-spinner {
-  display: inline-block;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: gp-spin var(--gp-motion-slow) linear infinite;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gp-space-2);
+  color: var(--gp-text-muted);
+  font-size: var(--gp-text-sm);
+  vertical-align: middle;
 }
+
+.gp-spinner__ring {
+  flex: none;
+  /* 0.9s: fast enough to read as active, slow enough not to look frantic. The
+   * motion tokens are for transitions — borrowing --gp-motion-slow (260ms) made
+   * this a blur. */
+  animation: gp-spin 0.9s linear infinite;
+  transform-origin: 50% 50%;
+}
+
+.gp-spinner__track {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  opacity: 0.18;
+}
+
+.gp-spinner__arc {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  /* r=9 -> circumference 56.5; show a quarter, hide the rest. */
+  stroke-dasharray: 14 43;
+}
+
+.gp-spinner__label {
+  color: var(--gp-text-muted);
+}
+
+.gp-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 @keyframes gp-spin { to { transform: rotate(360deg); } }
+
+/* A frozen spinner reads as a hung application, so slow it rather than
+ * stopping it. It is never the only signal that work is in flight. */
+@media (prefers-reduced-motion: reduce) {
+  .gp-spinner__ring { animation-duration: 2.4s; }
+}
 
 /* --- Toast (Toast.tsx) ------------------------------------------------- */
 .gp-toast-stack {

@@ -13,16 +13,11 @@ import type { ReactNode } from 'react';
 import { Icon, Tooltip } from '../ui';
 import type { IconName } from '../ui';
 
-export function Spinner({ label = 'working' }: { label?: string }) {
-  return (
-    <span className="gp-spinner" role="status" aria-live="polite">
-      <svg className="gp-spinner__ring" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <circle cx="12" cy="12" r="10" />
-      </svg>
-      <span>{label}</span>
-    </span>
-  );
-}
+// The shell's primitives have landed, so this is now a re-export rather than a
+// second implementation. There were briefly three `.gp-spinner` renderings — a
+// bordered span, this ring, and a stylesheet block for each — and whichever CSS
+// loaded last decided what the user saw. One component, one stylesheet block.
+export { Spinner } from '../ui';
 
 export interface EmptyStateProps {
   icon: IconName;
