@@ -237,14 +237,33 @@ def build_simulation_table(
     }
 
 
-def load_mapped(path: str | Path) -> MappedNetlist | None:
-    """Read a ``mapped.json`` if it exists, else ``None`` (synthesis not run)."""
+def load_mapped(
+    path: str | Path, parts: Sequence[Part] | None = None
+) -> MappedNetlist | None:
+    """Read a ``mapped.json`` if it exists, else ``None`` (synthesis not run).
+
+    ``parts`` is required to get a usable netlist. Yosys's post-ABC
+    ``write_json`` carries no ``port_directions``, so without resolving each
+    cell against the library the evaluator cannot tell an input pin from an
+    output pin and every net evaluates to ``x``.
+
+    That is not hypothetical: it made `actual` come back as ``x`` for every
+    output of every design — including a two-input XOR — so `diverges` was
+    permanently false and C11's divergence column could never fire. The check
+    reported a status while measuring nothing. `build.py` has always called
+    `resolve_parts` for exactly this reason; this path did not.
+
+    The unit test that "covered" it fabricated a netlist *with*
+    ``port_directions``, which real Yosys output never has, so it passed
+    throughout.
+    """
     mapped_path = Path(path)
     if not mapped_path.exists():
         return None
-    from gatepack.netlist import load_mapped_json
+    from gatepack.netlist import load_mapped_json, resolve_parts
 
-    return load_mapped_json(mapped_path)
+    netlist = load_mapped_json(mapped_path)
+    return resolve_parts(netlist, list(parts)) if parts else netlist
 
 
 __all__ = [

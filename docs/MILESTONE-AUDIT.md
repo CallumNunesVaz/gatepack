@@ -22,7 +22,10 @@ tool closes, the only evidence that counts is that tool closing.
 | M11a | Two clean builds hash-identical | **met** (2026-08-16) |
 | M11b | Provenance coverage measured and reported on every golden | **met** (2026-08-16) |
 | M12 | Project opens; core invoked; §5.2 posture verified | **met** |
-| M13–M16 | Spec editor, truth table, schematic, linked selection | **unaudited** |
+| M13 | C10 spec editor — three-way sync, positions in sidecar | **met** (sidecar is localStorage, not `design.layout.json`) |
+| M14 | C11 truth table — divergence highlighting | **met** (2026-08-16, was NOT met) |
+| M15 | C12 schematic — all layers | **NOT MET** — layers are text notices; `mappedNetlist()` calls a missing subcommand |
+| M16 | Linked selection — §15.2 cross-highlights | **NOT MET** — `provenance()`/`analyse()`/`mappedNetlist()` all call missing subcommands |
 | M17 | C13 packing override, C14 dashboard, C15 tri-state | **partial** — override does not round-trip |
 | M18 | Signed installers; worked example; CI green | **partial** — packaging builds, licence defects open, core does not ship |
 
@@ -225,14 +228,30 @@ link"** despite states having the best provenance of any construct kind. See
 the M13–M16 entry — that is a GUI defect that the GUI's own tests did not
 catch.
 
-## M13–M16 — unaudited
+## M13–M16 — audited 2026-08-16, three of four not met
 
-Merged on their test counts, which is the same evidence that failed on M5, M10
-and M9. Never driven as a real application. The `states[i]` defect above is one
-already-known example of what that misses: it was found by a core agent reading
-the renderer, not by the renderer's 147 passing tests.
+Full detail in `docs/GUI-AUDIT.md`, produced by driving the real application.
+The headline: **three bridge methods call CLI subcommands that do not exist.**
+`app/main/session.cts` invokes `mapped-netlist`, `provenance` and `analyse`;
+none of them are in `cli.py`. So `mappedNetlist()`, `provenance()` and
+`analyse()` have never returned data, which is why M15's layers and M16's
+cross-highlights cannot work at all.
 
-Being audited now (`deepseek/gui2`).
+**M14 was the worst and is now fixed.** `simulate()` returned `actual: "x"` for
+every output of every design — including a two-input XOR — so `diverges` was
+permanently false and C11's divergence column *could never fire*. Cause:
+`simulate.load_mapped` never called `resolve_parts`, and Yosys's post-ABC
+`write_json` carries no `port_directions`, so the evaluator could not tell an
+input pin from an output pin.
+
+The unit test covering it **fabricated a netlist with `port_directions`**,
+which real Yosys output never has. It passed throughout. That is the seventh
+piece of machinery in this project to report a status while measuring nothing,
+and the fourth whose test could not have failed.
+
+Now measured against a real netlist: correct netlist agrees on all four
+minterms; `XOR2` swapped for `AND2` diverges on exactly the three minterms
+where AND and XOR differ (`tests/toolchain/test_simulate_divergence.py`).
 
 ## M17 — partial
 

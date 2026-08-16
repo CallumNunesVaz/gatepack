@@ -521,8 +521,11 @@ def _cmd_simulate(args: argparse.Namespace) -> int:
 
     try:
         mapped_path = args.mapped if args.mapped else str(Path(args.build) / "mapped.json")
-        mapped = load_mapped(mapped_path)
+        # Parts first: `load_mapped` needs them to resolve pin directions, which
+        # Yosys's post-ABC write_json does not carry. Without that every output
+        # evaluates to 'x' and the divergence column can never fire.
         parts = load_parts(args.library) if args.library else []
+        mapped = load_mapped(mapped_path, parts)
     except (parts_mod.PartError, OSError) as exc:
         if args.json:
             _json_err("simulate", _command_error(exc))
