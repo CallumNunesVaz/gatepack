@@ -90,6 +90,7 @@ export function registerIpc(deps: IpcDeps): void {
   handle('gatepack:build', InvokeTokenSchema, (p) => session.build(p.token));
   handle('gatepack:analyse', InvokeTokenSchema, (p) => session.analyse(p.token));
   handle('gatepack:provenance', NoPayloadSchema, () => session.provenance());
+  handle('gatepack:simulate', InvokeTokenSchema, (p) => session.simulate(p.token));
   handle('gatepack:mappedNetlist', NoPayloadSchema, () => session.mappedNetlist());
 
   ipcMain.handle('gatepack:cancel', async (_event, raw: unknown) => {

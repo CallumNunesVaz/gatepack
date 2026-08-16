@@ -135,6 +135,23 @@ export const ProvenanceMapSchema = z.object({
   coverage: z.number(),
 });
 
+export const SimulationTableSchema = z.object({
+  inputNames: z.array(z.string()),
+  outputNames: z.array(z.string()),
+  rows: z.array(
+    z.object({
+      inputs: z.record(z.string()),
+      state: z.string().optional(),
+      expected: z.record(z.string()),
+      actual: z.record(z.string()).optional(),
+      diverges: z.boolean(),
+    }),
+  ),
+  dontCareCount: z.number(),
+  unreachableCount: z.number(),
+  exhaustive: z.boolean(),
+});
+
 /** `mappedNetlist()` — Yosys `write_json` output; shape not pinned, `unknown`. */
 export const MappedNetlistSchema = z.unknown();
 

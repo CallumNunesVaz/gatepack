@@ -14,6 +14,7 @@ import type {
   GatepackApi,
   ProjectInfo,
   ProvenanceMap,
+  SimulationTable,
   VerifyResult,
 } from '../../shared/api';
 
@@ -24,7 +25,8 @@ export type Command =
   | 'build'
   | 'analyse'
   | 'mappedNetlist'
-  | 'provenance';
+  | 'provenance'
+  | 'simulate';
 
 type ResultFactory<T> = Envelope<T> | ((token?: string) => Envelope<T>);
 type Hook = (token?: string) => Promise<void>;
@@ -197,6 +199,10 @@ export class FakeGatepack implements GatepackApi {
 
   provenance(): Promise<Envelope<ProvenanceMap>> {
     return this.invoke<ProvenanceMap>('provenance');
+  }
+
+  simulate(token?: string): Promise<Envelope<SimulationTable>> {
+    return this.invoke<SimulationTable>('simulate', token);
   }
 
   mappedNetlist(): Promise<Envelope<unknown>> {

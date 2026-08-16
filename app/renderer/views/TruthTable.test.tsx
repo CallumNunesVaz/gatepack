@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { render, waitFor } from '@testing-library/react';
 import { ApiProvider } from '../bridge/context';
 import { ProjectProvider } from '../state/project';
+import { SelectionProvider } from '../selection/bus';
 import { setApi } from '../api';
 import { FakeGatepack } from '../bridge/fake';
 import { TruthTable } from './TruthTable';
-import type { EstimateResult } from '../../shared/api';
+import type { EstimateResult, SimulationTable } from '../../shared/api';
 
 const XOR2_SPEC = `name: xor2
 timing_model: synchronous
@@ -25,32 +26,39 @@ output_logic:
   y: "a ^ b"
 `;
 
-// A mapped netlist that (wrongly) computes y = a & b, so it disagrees with the
-// spec's y = a ^ b on exactly three minterms: (0,1), (1,0) and (1,1).
-const AND_NETLIST = {
-  modules: {
-    xor2: {
-      ports: {
-        a: { direction: 'input', bits: [0] },
-        b: { direction: 'input', bits: [1] },
-        y: { direction: 'output', bits: [2] },
-      },
-      netnames: {
-        a: { bits: [0] },
-        b: { bits: [1] },
-        y: { bits: [2] },
-      },
-      cells: {
-        $and: {
-          hide_name: 1,
-          type: 'AND2',
-          port_directions: { A: 'input', B: 'input', Y: 'output' },
-          connections: { A: [0], B: [1], Y: [2] },
-        },
-      },
-    },
-  },
-};
+// The core's divergence table for a netlist that (wrongly) computes y = a & b,
+// against the spec y = a ^ b: three of four minterms disagree.
+function divergingTable(): SimulationTable {
+  return {
+    inputNames: ['a', 'b'],
+    outputNames: ['y'],
+    rows: [
+      { inputs: { a: '0', b: '0' }, expected: { y: '0' }, actual: { y: '0' }, diverges: false },
+      { inputs: { a: '0', b: '1' }, expected: { y: '1' }, actual: { y: '0' }, diverges: true },
+      { inputs: { a: '1', b: '0' }, expected: { y: '1' }, actual: { y: '0' }, diverges: true },
+      { inputs: { a: '1', b: '1' }, expected: { y: '0' }, actual: { y: '1' }, diverges: true },
+    ],
+    dontCareCount: 0,
+    unreachableCount: 0,
+    exhaustive: true,
+  };
+}
+
+function agreeingTable(): SimulationTable {
+  return {
+    inputNames: ['a', 'b'],
+    outputNames: ['y'],
+    rows: [
+      { inputs: { a: '0', b: '0' }, expected: { y: '0' }, actual: { y: '0' }, diverges: false },
+      { inputs: { a: '0', b: '1' }, expected: { y: '1' }, actual: { y: '1' }, diverges: false },
+      { inputs: { a: '1', b: '0' }, expected: { y: '1' }, actual: { y: '1' }, diverges: false },
+      { inputs: { a: '1', b: '1' }, expected: { y: '0' }, actual: { y: '0' }, diverges: false },
+    ],
+    dontCareCount: 0,
+    unreachableCount: 0,
+    exhaustive: true,
+  };
+}
 
 function estimateResult(): EstimateResult {
   return { verdict: 'green', reasons: [], packageCount: 1, flopCount: 0, cellCounts: { AND2: 1 }, alternative: null };
@@ -61,16 +69,18 @@ function renderTable(fake: FakeGatepack) {
   return render(
     <ApiProvider>
       <ProjectProvider>
-        <TruthTable />
+        <SelectionProvider>
+          <TruthTable />
+        </SelectionProvider>
       </ProjectProvider>
     </ApiProvider>,
   );
 }
 
-describe('TruthTable — divergence highlighting', () => {
-  it('highlights exactly the minterms where live and simulated outputs disagree', async () => {
+describe('TruthTable — core divergence column', () => {
+  it('highlights exactly the rows the core flags as diverging', async () => {
     const fake = new FakeGatepack({ specText: XOR2_SPEC });
-    fake.setOk('mappedNetlist', AND_NETLIST);
+    fake.setOk('simulate', divergingTable());
     fake.setOk('estimate', estimateResult());
 
     const { container } = renderTable(fake);
@@ -85,25 +95,9 @@ describe('TruthTable — divergence highlighting', () => {
     expect(rowNumbers).toEqual(['1', '2', '3']);
   });
 
-  it('shows no divergence when the netlist agrees with the spec', async () => {
-    // An XOR2 netlist that agrees with the spec (y = a ^ b).
-    const xorNetlist = {
-      modules: {
-        xor2: {
-          ports: {
-            a: { direction: 'input', bits: [0] },
-            b: { direction: 'input', bits: [1] },
-            y: { direction: 'output', bits: [2] },
-          },
-          netnames: { a: { bits: [0] }, b: { bits: [1] }, y: { bits: [2] } },
-          cells: {
-            $xor: { hide_name: 1, type: 'XOR2', port_directions: { A: 'input', B: 'input', Y: 'output' }, connections: { A: [0], B: [1], Y: [2] } },
-          },
-        },
-      },
-    };
+  it('shows no divergence when the core table agrees', async () => {
     const fake = new FakeGatepack({ specText: XOR2_SPEC });
-    fake.setOk('mappedNetlist', xorNetlist);
+    fake.setOk('simulate', agreeingTable());
     fake.setOk('estimate', estimateResult());
 
     const { container } = renderTable(fake);
@@ -111,6 +105,18 @@ describe('TruthTable — divergence highlighting', () => {
     await waitFor(() => {
       expect(container.querySelectorAll('tr[data-divergent="true"]').length).toBe(0);
     });
-    expect(container.querySelectorAll('tr').length).toBe(5); // header + 4 minterms
+    expect(container.querySelectorAll('tbody tr').length).toBe(4);
+  });
+
+  it('renders the "no simulation table" state when synthesis has not run', async () => {
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setOk('estimate', estimateResult());
+
+    const { container } = renderTable(fake);
+
+    await waitFor(() => {
+      expect(container.textContent).toContain('no simulation table');
+    });
+    expect(container.querySelectorAll('tbody tr').length).toBe(0);
   });
 });

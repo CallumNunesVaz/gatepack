@@ -21,6 +21,7 @@ import type {
   EstimateResult,
   ProjectInfo,
   ProvenanceMap,
+  SimulationTable,
   VerifyResult,
 } from '../shared/api';
 import { CancelRegistry } from './cancel.cjs';
@@ -33,6 +34,7 @@ import {
   EstimateResultSchema,
   MappedNetlistSchema,
   ProvenanceMapSchema,
+  SimulationTableSchema,
   VerifyResultSchema,
   errorEnvelope,
   okEnvelope,
@@ -47,6 +49,7 @@ export type CoreKind =
   | 'build'
   | 'analyse'
   | 'provenance'
+  | 'simulate'
   | 'mappedNetlist';
 
 export interface ProgressEvent {
@@ -121,6 +124,12 @@ export function buildCommandArgs(kind: CoreKind, project: ProjectState): string[
       return ['analyse', outDir];
     case 'provenance':
       return ['provenance', outDir];
+    case 'simulate':
+      // §C11 divergence data. Needs the library to evaluate the mapped
+      // netlist; without it the core still returns the `expected` column and
+      // omits `actual`, which the UI renders as "not synthesised" rather than
+      // as agreement.
+      return ['simulate', design, ...(hasLibrary ? ['--library', library] : []), '--build', buildDir];
     case 'mappedNetlist':
       return ['mapped-netlist', outDir];
   }
@@ -413,6 +422,10 @@ export class SessionManager {
   analyse(token?: string): Promise<Envelope<AnalysisSummary>> {
     return this.invoke(AnalysisSummarySchema, 'analyse', 'analyse', token);
   }
+  simulate(token?: string): Promise<Envelope<SimulationTable>> {
+    return this.invoke(SimulationTableSchema, 'simulate', 'simulate', token);
+  }
+
   provenance(): Promise<Envelope<ProvenanceMap>> {
     return this.invoke(ProvenanceMapSchema, 'provenance', 'provenance');
   }

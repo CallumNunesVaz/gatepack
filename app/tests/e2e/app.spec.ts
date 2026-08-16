@@ -66,7 +66,7 @@ test('the §5.2 posture holds inside the renderer', async () => {
     'analyse', 'build', 'cancel', 'closeProject', 'compile', 'estimate',
     'mappedNetlist', 'onFileChanged', 'onProgress', 'onProjectChanged',
     'openProject', 'openProjectPath', 'provenance', 'readSpec', 'saveProject',
-    'saveProjectAs', 'verify', 'writeSpec',
+    'saveProjectAs', 'simulate', 'verify', 'writeSpec',
   ]);
 });
 

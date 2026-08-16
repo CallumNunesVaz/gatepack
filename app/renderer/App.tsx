@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ProjectProvider, useProject } from './state/project';
+import { SelectionProvider } from './selection/bus';
 import { SpecEditor } from './views/SpecEditor';
 import { TruthTable } from './views/TruthTable';
 import { Schematic } from './views/Schematic';
@@ -64,7 +65,9 @@ function Shell() {
 export function App() {
   return (
     <ProjectProvider>
-      <Shell />
+      <SelectionProvider>
+        <Shell />
+      </SelectionProvider>
     </ProjectProvider>
   );
 }

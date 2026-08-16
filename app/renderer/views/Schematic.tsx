@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useApi } from '../bridge/context';
 import { useProject } from '../state/project';
 import { renderInWorker } from '../worker/schematicClient';
+import { useLinkContext } from '../selection/useLinkContext';
+import { useHighlights } from '../selection/bus';
 import type { AnalysisSummary } from '../../shared/api';
 
 /**
@@ -17,6 +19,8 @@ import type { AnalysisSummary } from '../../shared/api';
 export function Schematic() {
   const { model } = useProject();
   const api = useApi();
+  const ctx = useLinkContext();
+  const highlights = useHighlights(ctx);
 
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -82,6 +86,15 @@ export function Schematic() {
       </div>
 
       {error ? <div className="error-note">{error}</div> : null}
+
+      {highlights.nets.length || highlights.cells.length ? (
+        <div className="schematic__overlay" data-testid="schematic-highlight">
+          <strong>selection:</strong>{' '}
+          <span className="link-list">
+            nets {highlights.nets.join(', ') || '(none)'} · cells {highlights.cells.join(', ') || '(none)'}
+          </span>
+        </div>
+      ) : null}
 
       {showMapped ? (
         svg ? (

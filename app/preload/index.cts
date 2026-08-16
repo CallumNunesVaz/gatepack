@@ -20,6 +20,7 @@ import type {
   GatepackApi,
   ProjectInfo,
   ProvenanceMap,
+  SimulationTable,
   VerifyResult,
 } from '../shared/api';
 
@@ -66,6 +67,8 @@ const api: GatepackApi = {
 
   provenance: () =>
     ipcRenderer.invoke('gatepack:provenance') as Promise<Envelope<ProvenanceMap>>,
+  simulate: (token?: string) =>
+    ipcRenderer.invoke('gatepack:simulate', { token }) as Promise<Envelope<SimulationTable>>,
 
   mappedNetlist: () =>
     ipcRenderer.invoke('gatepack:mappedNetlist') as Promise<Envelope<unknown>>,

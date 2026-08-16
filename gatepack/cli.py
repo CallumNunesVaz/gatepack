@@ -171,6 +171,23 @@ def _build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="emit one machine-readable JSON object to stdout"
     )
 
+    simulate_p = sub.add_parser(
+        "simulate", help="C11: the exhaustive divergence table (expected vs mapped)"
+    )
+    simulate_p.add_argument("design", help="path to design.yaml or .gpk")
+    simulate_p.add_argument(
+        "--library", help="path to parts.csv (needed to evaluate the mapped netlist)"
+    )
+    simulate_p.add_argument(
+        "--build", default="build", help="build directory (default: %(default)s)"
+    )
+    simulate_p.add_argument(
+        "--mapped", help="path to a mapped.json; overrides --build/mapped.json"
+    )
+    simulate_p.add_argument(
+        "--json", action="store_true", help="emit one machine-readable JSON object to stdout"
+    )
+
     build = sub.add_parser(
         "build", help="C5+C6+C7+C8: pack and emit BOM, KiCad netlist, report"
     )
@@ -234,6 +251,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_estimate(args)
     if args.command == "verify":
         return _cmd_verify(args)
+    if args.command == "simulate":
+        return _cmd_simulate(args)
     if args.command == "build":
         return _cmd_build(args)
     if args.command == "examples":
@@ -470,6 +489,60 @@ def _cmd_verify(args: argparse.Namespace) -> int:
     if report.has_failure:
         return EXIT_ERROR
     return EXIT_ERROR  # not-run is not a pass (§14: never claim an unrun proof)
+
+
+def _cmd_simulate(args: argparse.Namespace) -> int:
+    from gatepack.simulate import build_simulation_table, load_mapped
+    from gatepack.parts import load_parts
+
+    try:
+        compiled = compile_design_file(args.design).compiled
+    except AsyncRefused as exc:
+        if args.json:
+            _json_err("simulate", _command_error(exc))
+        else:
+            print(f"refused: {exc}", file=sys.stderr)
+        return EXIT_ASYNC_REFUSED
+    except (CompileError, OSError) as exc:
+        if args.json:
+            _json_err("simulate", _command_error(exc))
+        else:
+            print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    try:
+        mapped_path = args.mapped if args.mapped else str(Path(args.build) / "mapped.json")
+        mapped = load_mapped(mapped_path)
+        parts = load_parts(args.library) if args.library else []
+    except (parts_mod.PartError, OSError) as exc:
+        if args.json:
+            _json_err("simulate", _command_error(exc))
+        else:
+            print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    table = build_simulation_table(compiled, mapped, parts)
+
+    if args.json:
+        _json_ok("simulate", table)
+        return EXIT_OK
+
+    print(
+        f"design: {compiled.design.name!r} "
+        f"({compiled.design.timing_model}, {len(compiled.state_order)} state(s), "
+        f"{len(compiled.input_names)} input(s))"
+    )
+    print(
+        f"rows: {len(table['rows'])} "
+        f"({'exhaustive' if table['exhaustive'] else 'capped (not exhaustive)'})"
+    )
+    if mapped is None:
+        print("mapped netlist: none — no divergence column (synthesis not run)")
+    else:
+        diverging = sum(1 for row in table["rows"] if row["diverges"])
+        print(f"mapped netlist: {mapped_path}")
+        print(f"divergent rows: {diverging}")
+    return EXIT_OK
 def _cmd_build(args: argparse.Namespace) -> int:
     from gatepack.build import run_build
 
