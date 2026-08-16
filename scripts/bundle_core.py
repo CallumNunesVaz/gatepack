@@ -29,7 +29,20 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-OUTPUT = REPO / "app" / "resources" / "bin" / "gatepack"
+
+
+def binary_name() -> str:
+    """The frozen binary's file name on this platform.
+
+    PyInstaller appends ``.exe`` on Windows.  The packaged app's core locator
+    (``app/main/core.cts``) and the release workflow must resolve the *same*
+    name, or a Windows bundle is produced but never found.  This is a pure
+    function of ``os.name`` so a test can pin it without building anything.
+    """
+    return "gatepack.exe" if os.name == "nt" else "gatepack"
+
+
+OUTPUT = REPO / "app" / "resources" / "bin" / binary_name()
 
 _ENTRY_SOURCE = (
     "import sys\n"
@@ -37,6 +50,19 @@ _ENTRY_SOURCE = (
     "if __name__ == '__main__':\n"
     "    sys.exit(main())\n"
 )
+
+
+def _has_executable(directory: Path, name: str) -> bool:
+    """True when ``directory`` contains an executable named ``name``.
+
+    Checks the bare name *and* its ``.exe`` variant: a Windows host has
+    ``python.exe``/``gatepack.exe``, not ``python3``/``gatepack``, and a scrub
+    that only checks the bare name would leak a host interpreter through.
+    """
+    for candidate in (name, name + ".exe"):
+        if (directory / candidate).exists():
+            return True
+    return False
 
 
 def pyinstaller_available() -> bool:
@@ -70,7 +96,9 @@ def _scrubbed_env() -> dict[str, str]:
         if not d.is_dir():
             kept.append(directory)
             continue
-        has_gatepack_or_python = (d / "gatepack").exists() or (d / "python3").exists()
+        has_gatepack_or_python = any(
+            _has_executable(d, name) for name in ("gatepack", "python3", "python")
+        )
         if not has_gatepack_or_python:
             kept.append(directory)
     env["PATH"] = os.pathsep.join(kept)
@@ -146,7 +174,7 @@ def build_core(
             f"({proc.returncode}):\n{proc.stdout}\n{proc.stderr}"
         )
 
-    built = dist / "gatepack"
+    built = dist / binary_name()
     if not built.exists():
         raise RuntimeError(
             f"PyInstaller reported success but no binary exists at {built}"
@@ -154,7 +182,8 @@ def build_core(
 
     output.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(built, output)
-    output.chmod(0o755)
+    if os.name != "nt":
+        output.chmod(0o755)
     _smoke_test(output, workdir)
     return output
 
