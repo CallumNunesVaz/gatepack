@@ -1,0 +1,79 @@
+# electron-builder configuration for the gatepack desktop application (§17).
+#
+# This config is deliberately signing-free: no identity, no certificate, no
+# notarisation credentials are present, because none have been provisioned and
+# this project never fabricates values it cannot verify.  Every signing field a
+# maintainer must supply is documented in docs/RELEASING.md; until they are,
+# the targets build *unsigned* (and macOS/Windows installers are produced but
+# will trip Gatekeeper / SmartScreen until signed).
+#
+# What ships and how (§17, §4):
+#   * `dist/` — the compiled main (tsc), preload (tsc) and renderer (vite)
+#     processes.  The renderer bundle is self-contained (React, monaco, elkjs,
+#     netlistsvg, reactflow, zod are all baked in by vite).
+#   * production `node_modules` — electron-builder collects these automatically.
+#     The main process requires `zod` at runtime (dist/main/envelope.cjs
+#     validates IPC payloads against the §5.2 schemas), so the tree cannot be
+#     excluded wholesale.  This is also what scripts/licence_audit.py audits as
+#     the "shipped" set.
+#   * `resources/bin/` — §17's reserved location for the bundled Python core and
+#     the native toolchain (yosys, sby, espresso, iverilog).  It does NOT exist
+#     yet and nothing here fabricates it: see docs/RELEASING.md "The core does
+#     not ship yet".  The extraResources/asarUnpack entries below become live
+#     the moment a maintainer populates `resources/`; until then they are inert
+#     because the source directory is absent.
+
+appId: org.gatepack.desktop # placeholder — replace with the real reverse-DNS id
+productName: gatepack
+copyright: "GPL-3.0-or-later"
+
+directories:
+  # Keep build artefacts out of app/dist (the compiled app lives there).
+  output: ../.gpout/dist
+  buildResources: build
+
+files:
+  - dist/**/*
+  - package.json
+  # electron-builder collects production node_modules automatically; do not
+  # exclude it wholesale (main requires zod at runtime).
+
+asar: true
+asarUnpack:
+  # Native binaries must live outside the asar to be executable.
+  - resources/bin/**
+
+extraResources:
+  # Reserved for the bundled core + toolchain (§17: app/resources/bin/).
+  # Inert until a maintainer creates app/resources/.
+  - from: resources
+    to: resources
+    filter:
+      - "**/*"
+
+linux:
+  target:
+    - target: AppImage
+    - target: deb
+  category: Development
+  maintainer: gatepack maintainers <maintainers@gatepack.example> # placeholder
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+  # No identity is configured: builds are unsigned until a maintainer supplies
+  # one (see docs/RELEASING.md).  notarize is intentionally absent.
+
+win:
+  target:
+    - target: nsis
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+
+publish: null # no auto-update, no telemetry (§5.2); nothing is uploaded anywhere
