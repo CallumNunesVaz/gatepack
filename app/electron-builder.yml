@@ -28,7 +28,7 @@
 #     toolchain" — so a packaged app without a host toolchain still reports each
 #     missing tool legibly (`gatepack doctor`, `gatepack build`).
 
-appId: org.gatepack.desktop # placeholder — replace with the real reverse-DNS id
+appId: io.github.callumnunesvaz.gatepack
 productName: gatepack
 copyright: "GPL-3.0-or-later"
 
@@ -145,7 +145,11 @@ linux:
     - target: AppImage
     - target: deb
   category: Development
-  maintainer: gatepack maintainers <maintainers@gatepack.example> # placeholder
+  # deb REQUIRES a maintainer field, so this cannot simply be omitted. It is a
+  # placeholder: publishing a personal address in a public package is the
+  # maintainer's decision, not a default. Set it before cutting a deb.
+  maintainer: gatepack maintainers <maintainers@gatepack.invalid> # TODO: real contact
+  homepage: https://github.com/CallumNunesVaz/gatepack
 
 mac:
   category: public.app-category.developer-tools

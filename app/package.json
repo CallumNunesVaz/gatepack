@@ -2,7 +2,14 @@
   "name": "gatepack-app",
   "version": "0.1.0",
   "description": "gatepack desktop application \u2014 a view over CLI-produced artefacts (\u00a75)",
-  "homepage": "https://example.invalid/gatepack",
+  "homepage": "https://github.com/CallumNunesVaz/gatepack",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CallumNunesVaz/gatepack.git"
+  },
+  "bugs": {
+    "url": "https://github.com/CallumNunesVaz/gatepack/issues"
+  },
   "license": "GPL-3.0-only",
   "private": true,
   "type": "module",

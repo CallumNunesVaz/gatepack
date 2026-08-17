@@ -12,6 +12,11 @@ dependencies = [
     "pydantic>=2",
 ]
 
+[project.urls]
+Homepage = "https://github.com/CallumNunesVaz/gatepack"
+Repository = "https://github.com/CallumNunesVaz/gatepack.git"
+Issues = "https://github.com/CallumNunesVaz/gatepack/issues"
+
 [project.scripts]
 gatepack = "gatepack.cli:main"
 
