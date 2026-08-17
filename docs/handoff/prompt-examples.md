@@ -61,22 +61,34 @@ of scope — pick another. Say so in your notes rather than adding the cell.
 
 Do not report an example as working because the YAML looks right.
 
-The native toolchain ships inside the app at `app/resources/bin/gatepack`, so
-this runs with nothing installed:
+The native toolchain (Yosys 0.23, ABC, iverilog, vvp, sby, z3) is **not on your
+PATH**. It is in the docker image `gatepack-toolchain:m6`, which is already
+built on this machine — this is exactly how `tests/toolchain/*` run. Mount your
+own worktree:
 
 ```
-app/resources/bin/gatepack build examples/<name>/design.yaml \
+docker run --rm -v "$PWD:/repo" -w /repo gatepack-toolchain:m6 \
+  python3 -m gatepack build examples/<name>/design.yaml \
   --library libraries/74aup.csv --out .gpout/<name> --json
-app/resources/bin/gatepack verify examples/<name>/design.yaml \
+
+docker run --rm -v "$PWD:/repo" -w /repo gatepack-toolchain:m6 \
+  python3 -m gatepack verify examples/<name>/design.yaml \
   --library libraries/74aup.csv --json
 ```
 
-For each new example, record in your notes: the package count, the verdict, and
-which checks ran. **A build that needs `--allow-unverified-gates-per-pkg` is a
-failure** — the showcase builds without it and so must these.
+Run those for **every** example you add, and quote the real output in your
+notes: the package count, the verdict, and which checks ran.
 
-If a check reports `not_run`, say which and why; do not present a partial
-verification as a pass.
+- **A build that needs `--allow-unverified-gates-per-pkg` is a failure.** The
+  showcase builds without it and so must these.
+- If a check reports `not_run`, say which and why. Do not present a partial
+  verification as a pass.
+- If docker is unavailable to you, stop and say so rather than reporting an
+  unbuilt example as working. Everything else in this package (the YAML, the
+  non-toolchain tests, the notes) can still be done and handed over honestly.
+
+Python tests run with the repo venv, which is already linked into your
+worktree: `.venv/bin/python -m pytest tests/unit -q` (541 pass at baseline).
 
 ## Tests
 
@@ -94,12 +106,15 @@ The point of that test is that it fails if someone adds a broken example.
 
 - `gatepack examples list` shows every new example with its summary.
 - `gatepack examples extract <name> <dir>` produces a directory that builds.
-- The frozen build finds them: `scripts/bundle_core.py` collects `examples/`
-  via PyInstaller `--add-data`, and a *new directory* must come along. Verify
-  with the bundled binary and a scrubbed environment:
-  `env -i HOME=/tmp app/resources/bin/gatepack examples list`.
-  (This has bitten before — the bundle shipped with `examples/` missing
-  entirely and reported "no bundled examples found" with exit 0.)
+- The frozen build ships them. `scripts/bundle_core.py` collects `examples/`
+  via PyInstaller `--add-data`, so a *new directory* should come along — but
+  the binary at `app/resources/bin/gatepack` was frozen before your work and
+  cannot see it, and rebuilding it is **not** your job. Check the mechanism by
+  reading `scripts/bundle_core.py` and say in your notes whether a new example
+  directory is collected by what is written there; the maintainer will rebuild
+  and confirm. (This has bitten before — a bundle once shipped with
+  `examples/` missing entirely and reported "no bundled examples found" with
+  exit 0.)
 - Do **not** add `.gpk` files. The showcase ships one because it predates the
   known defect that a `.gpk` round-trip loses comments and key order; a new
   example shipping a lossy copy of itself would be a trap.
