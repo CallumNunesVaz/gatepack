@@ -22,6 +22,7 @@ this script exits non-zero instead of leaving a broken binary in place.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -195,8 +196,10 @@ def _smoke_test(binary: Path, workdir: Path) -> None:
     ``PYTHONPATH``/``PYTHONHOME``, no host ``python3``/``gatepack`` on ``PATH``):
 
     1. ``doctor --json`` — proves the ``.ys``/``.v`` package data survived;
-    2. ``examples list`` — must *name* the showcase (``examples list`` exits 0
-       even when it finds nothing, so exit 0 alone proves nothing);
+    2. ``examples list`` — must name *every* example the source tree has
+       (``examples list`` exits 0 even when it finds nothing, so exit 0 alone
+       proves nothing, and naming the showcase alone would pass a bundle that
+       had lost every other example);
     3. ``examples extract pelican`` — must materialise a ``design.yaml``.
     """
     env = _scrubbed_env()
@@ -236,19 +239,44 @@ def _smoke_test(binary: Path, workdir: Path) -> None:
         )
 
     # `examples/` is not package data; a bundle that lost it reports "none" on
-    # `examples list` with exit 0 — so assert the *name*, not just the exit code.
+    # `examples list` with exit 0 — so assert the *names*, not just the exit
+    # code. Checking for the showcase alone is not enough: `--add-data` copies
+    # the tree wholesale, so the way this fails is *every* example going
+    # missing, and one hardcoded name would have reported that as fine. Compare
+    # against what the source tree actually holds, so an example added tomorrow
+    # is covered without anyone remembering to add it here.
+    expected = {
+        entry.name
+        for entry in (REPO / "examples").iterdir()
+        if entry.is_dir() and (entry / "design.yaml").is_file()
+    }
     proc = subprocess.run(
-        [str(binary), "examples", "list"],
+        [str(binary), "examples", "list", "--json"],
         cwd=cwd,
         env=env,
         capture_output=True,
         text=True,
         timeout=120,
     )
-    if proc.returncode != 0 or "pelican" not in proc.stdout:
+    if proc.returncode != 0:
         raise RuntimeError(
-            "bundled core lost its examples (examples list did not name "
-            f"'pelican'): stdout={proc.stdout!r} stderr={proc.stderr!r}"
+            f"bundled core could not list its examples (exit {proc.returncode}): "
+            f"stdout={proc.stdout!r} stderr={proc.stderr!r}"
+        )
+    try:
+        listed = {
+            e["name"]
+            for e in json.loads(proc.stdout).get("data", {}).get("examples", [])
+        }
+    except (ValueError, KeyError, TypeError) as exc:
+        raise RuntimeError(
+            f"bundled core's `examples list --json` was unreadable: {exc}; "
+            f"stdout={proc.stdout!r}"
+        ) from exc
+    if listed != expected:
+        raise RuntimeError(
+            "bundled core does not ship the examples the source tree has: "
+            f"missing={sorted(expected - listed)} unexpected={sorted(listed - expected)}"
         )
 
     target = workdir / "smoke-extract"
