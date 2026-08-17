@@ -89,6 +89,35 @@ def test_every_example_builds(name: str) -> None:
 
 @requires_toolchain
 @pytest.mark.parametrize("name", _example_names())
+def test_every_example_builds_with_its_own_project_library(name: str) -> None:
+    """The path the *app* takes: build against the project's own parts.csv.
+
+    Building against `libraries/74aup.csv` proves the design synthesises; it
+    does not prove the example works when opened in the GUI, which passes
+    `<project>/parts.csv` instead. The two differ — a project library with no
+    `parts.refs.md` beside it has no packaging citations, so the multi-gate
+    parts read as unverified and the build is refused. That refusal is correct;
+    an example that trips it is not shippable.
+    """
+    proc = _run(
+        "build", f"examples/{name}/design.yaml",
+        "--library", f"examples/{name}/parts.csv",
+        "--out", f".gpout/examples-project-check/{name}",
+        "--json",
+    )
+    assert proc.returncode == 0, (
+        f"build with the project's own library failed for {name} — this is the "
+        f"path the GUI takes:\n{proc.stderr or proc.stdout}"
+    )
+    envelope = json.loads(proc.stdout)
+    assert envelope["ok"] is True
+    assert envelope["data"]["packageCount"] >= 1, (
+        f"{name}: built from its own library but produced an empty BOM"
+    )
+
+
+@requires_toolchain
+@pytest.mark.parametrize("name", _example_names())
 def test_every_example_verifies(name: str) -> None:
     proc = _run(
         "verify", f"examples/{name}/design.yaml",

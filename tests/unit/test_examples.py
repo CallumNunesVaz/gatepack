@@ -53,6 +53,38 @@ def test_every_example_has_a_summary_line():
         )
 
 
+def test_every_example_ships_its_own_library_and_citations():
+    """A project the app opens must carry its own `parts.csv`.
+
+    The app builds an open project with `--library <project>/parts.csv` when
+    that file exists and with **no** `--library` at all when it does not — and
+    `gatepack build` requires the flag, so an example without a `parts.csv`
+    cannot be built from the GUI at all.
+
+    An example whose library offers a *multi-gate* part needs the companion
+    `parts.refs.md` as well. The citations live beside the CSV
+    (`refs.py::find_refs_file`); without them a multi-gate part reads as
+    uncited, and the `gates_per_pkg` gate refuses the build — correctly, since
+    a wrong gate count produces a board that cannot be assembled. The showcase
+    ships a single-gate-only subset and so needs no citations; every example
+    that ships the full library does.
+    """
+    for example in list_examples():
+        parts = example.path / "parts.csv"
+        assert parts.is_file(), (
+            f"{example.name}: no parts.csv — the app builds an open project with "
+            "its project-local library, and `build` requires one"
+        )
+        rows = [r for r in parts.read_text().splitlines()[1:] if r.strip()]
+        multi_gate = [r for r in rows if r.split(",")[7].strip() not in ("", "1")]
+        if multi_gate:
+            assert (example.path / "parts.refs.md").is_file(), (
+                f"{example.name}: parts.csv offers {len(multi_gate)} multi-gate "
+                "part(s) but ships no parts.refs.md beside it — they would read "
+                "as uncited and the build would be refused"
+            )
+
+
 def test_example_parts_csv_rows_are_verbatim_from_the_library():
     library_lines = set(LIBRARY.read_text().splitlines())
     for example in list_examples():
