@@ -70,6 +70,8 @@ DEFAULT_MANIFEST = Path(__file__).resolve().parent / "dependencies.json"
 DEFAULT_NODE_TREE = REPO / "app" / "node_modules"
 DEFAULT_APP_MANIFEST = REPO / "app" / "package.json"
 DEFAULT_BUNDLE = REPO / "app" / "resources" / "bin" / "gatepack"
+DEFAULT_TOOLCHAIN = REPO / "app" / "resources"
+TOOLCHAIN_MANIFEST = "toolchain-manifest.json"
 
 # Normalised licence key -> (verdict, rationale).
 # verdicts: "compatible", "conditional", "incompatible", "unrecognised"
@@ -111,6 +113,10 @@ POLICY: dict[str, tuple[str, str]] = {
     "psf-2.0": ("compatible", "Python Software Foundation License 2.0 (the CPython/typing_extensions licence); permissive BSD-style; GPL-compatible"),
     "gpl-2.0-or-later with bootloader-exception": ("compatible", "PyInstaller bootloader/loader licence: GPL-2.0-or-later with the bootloader exception — unlimited permission to embed the bootloader in a combined executable (GPL restrictions still cover modification and non-embedded distribution)"),
     "gpl-3.0-or-later with gcc-runtime-library-exception": ("compatible", "GCC runtime (libgcc_s): GPL-3.0-or-later with the GCC Runtime Library Exception, which permits linking the runtime into a combined work under other terms"),
+    # The toolchain manifest records this licence with spaces (it is written by
+    # a human and normalised by ``_normalise``); the hyphenated key above is the
+    # form the bundled-core audit passes directly.  Both name the same licence.
+    "gpl-3.0-or-later with gcc runtime library exception": ("compatible", "GCC runtime (libgcc_s/libstdc++): GPL-3.0-or-later with the GCC Runtime Library Exception, which permits linking the runtime into a combined work under other terms"),
     "zlib": ("compatible", "Zlib licence; permissive; GPL-compatible"),
     "bzip2": ("compatible", "bzip2 licence; permissive; GPL-compatible"),
     "0bsd": ("compatible", "Zero-Clause BSD / public domain (liblzma); GPL-compatible"),
@@ -495,6 +501,117 @@ def audit_bundle(bundle: Path, *, out=print) -> tuple[int, int]:
     return failures, len(per_component)
 
 
+# --- bundled-toolchain audit (scripts/bundle_toolchain.py) -------------------
+#
+# The packaged app ships the native EDA toolchain beside the core
+# (``app/resources/bin/{yosys,sby,iverilog,vvp,z3,yosys-smtbmc,yosys-witness,
+# berkeley-abc}`` plus ``lib/*.so`` shared libraries, Yosys's ``share/`` data
+# and Icarus's ``x86_64-linux-gnu/ivl`` support tree).  Each binary is a
+# separate work with its own licence — Yosys (ISC), sby (ISC), Icarus Verilog
+# (GPL-2.0-*or-later*), z3 (MIT), ABC (UC Berkeley) — so it cannot be classified
+# by its file contents; the bundler records the licence of every file it ships
+# in ``toolchain-manifest.json`` and this audit checks that manifest against the
+# actual tree.  The two rules a previous round got wrong apply here too:
+#   * a file present on disk but absent from the manifest is an *unrecognised*
+#     component — fail;
+#   * a manifest entry whose licence is incompatible (e.g. a hypothetical
+#     GPL-2.0-only Icarus) is a hard failure, naming the licence.
+
+
+def _toolchain_manifest_path(resources_dir: Path) -> Path:
+    return resources_dir / "bin" / TOOLCHAIN_MANIFEST
+
+
+def audit_toolchain(resources_dir: Path, *, out=print) -> tuple[int, int]:
+    """Audit the bundled toolchain tree against its manifest.
+
+    Returns ``(failures, file_count)``.  Every file under ``resources_dir``
+    (excluding the PyInstaller core ``bin/gatepack``, audited by
+    :func:`audit_bundle`, and the manifest itself) must be named by the
+    manifest, and every manifest licence must classify as compatible.
+    """
+    manifest_path = _toolchain_manifest_path(resources_dir)
+    if not manifest_path.is_file():
+        out(
+            f"FAIL [toolchain] {manifest_path.name} not present under "
+            f"{resources_dir}; the bundled toolchain must carry its licence manifest"
+        )
+        return 1, 0
+
+    try:
+        data = json.loads(manifest_path.read_text())
+    except json.JSONDecodeError as exc:
+        out(f"FAIL [toolchain] {manifest_path.name} is not valid JSON ({exc})")
+        return 1, 0
+
+    # rel-path (POSIX, relative to resources_dir) -> (licence, component)
+    declared: dict[str, tuple[str, str]] = {}
+    for tool in data.get("tools", []):
+        licence = tool.get("licence", "")
+        component = tool.get("component", tool.get("name", "?"))
+        for f in tool.get("files", []):
+            declared[f"bin/{f}"] = (licence, component)
+    for lib in data.get("shared_libs", []):
+        f = lib.get("file", "")
+        declared[f"bin/{f}" if f else f] = (lib.get("licence", ""), lib.get("component", "?"))
+    data_dir_prefixes: list[tuple[str, str, str]] = [
+        (d.get("path", ""), d.get("licence", ""), d.get("component", "?"))
+        for d in data.get("data_dirs", [])
+    ]
+
+    failures = 0
+    file_count = 0
+    seen: set[str] = set()
+
+    # every file actually present must be declared
+    for path in sorted(resources_dir.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(resources_dir).as_posix()
+        if rel in ("bin/gatepack", f"bin/{TOOLCHAIN_MANIFEST}"):
+            continue
+        file_count += 1
+        found = _toolchain_file_licence(rel, declared, data_dir_prefixes)
+        if found is None:
+            failures += 1
+            out(
+                f"FAIL [toolchain] {rel}: bundled but not named by the toolchain "
+                f"manifest — a binary shipped without a licence on record"
+            )
+            continue
+        licence, component = found
+        seen.add(rel)
+        verdict, rationale = _classify(component, licence, unmodified=True)
+        if verdict in ("incompatible", "unrecognised"):
+            failures += 1
+            out(f"FAIL [toolchain] {rel}: {licence!r} — {rationale}")
+        else:
+            out(f"ok   [toolchain] {rel}: {licence!r} ({verdict}) — {component}")
+
+    # every declared file must be present (a manifest that claims a file it did
+    # not ship is a lie the audit must catch, not trust)
+    for rel in sorted(declared):
+        if rel not in seen:
+            failures += 1
+            out(f"FAIL [toolchain] {rel}: declared in the manifest but not present")
+
+    return failures, file_count
+
+
+def _toolchain_file_licence(
+    rel: str,
+    declared: dict[str, tuple[str, str]],
+    data_dir_prefixes: list[tuple[str, str, str]],
+) -> tuple[str, str] | None:
+    """Return ``(licence, component)`` for a bundled file, or ``None``."""
+    if rel in declared:
+        return declared[rel]
+    for prefix, licence, component in data_dir_prefixes:
+        if rel == prefix or rel.startswith(prefix + "/"):
+            return licence, component
+    return None
+
+
 # --- installed-tree walking --------------------------------------------------
 
 
@@ -775,6 +892,17 @@ def main(argv: list[str] | None = None) -> int:
         help="audit the default bundled core and fail if it is absent or empty",
     )
     parser.add_argument(
+        "--toolchain",
+        default=None,
+        help="bundled toolchain resources dir to audit against its manifest "
+        "(default: %(default)s)",
+    )
+    parser.add_argument(
+        "--require-toolchain",
+        action="store_true",
+        help="audit the default bundled toolchain and fail if it is absent",
+    )
+    parser.add_argument(
         "--pack-config",
         default=str(REPO / "app" / "electron-builder.yml"),
         help="electron-builder.yml whose 'files' excludes determine what packs "
@@ -856,6 +984,28 @@ def main(argv: list[str] | None = None) -> int:
         bundle_failures, bundle_components = audit_bundle(bundle, out=lambda s: print(s))
         total_failures += bundle_failures
 
+    # The bundled-toolchain audit is opt-in for the same reason as the node tree
+    # and bundle: the `test` job has no docker and no bundled toolchain.
+    if args.toolchain is not None:
+        toolchain = Path(args.toolchain)
+    elif args.require_toolchain:
+        toolchain = DEFAULT_TOOLCHAIN
+    else:
+        toolchain = None
+
+    toolchain_failures = 0
+    toolchain_files = 0
+    if toolchain is None:
+        print("note: bundled-toolchain audit not requested (pass --require-toolchain or --toolchain)")
+    elif not _toolchain_manifest_path(toolchain).is_file():
+        print(f"error: toolchain manifest not present: {_toolchain_manifest_path(toolchain)}", file=sys.stderr)
+        return 1
+    else:
+        toolchain_failures, toolchain_files = audit_toolchain(
+            toolchain, out=lambda s: print(s)
+        )
+        total_failures += toolchain_failures
+
     if total_failures:
         print(
             f"licence audit: {total_failures} dependency(s) not GPL-3.0-compatible",
@@ -873,9 +1023,14 @@ def main(argv: list[str] | None = None) -> int:
         bundle_note = "bundle not requested"
     else:
         bundle_note = f"bundle {bundle_components} component(s)"
+    if toolchain is None:
+        toolchain_note = "toolchain not requested"
+    else:
+        toolchain_note = f"toolchain {toolchain_files} file(s)"
     print(
         f"licence audit: {manifest_count + shipped_count + dev_count + bundle_components} "
-        f"dependency(s) GPL-3.0-compatible ({manifest_count} manifest, {node_note}, {bundle_note})"
+        f"dependency(s) GPL-3.0-compatible ({manifest_count} manifest, {node_note}, "
+        f"{bundle_note}, {toolchain_note})"
     )
     return 0
 

@@ -13,7 +13,7 @@ from gatepack.doctor import TOOLS, ToolSpec, run_doctor
 
 def test_tool_table_is_the_pinned_order():
     names = [spec.name for spec in TOOLS]
-    assert names == ["yosys", "sby", "iverilog", "vvp", "z3", "espresso"]
+    assert names == ["yosys", "sby", "iverilog", "vvp", "z3", "bash", "espresso"]
     # every spec names its purpose and whether gatepack invokes it directly
     for spec in TOOLS:
         assert spec.purpose
@@ -25,13 +25,15 @@ def test_run_doctor_reports_every_tool_with_stable_shape():
     assert payload["version"]
     assert [t["name"] for t in payload["tools"]] == [s.name for s in TOOLS]
     for tool in payload["tools"]:
-        assert set(tool) == {"name", "found", "purpose", "direct", "path", "version"}
+        assert set(tool) == {"name", "found", "purpose", "direct", "path", "version", "source"}
         assert isinstance(tool["found"], bool)
         if tool["found"]:
             assert tool["path"]
+            assert tool["source"] in {"bundled", "system", "env"}
         else:
             assert tool["path"] is None
             assert tool["version"] is None
+            assert tool["source"] is None
     # resources actually load in the source tree
     assert payload["resources"] == {
         "commonFrontendYs": True,

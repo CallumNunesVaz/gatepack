@@ -3,9 +3,10 @@
 A packaged core has no host Python, no venv and no gatepack checkout; the one
 thing it still needs from the host is the native EDA toolchain.  This module is
 the single place that says, for each such tool, what it is for and whether it is
-present (with a version, when the tool can report one).  It is deliberately a
-*report*: nothing here raises, and a missing tool is a visible "missing" entry,
-never a substituted result.
+present (with a version, when the tool can report one) — and, now that the
+toolchain ships with the app (§17.1), **which copy** it found: the bundled one
+or a system one.  It is deliberately a *report*: nothing here raises, and a
+missing tool is a visible "missing" entry, never a substituted result.
 
 The bundled resources check exercises the same ``importlib.resources`` loads the
 pipeline uses (``gatepack/yosys/common_frontend.ys`` and
@@ -15,11 +16,16 @@ this check instead of failing later, deep inside a synthesis run.
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from dataclasses import dataclass
 
 from gatepack import __version__
+from gatepack.toolchain import (
+    ToolResolution,
+    build_run_env,
+    bundled_tool_versions,
+    resolve_tool,
+)
 
 
 @dataclass(frozen=True)
@@ -46,7 +52,10 @@ TOOLS: tuple[ToolSpec, ...] = (
     ToolSpec(
         "sby",
         "formal property checking + equivalence fallback (§11, §12 C4)",
-        ("--version",),
+        # sby has no ``--version`` flag; its version is the pinned source commit
+        # and comes from the toolchain manifest when bundled (see
+        # :func:`gatepack.toolchain.bundled_tool_versions`).
+        (),
     ),
     ToolSpec(
         "iverilog",
@@ -61,6 +70,13 @@ TOOLS: tuple[ToolSpec, ...] = (
     ToolSpec(
         "z3",
         "SMT solver used by sby's smtbmc engine (reached indirectly)",
+        ("--version",),
+        direct=False,
+    ),
+    ToolSpec(
+        "bash",
+        "POSIX shell sby runs its engine steps through (/usr/bin/env bash) — a "
+        "host requirement, never bundled",
         ("--version",),
         direct=False,
     ),
@@ -81,13 +97,16 @@ def _first_line(text: str) -> str:
     return ""
 
 
-def _probe_version(name: str, version_args: tuple[str, ...]) -> str | None:
-    """Run ``name version_args`` and return the first output line, or ``None``."""
+def _probe_version(resolution: ToolResolution, version_args: tuple[str, ...]) -> str | None:
+    """Run the resolved binary with ``version_args``; return its first line, or
+    ``None``.  Runs under the tool's environment so a bundled binary's shared
+    libraries resolve."""
     if not version_args:
         return None
     try:
         proc = subprocess.run(
-            [name, *version_args],
+            [resolution.path, *version_args],
+            env=build_run_env(resolution),
             capture_output=True,
             text=True,
             timeout=5,
@@ -98,15 +117,32 @@ def _probe_version(name: str, version_args: tuple[str, ...]) -> str | None:
 
 
 def _probe_tool(spec: ToolSpec) -> dict:
-    path = shutil.which(spec.name)
-    found = path is not None
+    resolution = resolve_tool(spec.name)
+    found = resolution is not None
+    if not found:
+        return {
+            "name": spec.name,
+            "found": False,
+            "purpose": spec.purpose,
+            "direct": spec.direct,
+            "path": None,
+            "version": None,
+            "source": None,
+        }
+    version = _probe_version(resolution, spec.version_args)
+    if version is None and resolution.source in ("bundled", "env"):
+        version = bundled_tool_versions().get(spec.name) or None
     return {
         "name": spec.name,
-        "found": found,
+        "found": True,
         "purpose": spec.purpose,
         "direct": spec.direct,
-        "path": path,
-        "version": _probe_version(spec.name, spec.version_args) if found else None,
+        "path": resolution.path,
+        "version": version,
+        # "env" is the explicit-override copy; it is not a host `PATH` copy, so
+        # for the purpose of "which yosys ran" it is reported as distinct from
+        # "system" and as close to "bundled" as matters to the reader.
+        "source": resolution.source,
     }
 
 

@@ -387,17 +387,18 @@ def _synthesize(compiled, parts, out: Path) -> tuple[MappedNetlist | None, str |
     Yosys, a Yosys crash and a path bug alike, so a real failure was reported
     as a missing tool and sent the reader looking in the wrong place.
     """
-    import shutil
     import subprocess
 
     from gatepack.liberty.generator import generate as generate_liberty
     from gatepack.netlist import load_mapped_json
     from gatepack.synth.base import SynthConfig
     from gatepack.synth.synchronous import SynchronousBackend
+    from gatepack.toolchain import build_run_env, resolve_tool
 
-    if not shutil.which("yosys"):
+    resolution = resolve_tool("yosys")
+    if resolution is None:
         return None, (
-            "yosys is not on PATH (logic synthesis: behavioural Verilog -> "
+            "yosys is not installed (logic synthesis: behavioural Verilog -> "
             "mapped netlist)"
         )
 
@@ -430,7 +431,8 @@ def _synthesize(compiled, parts, out: Path) -> tuple[MappedNetlist | None, str |
         # as "synthesis unavailable", which blamed a missing tool for a path
         # bug while Yosys was installed and working.
         proc = subprocess.run(
-            ["yosys", "-p", script],
+            [resolution.path, "-p", script],
+            env=build_run_env(resolution),
             capture_output=True,
             text=True,
             timeout=600,

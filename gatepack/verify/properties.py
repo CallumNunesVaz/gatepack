@@ -196,7 +196,35 @@ class TaskResult:
     bound: int | None = None
 
 
-def parse_sby(stdout: str, tasks: Sequence[PropertyTask]) -> dict[str, TaskResult]:
+def _task_labels(task: PropertyTask) -> list[str]:
+    """The SVA labels a task produces (one for an assert, one per cover)."""
+    if task.role == "assert":
+        return [task.label]
+    return [spec.label for spec in task.covers]
+
+
+def _sby_error_detail(stdout: str, returncode: int) -> str:
+    """The most informative line of an sby ERROR, for the check's detail.
+
+    sby exits rc=16 on ERROR; its own log already says *why* (``COMMAND NOT
+    FOUND``, ``No such file or directory``, a failing engine step).  The user
+    needs that reason, not a generic "failed" — the parser must carry sby's own
+    message rather than discard it.
+    """
+    lines = [line.strip() for line in stdout.splitlines() if line.strip()]
+    specific = ("No such file or directory", "COMMAND NOT FOUND", "ERROR:")
+    for line in lines:
+        if any(marker in line for marker in specific):
+            return f"sby failed (rc={returncode}): {line}"
+    for line in lines:
+        if "DONE (ERROR" in line or "ERROR" in line:
+            return f"sby failed (rc={returncode}): {line}"
+    return f"sby failed (rc={returncode})"
+
+
+def parse_sby(
+    stdout: str, tasks: Sequence[PropertyTask], returncode: int | None = None
+) -> dict[str, TaskResult]:
     """Parse sby output into one :class:`TaskResult` per assert/cover label.
 
     The format follows the **measured** sby output (docs/M6-FINDINGS.md §3–4):
@@ -215,11 +243,26 @@ def parse_sby(stdout: str, tasks: Sequence[PropertyTask]) -> dict[str, TaskResul
       statement at <label>`` → ``failed`` (vacuity — the antecedent never occurs).
     * no status line → ``not_run``.
 
+    ``returncode`` is sby's exit code.  sby exits ``0`` on pass, ``2`` on a
+    counterexample, and ``16`` on an ERROR (a failing engine step, a missing
+    tool, a bad .sby file).  A non-0/non-2 exit is an **error**, not an
+    unparsed log: it is reported as ``failed`` carrying sby's own message, never
+    folded into ``not_run`` (which means "we did not attempt this").  Passing
+    ``returncode=None`` (the parser's historical pure-over-stdout mode) leaves
+    that distinction to the caller.
+
     Results are keyed by the **individual SVA label**: ``gp_assert_N`` for an
     assertion, ``gp_cover_N`` (single cover) or ``gp_cover_N_j`` (multi-signal)
     for each vacuity/target cover.
     """
-    results: dict[str, TaskResult] = {}
+    if returncode is not None and returncode not in (0, 2):
+        detail = _sby_error_detail(stdout, returncode)
+        results: dict[str, TaskResult] = {}
+        for task in tasks:
+            for label in _task_labels(task):
+                results[label] = TaskResult("failed", detail)
+        return results
+    results = {}
     for task in tasks:
         chunk = _task_chunk(stdout, task.label)
         if task.role == "assert":
@@ -550,7 +593,7 @@ def run_properties(
         )
         result = runner.run(sby_command(str(sby_file)), cwd=config.cwd)
         combined_stdout.append(result.stdout)
-        results.update(parse_sby(result.stdout, [task]))
+        results.update(parse_sby(result.stdout, [task], returncode=result.returncode))
     stdout = "\n".join(combined_stdout)
 
     counterexample = None

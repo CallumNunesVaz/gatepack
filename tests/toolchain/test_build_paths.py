@@ -94,7 +94,7 @@ def test_missing_yosys_says_so_rather_than_blaming_something_else() -> None:
     )
     assert proc.returncode != 0
     combined = proc.stdout + proc.stderr
-    assert "yosys is not on PATH" in combined, combined
+    assert "yosys is not installed" in combined, combined
     # and it must still refuse rather than invent a netlist
     assert "never faked here" in combined
 

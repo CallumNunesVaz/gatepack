@@ -16,9 +16,18 @@ design.layout.json
 node_modules/
 app/dist/
 app/resources/bin/
+# Bundled native toolchain (scripts/bundle_toolchain.py) — build artefacts, not
+# committed. The data trees must live beside bin/ (yosys/iverilog locate them
+# relative to their executables), so each of these is a sibling of bin/.
+app/resources/share/
+app/resources/x86_64-linux-gnu/
 
 # OS
 .DS_Store
+
+# Yosys writes its command history to $HOME/.yosys_history; keep a run whose
+# HOME happens to be the repo from polluting the tree.
+.yosys_history
 
 # worktree symlinks — bare names, because a `dir/` pattern does not match a
 # symlink and one of these got committed once, which pointed it at itself
