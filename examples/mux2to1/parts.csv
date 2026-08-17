@@ -9,6 +9,7 @@ AND2,G,AUP,1G08,,A&B,2,1,SOT-353,"TI;Nexperia",0.8,3.6,1.0,5.1,0.9
 AND3,G,AUP,1G11,,A&B&C,3,1,SOT-353,"TI;Nexperia",0.8,3.6,1.0,5.5,0.9
 OR2,G,AUP,1G32,,A|B,2,1,SOT-353,"TI;Nexperia",0.8,3.6,1.0,5.1,0.9
 XOR2,G,AUP,1G86,,A^B,2,1,SOT-353,"TI;Nexperia",0.8,3.6,1.0,5.1,0.9
+MUX2,G,AUP,1G157,,(A&!C)|(B&C),3,1,SOT-363,"Nexperia",0.8,3.6,1.0,5.5,0.9
 DFF,F,AUP,1G79,,,2,1,SOT-353,"TI;Nexperia",0.8,3.6,1.0,7.2,0.9
 DFF_R,F,AUP,1G175,,,3,1,SOT-353,"TI;Nexperia",0.8,3.6,1.0,7.5,0.9
 DFF_S,F,AUP,,,,3,1,SOT-353,,0.8,3.6,1.0,7.5,0.9
@@ -21,3 +22,6 @@ NAND2,G,AUP,2G00,,!(A & B),2,2,VSSOP-8,"TI;Nexperia",0.8,3.6,2.0,5.1,0.9
 NOR2,G,AUP,2G02,,!(A | B),2,2,VSSOP-8,"TI;Nexperia",0.8,3.6,2.0,5.1,0.9
 AND2,G,AUP,2G08,,A & B,2,2,VSSOP-8,"TI;Nexperia",0.8,3.6,2.0,5.1,0.9
 OR2,G,AUP,2G32,,A | B,2,2,VSSOP-8,"TI;Nexperia",0.8,3.6,2.0,5.1,0.9
+XOR2,G,AUP,2G86,,A^B,2,2,VSSOP-8,"TI;Nexperia",0.8,3.6,2.0,5.1,0.9
+BUF,G,AUP,2G34,,A,1,2,SOT-363,"TI;Nexperia",0.8,3.6,1.4,4.6,0.9
+BUF,G,AUP,3G34,,A,1,3,VSSOP-8,"TI;Nexperia",0.8,3.6,2.0,4.6,0.9

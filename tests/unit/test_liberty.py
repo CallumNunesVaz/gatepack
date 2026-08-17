@@ -82,8 +82,10 @@ def test_valid_library_round_trips_with_expected_cell_count():
 
 def test_allow_single_source_includes_dff_s():
     result = _generate(allow_single_source=True)
-    assert len(result.cells) == 14
+    # 13 default cells + single-sourced DFF_S and MUX2 (74AUP1G157).
+    assert len(result.cells) == 15
     assert "cell (DFF_S)" in result.text
+    assert "cell (MUX2)" in result.text
 
 
 def test_g_cell_has_function():
