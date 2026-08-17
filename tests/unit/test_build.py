@@ -176,3 +176,37 @@ def test_run_build_acknowledges_unverified_multi_gate_parts(tmp_path):
     assert (tmp_path / "out" / "bom.csv").exists()
     # the two INVs share a die in a 2-gate package
     assert result.packed_stats.package_count == 1
+
+
+def test_run_build_accepts_packaging_verified_multi_gate_parts(tmp_path):
+    # A packaging citation for the dual inverter clears the gate on its own; no
+    # acknowledgement flag is needed.  If the gate is (re)wired to the electrical
+    # status, this fails: the part's electrical figures stay placeholder here.
+    design = _simple_design(tmp_path)
+    library = _multi_gate_library(tmp_path)
+    (tmp_path / "parts.refs.md").write_text(
+        "| cell | datasheet | revision | table/page | electrical status |\n"
+        "|------|-----------|----------|------------|-------------------|\n"
+        "| INV | TBD | TBD | TBD | placeholder — unverified |\n"
+        "\n"
+        "## Packaging citations\n"
+        "| part_number | datasheet | revision | table/page | packaging status |\n"
+        "|-------------|-----------|----------|------------|------------------|\n"
+        "| 74AUP2G04 | Nexperia 74AUP2G04 data sheet | 2023-07-19 | Table 3 | verified |\n"
+    )
+    mapped = tmp_path / "mapped.json"
+    mapped.write_text(_TWO_INV_MAPPED)
+
+    result, paths = run_build(
+        design, library, out_dir=tmp_path / "out", mapped_json=mapped,
+    )
+    assert (tmp_path / "out" / "bom.csv").exists()
+    assert result.packed_stats.package_count == 1
+    # the BOM still flags the part's *electrical* figures as unverified — the
+    # packaging citation must not leak into the electrical status.
+    import csv as _csv
+    import io as _io
+
+    rows = list(_csv.DictReader(_io.StringIO(result.bom)))
+    dual = next(r for r in rows if r["part_number"] == "74AUP2G04")
+    assert dual["unverified"] == "yes"

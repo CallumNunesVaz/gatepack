@@ -37,10 +37,9 @@ requires_toolchain = pytest.mark.skipif(
 
 
 def _build(out: str) -> subprocess.CompletedProcess[str]:
-    # Build through `run_build` with the unverified gates-per-package
-    # acknowledgement, because the shipped library's multi-gate parts are all
-    # placeholder data (§1.3) and the default gate refuses them.  These tests
-    # exercise path handling and observability, not the data-verification gate.
+    # The shipped library's multi-gate parts now carry verified gates_per_pkg
+    # (§1.3 / §23), so the default build proceeds without an acknowledgement.
+    # These tests exercise path handling and observability, not the data gate.
     return subprocess.run(
         [
             "docker", "run", "--rm",
@@ -48,7 +47,7 @@ def _build(out: str) -> subprocess.CompletedProcess[str]:
             "python3", "-c",
             "from gatepack.build import run_build; "
             "run_build('examples/pelican/design.yaml', 'libraries/74aup.csv', "
-            f"out_dir={out!r}, allow_unverified_gates_per_pkg=True); "
+            f"out_dir={out!r}); "
             "print('wrote')",
         ],
         capture_output=True,

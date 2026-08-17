@@ -358,7 +358,7 @@ def _gate_unverified_gates_per_pkg(
     offenders: dict[str, tuple[Part, int]] = {}
     for _ref, group in assigned:
         part = group.part
-        if not part.is_verified and part.gates_per_pkg > 1 and len(group.cells) > 1:
+        if not part.packaging_is_verified and part.gates_per_pkg > 1 and len(group.cells) > 1:
             offenders.setdefault(
                 part.part_number or part.cell, (part, len(group.cells))
             )

@@ -109,10 +109,22 @@ class Part(BaseModel):
     area: float
     tpd_ns: float | None = None
     iq_ua: float | None = None
-    #: Whether this row's electrical values (vcc/tpd/iq/area/gates_per_pkg) are
-    #: cited in a real datasheet or are placeholders.  Defaults to placeholder —
-    #: a value without a citation must never read as verified.
+    #: Whether this row's *electrical* values (vcc/tpd/iq/area) are cited in a
+    #: real datasheet or are placeholders.  Defaults to placeholder — a value
+    #: without a citation must never read as verified.
+    #
+    #: ``gates_per_pkg``/``package`` are *packaging* facts, verified separately
+    #: through :data:`packaging_verification`: a part can have a confirmed gate
+    #: count and package while its electrical figures are still placeholders
+    #: (and vice versa).  Conflating the two made a verified multi-gate package
+    #: read its placeholder electrical data as verified — the exact failure the
+    #: §1.3 / §23 distinction exists to prevent.
     verification: Verification = Verification.PLACEHOLDER
+    #: Whether this row's packaging facts (``gates_per_pkg``, ``package``) are
+    #: cited in a real datasheet or are placeholders.  Independent of
+    #: :data:`verification`: ``gates_per_pkg`` decides which gates share a die
+    #: and how many packages the board needs, so it is gated on its own.
+    packaging_verification: Verification = Verification.PLACEHOLDER
 
     @field_validator("tier")
     @classmethod
@@ -200,6 +212,11 @@ class Part(BaseModel):
     def is_verified(self) -> bool:
         """True when this row's electrical values are backed by a citation."""
         return self.verification is Verification.VERIFIED
+
+    @property
+    def packaging_is_verified(self) -> bool:
+        """True when this row's ``gates_per_pkg``/``package`` are cited."""
+        return self.packaging_verification is Verification.VERIFIED
 
     def vcc_compatible(self, project_vcc: float) -> bool:
         return self.vcc_min <= project_vcc <= self.vcc_max
@@ -370,9 +387,26 @@ def verification_from_citation(status: str | None) -> Verification:
 
 
 def mark_verification(parts: Sequence[Part], citations: Mapping[str, str]) -> None:
-    """Attach each part's verification status from its refs citation (in place)."""
+    """Attach each part's *electrical* verification status from its refs citation (in place)."""
     for part in parts:
         part.verification = verification_from_citation(citations.get(part.cell))
+
+
+def mark_packaging_verification(
+    parts: Sequence[Part], citations: Mapping[str, str]
+) -> None:
+    """Attach each part's *packaging* verification status from its refs citation.
+
+    Packaging citations are keyed by ``part_number`` (a gate count and package
+    belong to a specific physical part, e.g. ``74AUP2G08``), not by ``cell``:
+    one function cell (``AND2``) is offered as both a single-gate
+    (``74AUP1G08``) and a dual-gate (``74AUP2G08``) package, so a cell-level
+    citation cannot say which of the two was confirmed.
+    """
+    for part in parts:
+        part.packaging_verification = verification_from_citation(
+            citations.get(part.part_number or part.cell)
+        )
 
 
 class UnverifiedGatesPerPackageError(PartError):
@@ -390,7 +424,7 @@ class UnverifiedGatesPerPackageError(PartError):
 
 
 def unverified_multi_gate_parts(parts: Sequence[Part]) -> list[Part]:
-    """Parts whose ``gates_per_pkg > 1`` rests on unverified electrical data.
+    """Parts whose ``gates_per_pkg > 1`` rests on unverified packaging data.
 
     A multi-gate package claim is the sharp case of §10.1: it determines package
     count and die-sharing, so a wrong one yields an unbuildable netlist.  A
@@ -398,7 +432,7 @@ def unverified_multi_gate_parts(parts: Sequence[Part]) -> list[Part]:
     surfaced (marked) rather than gated — its failure mode is a wrong count, not
     a physically impossible netlist.
     """
-    return [p for p in parts if p.gates_per_pkg > 1 and not p.is_verified]
+    return [p for p in parts if p.gates_per_pkg > 1 and not p.packaging_is_verified]
 
 
 def unverified_placeholder_cells(parts: Sequence[Part]) -> list[str]:

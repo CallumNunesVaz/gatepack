@@ -59,16 +59,15 @@ def _run(*argv: str) -> subprocess.CompletedProcess[str]:
 
 
 def _build_package_count(out: str) -> int:
-    # The shipped library's multi-gate parts are placeholder data, so `build`
-    # refuses them by default; these tests measure packing, not the data gate,
-    # so they acknowledge the unverified gates-per-package explicitly.
+    # The shipped library's multi-gate parts now carry verified gates_per_pkg,
+    # so `build` proceeds without an acknowledgement; these tests measure
+    # packing, not the data gate.
     proc = subprocess.run(
         [
             "docker", "run", "--rm", "-v", f"{REPO}:/repo", "-w", "/repo", IMAGE,
             "python3", "-c",
             "from gatepack.build import run_build; "
-            f"r, _ = run_build({DESIGN!r}, {LIBRARY!r}, out_dir={out!r}, "
-            "allow_unverified_gates_per_pkg=True); "
+            f"r, _ = run_build({DESIGN!r}, {LIBRARY!r}, out_dir={out!r}); "
             "print(r.packed_stats.package_count)",
         ],
         capture_output=True,
