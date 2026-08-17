@@ -9,6 +9,11 @@
 # `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`).  Absent those secrets the
 # targets build *unsigned* and the build logs say so; until they are supplied,
 # macOS/Windows installers are produced but will trip Gatekeeper / SmartScreen.
+# Signing is not merely *configured*: the release workflow runs
+# `scripts/verify_signing.py` against the result (codesign/spctl/stapler on
+# macOS, signtool verify /pa /v on Windows) and fails the release if the
+# artefact is not actually signed — a signed build that is not verified is not
+# signed.
 #
 #
 # What ships and how (§17, §4):

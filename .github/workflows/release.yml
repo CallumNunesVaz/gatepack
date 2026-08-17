@@ -4,14 +4,23 @@
 # bundle and the platform installer on *each* OS/arch in a matrix — PyInstaller
 # does not cross-compile, so this is a build matrix, not a clever flag — runs
 # the bundle's own acceptance test on each, and uploads the artefacts.  A final
-# job assembles SHA-256 checksums, a CycloneDX SBOM per platform, and the
-# release notes, and publishes the GitHub release.
+# job assembles SHA-256 checksums (optionally GPG-signed), a CycloneDX SBOM per
+# platform, and the release notes, and publishes the GitHub release.
 #
-# Signing is *wired but unpopulated*: every build is either SIGNED (secrets
-# present) or UNSIGNED (secrets absent), and which one it is is printed by the
-# build, written to a per-platform SIGNING-STATUS.txt, and carried into the
-# checksums file and the release notes.  Absent secrets the build must
-# *succeed* and say so — never fail obscurely, never silently skip.
+# Signing is *incorporated*, not just wired: every build is either SIGNED
+# (secrets present) or UNSIGNED (secrets absent).  The two paths are
+# structurally distinct steps named UNSIGNED vs SIGNED, each writing its own
+# job-summary banner.  The moment credentials are present the result is
+# *verified* signed — macOS runs codesign/spctl/stapler, Windows runs
+# signtool verify /pa /v — and the job FAILS if the artefact is not actually
+# signed (scripts/verify_signing.py).  Absent secrets the build succeeds,
+# announces itself UNSIGNED in the summary, and ships a SIGNING-STATUS.txt
+# marker beside the artefacts.  Linux has no OS signing: its artefacts are
+# covered by SHA256SUMS, optionally covered by a detached GPG signature.
+#
+# Verification is the point: a signed build that is not verified is the same
+# class of defect — a status reported by something that did not measure it —
+# this project has spent its history eliminating.
 
 name: Release
 
@@ -93,17 +102,23 @@ jobs:
         shell: bash
         run: |
           if [ -n "$CSC_LINK" ]; then
+            echo "mode=signed" >> "$GITHUB_OUTPUT"
             echo "SIGNING_MODE=signed" >> "$GITHUB_ENV"
-            echo "present=true" >> "$GITHUB_OUTPUT"
           else
+            echo "mode=unsigned" >> "$GITHUB_OUTPUT"
             echo "SIGNING_MODE=unsigned" >> "$GITHUB_ENV"
-            echo "present=false" >> "$GITHUB_OUTPUT"
           fi
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
 
-      - name: Build installer (UNSIGNED — no signing credentials provisioned)
-        if: steps.signing.outputs.present == 'false'
+      # ---------------------------------------------------------------------
+      # Two structurally distinct build paths.  A reader can tell at a glance
+      # which one ran: they are named UNSIGNED vs SIGNED and write distinct
+      # job-summary banners.
+      # ---------------------------------------------------------------------
+
+      - name: Build installer — UNSIGNED (no signing credentials provisioned)
+        if: steps.signing.outputs.mode == 'unsigned'
         shell: bash
         working-directory: app
         run: |
@@ -111,22 +126,57 @@ jobs:
           echo "=== this repository never fabricates an identity; the installer ==="
           echo "=== will trip Gatekeeper / SmartScreen, and that is the truth. ==="
           npx electron-builder ${{ matrix.eb_platform }} ${{ matrix.eb_targets }} --${{ matrix.arch }}
+          {
+            echo "## UNSIGNED (${{ matrix.platform }}-${{ matrix.arch }})"
+            echo ""
+            echo "This installer was built **unsigned**: no code-signing credentials"
+            echo "are provisioned and none are fabricated. macOS Gatekeeper and Windows"
+            echo "SmartScreen will warn on it — that is the project telling the truth."
+          } >> "$GITHUB_STEP_SUMMARY"
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
-      - name: Build installer (signed + notarized)
-        if: steps.signing.outputs.present == 'true'
+      - name: Build installer — SIGNED + notarized
+        if: steps.signing.outputs.mode == 'signed'
         shell: bash
         working-directory: app
         run: |
           echo "=== SIGNED build: code-signing credentials present ==="
           npx electron-builder ${{ matrix.eb_platform }} ${{ matrix.eb_targets }} --${{ matrix.arch }}
+          {
+            echo "## SIGNED (${{ matrix.platform }}-${{ matrix.arch }})"
+            echo ""
+            echo "Built with code-signing credentials; verification runs in the next step."
+          } >> "$GITHUB_STEP_SUMMARY"
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      # The point: a signed build that is not *verified* is not signed.  Each
+      # platform verifies its own artefact with the OS's own tool and FAILS the
+      # job if the check does not pass.
+
+      - name: Verify signature — macOS (codesign + spctl + stapler)
+        if: steps.signing.outputs.mode == 'signed' && matrix.platform == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$(find .gpout/dist -maxdepth 2 -name '*.app' -type d | head -n1)"
+          DMG="$(find .gpout/dist -maxdepth 1 -name '*.dmg' | head -n1)"
+          [ -n "$APP" ] || { echo "no .app found to verify" >&2; exit 1; }
+          python scripts/verify_signing.py macos --app "$APP" ${DMG:+--dmg "$DMG"}
+
+      - name: Verify signature — Windows (signtool verify /pa /v)
+        if: steps.signing.outputs.mode == 'signed' && matrix.platform == 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXE="$(find .gpout/dist -maxdepth 1 -name '*.exe' | head -n1)"
+          [ -n "$EXE" ] || { echo "no .exe found to verify" >&2; exit 1; }
+          python scripts/verify_signing.py windows --file "$EXE"
 
       - name: Generate the SBOM (npm tree + bundled core)
         run: python scripts/sbom.py --require-node-tree --require-bundle -o ".gpout/staging/sbom-${{ matrix.platform }}-${{ matrix.arch }}.json"
@@ -182,6 +232,18 @@ jobs:
         shell: bash
         run: |
           python scripts/assemble_release.py release-assets .gpout/release --version "${GITHUB_REF_NAME#v}"
+
+      - name: Sign the checksums (GPG — only when GPG_PRIVATE_KEY is set)
+        shell: bash
+        run: |
+          python scripts/gpg_sign_sums.py .gpout/release/SHA256SUMS
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+
+      - name: Verify Linux checksum coverage (must not skip)
+        shell: bash
+        run: |
+          python scripts/verify_signing.py linux --sums-dir .gpout/release
 
       - name: Publish the GitHub release
         shell: bash
