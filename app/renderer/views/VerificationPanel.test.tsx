@@ -98,6 +98,30 @@ describe('VerificationPanel — property and counterexample selection', () => {
     await waitFor(() => expect(screen.getByText(/No verification has been run/)).toBeTruthy());
   });
 
+  it('renders a failed check\'s reason (detail) without any interaction', async () => {
+    const fake = new FakeGatepack();
+    fake.setOk('verify', {
+      checks: [
+        {
+          name: 'property p1',
+          kind: 'property',
+          status: 'failed',
+          durationMs: 1,
+          detail: 'ERROR: engine returned 2\n  in property p1',
+        },
+      ],
+      allPassed: false,
+    });
+
+    renderPanel(fake);
+    fireEvent.click(screen.getByText('Run verification'));
+    await waitFor(() => expect(screen.getByTestId('verification-result')).toBeTruthy());
+
+    const detail = screen.getByTestId('check-detail');
+    expect(detail.textContent).toContain('ERROR: engine returned 2');
+    expect(detail.textContent).toContain('property p1');
+  });
+
   it('selects a counterexample step on Enter (keyboard navigability)', async () => {
     const fake = new FakeGatepack();
     fake.setOk('verify', verifyResult());

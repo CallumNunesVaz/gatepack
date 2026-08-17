@@ -930,6 +930,28 @@ th.sortable[aria-sort='descending'] .sort-indicator svg {
   border-radius: var(--gp-radius-sm);
 }
 
+/* A failed or bounded check's reason, straight from the tool that produced it
+ * (sby dumps a stack). It must wrap and scroll inside the row rather than blow
+ * the panel out, and it is shown without the user clicking anything — a red
+ * verdict with the reason a click away is a verdict with no reason. */
+.check-detail {
+  flex-basis: 100%;
+  min-width: 0;
+  margin: var(--gp-space-2) 0 0;
+  padding: var(--gp-space-2) var(--gp-space-3);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  max-height: 16em;
+  overflow: auto;
+  font-family: var(--gp-font-mono);
+  font-size: var(--gp-text-xs);
+  color: var(--gp-text-muted);
+  background: var(--gp-surface-2);
+  border: 1px solid var(--gp-border);
+  border-radius: var(--gp-radius-sm);
+}
+
 .check-name {
   font-weight: 600;
   font-family: var(--gp-font-mono);
@@ -1302,6 +1324,108 @@ th.sortable[aria-sort='descending'] .sort-indicator svg {
   letter-spacing: 0.02em;
   min-width: 5.5rem;
   text-align: center;
+}
+
+/* State interfaces. Each state carries a source and a target port on all four
+ * faces so a transition can leave and arrive on whichever side is nearest; the
+ * two are drawn as one visible port because they sit at the same point. The
+ * ports are display only — `isConnectable={false}` — so they must not offer a
+ * grab cursor they will not honour. */
+.fsm-handle {
+  width: 7px;
+  height: 7px;
+  background: var(--gp-surface);
+  border: 1.5px solid var(--gp-border-strong);
+  border-radius: 50%;
+  cursor: default;
+  transition: background var(--gp-motion-fast) ease, border-color var(--gp-motion-fast) ease;
+}
+
+/* The target ring sits under the source dot; only one needs to paint. */
+.fsm-handle--target {
+  opacity: 0;
+}
+
+.react-flow__node.fsm-node--initial .fsm-handle {
+  background: var(--gp-accent);
+  border-color: var(--gp-accent-text);
+}
+
+.react-flow__node.fsm-node--highlight .fsm-handle,
+.react-flow__node.fsm-node--selected .fsm-handle {
+  border-color: var(--gp-select-ring);
+  background: var(--gp-select-ring);
+}
+
+/* A self-loop's guard, drawn in the HTML label layer rather than the SVG one —
+ * matched to the SVG edge labels so the two kinds of transition read alike. */
+.fsm-edge__loop-label {
+  position: absolute;
+  padding: 0 3px;
+  background: var(--gp-surface);
+  border: 1px solid var(--gp-border);
+  border-radius: 3px;
+  font-family: var(--gp-font-mono);
+  font-size: var(--gp-text-xs);
+  color: var(--gp-text);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.fsm-node__label {
+  display: block;
+  pointer-events: none;
+}
+
+/* Motion. Nodes ease between states so a selection or a highlight arriving
+ * from another view reads as a change rather than a jump-cut; the graph itself
+ * fades in on mount. Dragging is exempt — React Flow moves the node by
+ * transform, and a transition on that would lag the cursor. */
+.react-flow__node {
+  transition:
+    background var(--gp-motion) ease,
+    border-color var(--gp-motion) ease,
+    box-shadow var(--gp-motion) ease;
+}
+
+.react-flow__node.dragging,
+.react-flow__node.dragging * {
+  transition: none;
+}
+
+.react-flow__edge-path {
+  transition: stroke var(--gp-motion) ease, stroke-width var(--gp-motion) ease;
+}
+
+.fsm-graph .react-flow {
+  animation: fsm-graph-in var(--gp-motion-slow) ease both;
+}
+
+@keyframes fsm-graph-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fsm-graph .react-flow {
+    animation: none;
+  }
+
+  .react-flow__node,
+  .react-flow__edge-path,
+  .fsm-handle {
+    transition: none;
+  }
+
+  /* React Flow's marching-ants dash on an animated edge. */
+  .react-flow__edge.animated path {
+    animation: none;
+    stroke-dasharray: none;
+  }
 }
 
 /* --- link badge (provenance confidence) ---------------------------------- */

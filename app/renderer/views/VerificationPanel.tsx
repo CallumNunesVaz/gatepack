@@ -112,11 +112,21 @@ function CheckRow({
       aria-selected={selected}
     >
       <div className="check-row__main">
-        <StatusBadge status={check.status} bound={check.bound} skippedReason={check.skippedReason} />
+        <StatusBadge
+          status={check.status}
+          bound={check.bound}
+          skippedReason={check.skippedReason}
+          detail={check.detail}
+        />
         <span className="check-name">{check.name}</span>
         <span className="check-kind">{check.kind}</span>
         <span className="check-duration">{check.durationMs} ms</span>
       </div>
+      {check.detail ? (
+        <pre className="check-detail" data-testid="check-detail">
+          {check.detail}
+        </pre>
+      ) : null}
       {check.counterexample && name ? (
         <CounterexampleTrace
           cex={check.counterexample}

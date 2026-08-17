@@ -91,6 +91,12 @@ export interface Check {
   bound?: number;
   /** Why a check did not run — a missing tool is a legitimate, visible state. */
   skippedReason?: string;
+  /**
+   * Why a failed (or bounded) check came to that verdict — e.g. the SymbiYosys
+   * error text when a property harness cannot run. Optional so an older core
+   * that omits it still validates.
+   */
+  detail?: string;
   durationMs: number;
   counterexample?: Counterexample;
 }

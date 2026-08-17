@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CheckSchema,
   CompileResultSchema,
   DiagnosticSchema,
   envelopeSchema,
@@ -9,6 +10,7 @@ import {
   LibraryCheckResultSchema,
   okEnvelope,
   parseEnvelope,
+  VerifyResultSchema,
 } from './envelope.cjs';
 
 const validCompile = {
@@ -157,5 +159,42 @@ describe('envelope schemas', () => {
       examples: [{ name: 'pelican', summary: 'Pelican crossing', isShowcase: true }],
     });
     expect(parsed.examples[0].isShowcase).toBe(true);
+  });
+
+  it('a failed check\'s `detail` is accepted and preserved, not stripped', () => {
+    const parsed = CheckSchema.parse({
+      name: 'property never_both',
+      kind: 'property',
+      status: 'failed',
+      detail: 'ERROR: engine returned 2\nTraceback (most recent call last):',
+      durationMs: 1,
+    });
+    expect(parsed.detail).toBe('ERROR: engine returned 2\nTraceback (most recent call last):');
+  });
+
+  it('a failed check\'s `detail` survives the envelope parse round-trip', () => {
+    const stdout = JSON.stringify({
+      ok: true,
+      command: 'verify',
+      schema: 1,
+      data: {
+        checks: [
+          {
+            name: 'property never_both',
+            kind: 'property',
+            status: 'failed',
+            detail: 'ERROR: engine returned 2',
+            durationMs: 1,
+          },
+        ],
+        allPassed: false,
+      },
+      warnings: [],
+    });
+    const env = parseEnvelope(VerifyResultSchema, stdout, 'verify');
+    expect(env.ok).toBe(true);
+    if (env.ok) {
+      expect(env.data.checks[0].detail).toBe('ERROR: engine returned 2');
+    }
   });
 });

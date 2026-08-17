@@ -39,10 +39,17 @@ export interface StatusBadgeProps {
   bound?: number;
   /** Why a check did not run (missing tool etc.). */
   skippedReason?: string;
+  /** Why a failed/bounded check came to that verdict (e.g. an sby error). */
+  detail?: string;
 }
 
-export function StatusBadge({ status, bound, skippedReason }: StatusBadgeProps) {
-  const title = skippedReason && status === 'not_run' ? `not run: ${skippedReason}` : status;
+export function StatusBadge({ status, bound, skippedReason, detail }: StatusBadgeProps) {
+  const title =
+    skippedReason && status === 'not_run'
+      ? `not run: ${skippedReason}`
+      : detail
+        ? `${status}: ${detail}`
+        : status;
   return (
     <span className={CLASSES[status]} data-status={status} data-testid="status-badge" title={title}>
       <span className="status__icon" aria-hidden="true">{ICONS[status]}</span>

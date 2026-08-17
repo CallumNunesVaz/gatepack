@@ -65,6 +65,7 @@ export const CheckSchema = z.object({
   status: CheckStatusSchema,
   bound: z.number().optional(),
   skippedReason: z.string().optional(),
+  detail: z.string().optional(),
   durationMs: z.number(),
   counterexample: CounterexampleSchema.optional(),
 });

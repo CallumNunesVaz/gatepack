@@ -26,6 +26,13 @@ describe('StatusBadge — four states, unmistakable', () => {
     expect(screen.getByTestId('status-badge')).toHaveAttribute('data-status', 'failed');
   });
 
+  it('carries a failed check\'s detail in its tooltip', () => {
+    render(<StatusBadge status="failed" detail="ERROR: engine returned 2" />);
+    const badge = screen.getByTestId('status-badge');
+    expect(badge).toHaveAttribute('data-status', 'failed');
+    expect(badge.title).toContain('ERROR: engine returned 2');
+  });
+
   it('renders not_run as a visible state with its reason', () => {
     render(<StatusBadge status="not_run" skippedReason="yosys not installed" />);
     const badge = screen.getByTestId('status-badge');
