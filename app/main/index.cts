@@ -8,6 +8,8 @@ import {
   BrowserWindow,
   dialog,
   Menu,
+  net,
+  protocol,
   type MenuItemConstructorOptions,
   type OpenDialogOptions,
   session as electronSession,
@@ -44,7 +46,66 @@ const STRICT_CSP = [
   "img-src 'self' data:",
   "font-src 'self'",
   "connect-src 'self'",
+  // Stated rather than inherited. Without it `worker-src` falls back through
+  // `child-src` to `script-src`, which happens to be the same value — but the
+  // schematic's layout worker is load-bearing and should not depend on a
+  // fallback chain someone could shorten later.
+  "worker-src 'self'",
 ].join('; ');
+
+/**
+ * The renderer is served from `app://renderer/…`, not from `file://`.
+ *
+ * Chromium gives a `file://` document an opaque origin, and an opaque origin
+ * may not construct a `Worker` at all — the constructor fails with an
+ * ErrorEvent carrying no message, which is exactly what the schematic view
+ * reported as "schematic worker failed". The netlistsvg + elkjs layout runs in
+ * a worker precisely so a large netlist cannot freeze the UI, so the answer is
+ * to give the page a real origin rather than to give up the worker.
+ *
+ * A custom scheme registered as `standard` + `secure` does that, and it tightens
+ * the security posture as a side effect: `'self'` in the CSP now names an
+ * actual origin, and the handler below serves the bundle directory and nothing
+ * outside it.
+ */
+const APP_SCHEME = 'app';
+const APP_ORIGIN = `${APP_SCHEME}://renderer`;
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: APP_SCHEME,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+  },
+]);
+
+function rendererRoot(): string {
+  return path.join(app.getAppPath(), 'dist', 'renderer');
+}
+
+/** Resolve a request path inside the bundle, or null if it escapes it. */
+export function resolveBundlePath(root: string, urlPath: string): string | null {
+  const rel = decodeURIComponent(urlPath).replace(/^\/+/, '');
+  const target = path.normalize(path.join(root, rel === '' ? 'index.html' : rel));
+  const prefix = root.endsWith(path.sep) ? root : root + path.sep;
+  return target === root || target.startsWith(prefix) ? target : null;
+}
+
+function registerAppProtocol(): void {
+  const root = rendererRoot();
+  protocol.handle(APP_SCHEME, async (request) => {
+    const target = resolveBundlePath(root, new URL(request.url).pathname);
+    // A traversal attempt is refused here rather than being resolved and then
+    // regretted: the handler is the only thing standing between a URL and the
+    // filesystem.
+    if (target === null) return new Response('forbidden', { status: 403 });
+    if (!fs.existsSync(target)) return new Response('not found', { status: 404 });
+
+    const response = await net.fetch(pathToFileURL(target).toString());
+    const headers = new Headers(response.headers);
+    headers.set('Content-Security-Policy', STRICT_CSP);
+    return new Response(response.body, { status: response.status, headers });
+  });
+}
 
 let mainWindow: BrowserWindow | null = null;
 let sessionManager: SessionManager | null = null;
@@ -67,8 +128,8 @@ function rendererUrl(): string {
   const dev = process.env.GATEPACK_DEV_SERVER;
   if (dev && dev.length > 0) return dev;
 
-  const indexPath = path.join(app.getAppPath(), 'dist', 'renderer', 'index.html');
-  if (fs.existsSync(indexPath)) return pathToFileURL(indexPath).toString();
+  const indexPath = path.join(rendererRoot(), 'index.html');
+  if (fs.existsSync(indexPath)) return `${APP_ORIGIN}/index.html`;
 
   return pathToFileURL(fallbackHtmlPath()).toString();
 }
@@ -246,6 +307,7 @@ async function openInitialProject(sessionDir: string): Promise<void> {
 
 async function bootstrap(): Promise<void> {
   applySecurityPosture();
+  registerAppProtocol();
 
   const appRoot = app.getAppPath();
   const projectRoot = path.dirname(appRoot);

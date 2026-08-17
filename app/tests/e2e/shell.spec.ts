@@ -56,10 +56,14 @@ test('the status bar names the open project, and never says "no project" when on
   // projectChanged after page load precisely so a subscriber can catch it, and
   // nothing subscribed.
   app = await launchApp();
-  await app.page.waitForFunction(() => {
-    const el = document.querySelector('[data-testid="status-project"]');
-    return el !== null && el.textContent !== null && el.textContent.trim().length > 0;
-  });
+  // A web-first assertion, not `waitForFunction`: the renderer is served from
+  // a real origin now and the CSP is genuinely enforced, so Playwright's
+  // in-page polling loop (which evals) is refused. Locator assertions poll from
+  // outside the page and need no `unsafe-eval`.
+  // The showcase opens on first launch (§18.1) from a scratch working copy, so
+  // the bar must settle on that project's path — "no project" is exactly the
+  // wrong answer this pins, and a bare non-empty check would accept it.
+  await expect(app.page.locator('[data-testid="status-project"]')).toHaveText(/design\.yaml/);
 
   const projectText = await app.page.textContent('[data-testid="status-project"]');
   expect(projectText).not.toBe('no project');

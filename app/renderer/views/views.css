@@ -528,6 +528,9 @@ th.sortable[aria-sort='descending'] .sort-indicator svg {
 
 .schematic__canvas {
   position: relative;
+  /* Take the room the pane has left after the header, layer toggles and any
+   * notes, rather than sitting at its minimum with empty space below. */
+  flex: 1;
   overflow: auto;
   border: 1px solid var(--gp-border);
   border-radius: var(--gp-radius);
@@ -539,6 +542,25 @@ th.sortable[aria-sort='descending'] .sort-indicator svg {
   background-color: var(--gp-surface);
   background-image: radial-gradient(var(--gp-surface-3) 1px, transparent 1px);
   background-size: calc(var(--gp-space-4) * 1.5) calc(var(--gp-space-4) * 1.5);
+}
+
+/* netlistsvg's skin carries its own `<style>` block — `svg { stroke: #000 }`,
+ * `text { fill: #000 }` — which is drawn straight onto the dark canvas as black
+ * on near-black: the schematic rendered correctly and could not be seen. These
+ * rules out-specify the skin's element selectors so the drawing takes the app's
+ * ink colour in whichever theme is in force. Selection and highlight styling
+ * below is more specific still and continues to win. */
+.schematic__canvas svg {
+  stroke: var(--gp-text);
+}
+
+.schematic__canvas svg text {
+  fill: var(--gp-text);
+  stroke: none;
+}
+
+.schematic__canvas svg .splitjoinBody {
+  fill: var(--gp-text);
 }
 
 .schematic__zoom-host {

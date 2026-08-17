@@ -120,6 +120,11 @@ body {
   background: var(--gp-surface);
   border-right: 1px solid var(--gp-border);
   overflow-y: auto;
+  /* The rail is exactly one icon wide and has nothing to scroll sideways to.
+   * Its items are `--gp-rail-w` plus their own borders, which is a hair wider
+   * than the column, so it grew a horizontal scrollbar along the bottom of the
+   * window with nowhere to go. */
+  overflow-x: hidden;
 }
 .shell__brand {
   display: grid;
@@ -171,6 +176,17 @@ body {
   min-height: 0;
   overflow: auto;
   padding: var(--gp-space-4);
+  /* A view fills the height it is given rather than sizing to its content: the
+   * schematic canvas and the FSM graph are both "as much room as there is"
+   * surfaces, and without this they collapsed to their minimum and left the
+   * bottom half of a 1080p window empty. */
+  display: flex;
+  flex-direction: column;
+}
+
+.shell__content > .pane {
+  flex: 1;
+  min-height: 0;
 }
 
 /* --- right inspector ---------------------------------------------------- */

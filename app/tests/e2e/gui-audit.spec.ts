@@ -209,9 +209,7 @@ test.describe('GUI audit regression', () => {
 
     // A graph edit is a document mutation: adding a state must rewrite the YAML.
     await page.getByRole('button', { name: '+ state' }).click();
-    await page.waitForFunction(
-      () => (document.querySelectorAll('.react-flow__node').length) === 6,
-    );
+    await expect(page.locator('.react-flow__node')).toHaveCount(6);
     // The debounced writeSpec (400 ms) lands in the scratch project.
     await page.waitForTimeout(600);
     const spec2 = await page.evaluate(() => (window as any).gatepack.readSpec());

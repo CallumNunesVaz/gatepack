@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useApi } from '../bridge/context';
 import { useProject } from '../state/project';
-import { renderInWorker } from '../worker/schematicClient';
+import { renderSchematicAsync } from '../worker/schematicClient';
 import {
   computePackageLayouts,
   readCellPositions,
@@ -81,7 +81,7 @@ export function Schematic() {
         return;
       }
       setNetlist(env.data);
-      renderInWorker(env.data)
+      renderSchematicAsync(env.data)
         .then((s) => {
           if (!cancelled) setSvg(s);
         })

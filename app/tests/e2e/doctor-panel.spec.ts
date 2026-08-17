@@ -60,10 +60,7 @@ test('doctor reports missing tools with their purpose, and the status bar reflec
 
   // The status bar reads the same doctor() report and must not claim the tools
   // are ready when they are not.
-  await page.waitForFunction(() => {
-    const el = document.querySelector('[data-testid="status-toolchain"]');
-    return el !== null && /missing/i.test(el.textContent ?? '');
-  });
+  await expect(page.locator('[data-testid="status-toolchain"]')).toHaveText(/missing/i);
   const toolchain = await page.textContent('[data-testid="status-toolchain"]');
   expect(toolchain).toContain('missing');
 });
