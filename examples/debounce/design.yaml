@@ -1,0 +1,72 @@
+# ---------------------------------------------------------------------------
+# A push-button hold timer — an asynchronous input, synchronised.
+#
+# A mechanical switch does not close cleanly: the contacts bounce, producing a
+# burst of short pulses that a fast clock reads as several presses. The usual
+# cure is a debounce circuit that accepts an input only after it has been
+# stable for several clock cycles. This design does exactly that, and it is
+# also the example that makes §9.3 concrete: the button is pressed by a human
+# finger, so it is asynchronous to the clock and MUST be synchronised before it
+# reaches the state register, or it can violate setup time and leave the
+# register metastable.
+#
+# What it demonstrates:
+#
+#   sync: true           gatepack emits a two-flop synchroniser for `btn`, and
+#                        the FSM reads the synchronised copy, not the raw pin
+#   a real debounce       the output `active` only fires after `btn` has been
+#                        held high for three consecutive clock edges, so any
+#                        bounce shorter than ~30 ms is rejected
+#   honest timing         a 100 Hz clock makes three cycles a plausible
+#                        bounce-rejection window; with a 1 kHz clock it would
+#                        not be
+#
+# The machine is a simple chain: IDLE -> H1 -> H2 -> LATCHED, each step
+# requiring `btn` to still be high, and any low edge drops straight back to
+# IDLE. `active` is asserted by state alone (Moore), so the output cannot
+# glitch while the button settles.
+#
+# Synthetic, written for this project (§1.3). Not derived from any real
+# product or datasheet application note.
+# ---------------------------------------------------------------------------
+name: debounce
+timing_model: synchronous
+
+# 100 Hz: a 10 ms clock. Three stable cycles is a 30 ms bounce-rejection
+# window, which is the right order of magnitude for a mechanical switch.
+clock: {signal: clk, freq_hz: 100, source: OSC}
+
+reset:
+  signal: rst_n
+  active: low
+  source: SUPERVISOR
+
+encoding: one_hot
+
+inputs:
+  # The push button. Asynchronous to the clock (a finger is not clocked), so
+  # it is synchronised (§9.3) — this single flag is the point of the example.
+  - {name: btn, sync: true}
+
+outputs:
+  - {name: active}
+
+states: [IDLE, H1, H2, LATCHED]
+initial: IDLE
+
+transitions:
+  # A first high sample starts the count; anything else keeps waiting.
+  - {from: IDLE,    to: H1,      when: "btn"}
+  - {from: IDLE,    to: IDLE,    when: "!btn"}
+  # One stable cycle in, a second high sample advances; a low resets the count.
+  - {from: H1,      to: H2,      when: "btn"}
+  - {from: H1,      to: IDLE,    when: "!btn"}
+  # Two stable cycles in, a third high sample latches the output.
+  - {from: H2,      to: LATCHED, when: "btn"}
+  - {from: H2,      to: IDLE,    when: "!btn"}
+  # Held high, the output stays; released, it drops immediately.
+  - {from: LATCHED, to: LATCHED, when: "btn"}
+  - {from: LATCHED, to: IDLE,    when: "!btn"}
+
+output_logic:
+  active: "state == LATCHED"

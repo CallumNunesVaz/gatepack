@@ -1,0 +1,52 @@
+# ---------------------------------------------------------------------------
+# A two-to-one multiplexer — the smallest useful design.
+#
+# If the showcase is the tour, this is the first thing to open after it. It is
+# small enough to hold in your head completely — a select bit chooses between
+# two data bits — yet it maps to four real gates and therefore shows every
+# pane of the application with real content:
+#
+#   spec editor        two data inputs, one select, one output
+#   truth table        2^3 = 8 rows
+#   schematic          one inverter and three NAND2 gates, four mapped cells
+#   packing / BOM      three 74AUP packages (a 1G04 and two dual-NAND 2G00s)
+#   verification       equivalence + exhaustive simulation over 8 vectors
+#
+# The expression `(s & a) | (!s & b)` is the textbook multiplexer, written
+# here the long way on purpose. A real synthesis turns it into NAND gates by
+# De Morgan — `!( !(s & a) & !(!s & b) )` — so the schematic shows an inverter
+# and three NAND2s, not the AND/OR tree the expression names. Seeing that
+# transformation is half the point: the mapping is not a pretty-printer for the
+# YAML, it is a real tool making a real engineering choice.
+#
+# Synthetic, written for this project (§1.3). Not derived from any real
+# product, standard or datasheet application note.
+# ---------------------------------------------------------------------------
+name: mux2to1
+timing_model: synchronous
+
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+
+reset:
+  signal: rst_n
+  active: low
+  source: SUPERVISOR
+
+encoding: one_hot
+
+inputs:
+  - {name: s, sync: false}
+  - {name: a, sync: false}
+  - {name: b, sync: false}
+
+outputs:
+  - {name: y}
+
+states: [S0]
+initial: S0
+
+transitions:
+  - {from: S0, to: S0, when: "1"}
+
+output_logic:
+  y: "(s & a) | (!s & b)"

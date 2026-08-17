@@ -1,0 +1,66 @@
+# ---------------------------------------------------------------------------
+# An overlapping "101" sequence detector — a real state machine.
+#
+# The pelican showcase has five states but you cannot see why the machine is
+# shaped the way it is without reading the crossing rules first. This is the
+# smaller thing to look at when you want to *learn the FSM model itself*: a
+# single data bit arrives every clock, and the output goes high for one cycle
+# whenever the last three bits were 1, 0, 1 — including when two matches
+# overlap, so "10101" pulses twice.
+#
+# What it demonstrates:
+#
+#   four states          each state remembers a partial match of the pattern
+#   guarded transitions  the guards are the pattern: a 1 from S0 goes to S1, a
+#                        0 from S1 to S2, a 1 from S2 to S3 (the match)
+#   output_logic         Moore output: `match` is asserted by state alone
+#   overlap handling     from S3 a 1 falls back to S1, not S0, so "1011" can
+#                        begin a new match with the trailing 1
+#
+# The interesting design decision — from S3, `din == 1` returns to S1 rather
+# than S0 — is exactly where a hand-written state machine gets the overlap
+# wrong, and it is the one the equivalence and exhaustive-simulation checks
+# will catch if it is wrong.
+#
+# Synthetic, written for this project (§1.3). Not derived from any real
+# product or standard.
+# ---------------------------------------------------------------------------
+name: sequence_detector
+timing_model: synchronous
+
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+
+reset:
+  signal: rst_n
+  active: low
+  source: SUPERVISOR
+
+encoding: one_hot
+
+inputs:
+  # A serial data bit, clocked in with the machine, so no synchroniser.
+  - {name: din, sync: false}
+
+outputs:
+  - {name: match}
+
+states: [S0, S1, S2, S3]
+initial: S0
+
+transitions:
+  # S0: no partial match yet. A 1 starts one.
+  - {from: S0, to: S1, when: "din"}
+  - {from: S0, to: S0, when: "!din"}
+  # S1: last bit was 1. A 0 advances to "10"; another 1 restarts ("11").
+  - {from: S1, to: S2, when: "!din"}
+  - {from: S1, to: S1, when: "din"}
+  # S2: last bits were 10. A 1 completes "101"; a 0 discards the match.
+  - {from: S2, to: S3, when: "din"}
+  - {from: S2, to: S0, when: "!din"}
+  # S3: matched. A 1 overlaps ("1011" -> the trailing 1 starts a new match);
+  # a 0 keeps the trailing "10" in play.
+  - {from: S3, to: S1, when: "din"}
+  - {from: S3, to: S2, when: "!din"}
+
+output_logic:
+  match: "state == S3"

@@ -1,0 +1,67 @@
+# ---------------------------------------------------------------------------
+# A power-up sequencer with a liveness property — the §21.5 check.
+#
+# Some boards must bring supplies up in a fixed order, one rail per clock,
+# before signalling the system that power is good. This machine steps through
+# three rails and then latches READY, and — unlike every other example, which
+# proves *safety* (something bad never happens) — this one proves *liveness*:
+# that the good state is eventually reached.
+#
+# What it demonstrates:
+#
+#   a stepper sequencer   OFF -> RAIL1 -> RAIL2 -> READY, one step per clock
+#   kind: liveness         "eventually ready" is discharged as bounded
+#                         reachability (§21.5), so the verdict is reported as
+#                         a bounded pass with its depth — never a green tick,
+#                         because a bound is not a proof that it always happens
+#
+# The machine is deliberately unconditional after `start`: there is no way to
+# get stuck, so the liveness target is genuinely reachable and the cover the
+# check runs is not vacuous. A sequencer that could stall (a missing rail) is
+# a different, more interesting design — and a liveness property is exactly the
+# check that would tell you it had stalled.
+#
+# Synthetic, written for this project (§1.3). Not derived from any real
+# product, standard or datasheet application note.
+# ---------------------------------------------------------------------------
+name: power_sequencer
+timing_model: synchronous
+
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+
+reset:
+  signal: rst_n
+  active: low
+  source: SUPERVISOR
+
+encoding: one_hot
+
+inputs:
+  # A power-on command. Synchronous in a real design (it comes from a
+  # controller); declared sync: false here to keep the example about the
+  # sequencer, not the synchroniser.
+  - {name: start, sync: false}
+
+outputs:
+  - {name: ready}
+
+states: [OFF, RAIL1, RAIL2, READY]
+initial: OFF
+
+transitions:
+  # Wait for the start command, then step up one rail per clock.
+  - {from: OFF,   to: RAIL1, when: "start"}
+  - {from: OFF,   to: OFF,   when: "!start"}
+  - {from: RAIL1, to: RAIL2, when: "1"}
+  - {from: RAIL2, to: READY, when: "1"}
+  # READY latches: once power is good it stays good.
+  - {from: READY, to: READY, when: "1"}
+
+output_logic:
+  ready: "state == READY"
+
+properties:
+  # The liveness property. Discharged as bounded reachability (§21.5): the
+  # target READY is reachable, so this reports a bounded pass with its depth,
+  # never an unconditional "passed".
+  - {name: eventually_ready, kind: liveness, to: READY}
