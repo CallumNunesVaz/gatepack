@@ -21,11 +21,12 @@
   that climb out of the worktree.
 - **Do not run `npm install`.** `app/node_modules` is already populated.
 - Run the tests and fix what you break. Python:
-  `.venv/bin/python -m pytest tests -q` (**557 pass, 5 skip** at baseline).
+  `.venv/bin/python -m pytest tests -q` (**706 pass, 5 skip** at baseline,
+  including 59 toolchain tests that need docker).
   From `app/`: `npx tsc --noEmit -p tsconfig.json`,
-  `npx tsc --noEmit -p tsconfig.main.json`, `npx vitest run` (**180 pass**),
+  `npx tsc --noEmit -p tsconfig.main.json`, `npx vitest run` (**275 pass**),
   and `DISPLAY=:1 npx playwright test --config playwright.config.cjs`
-  (**12 pass**, after `npm run build:main && npx vite build`).
+  (**24 pass**, after `npm run build:main && npx vite build`).
 - **A check that cannot fail is worth nothing.** For everything you add, build
   the input that makes it fail and keep that as a test. This project has now
   shipped **nine** pieces of machinery that reported a status while measuring
@@ -34,10 +35,13 @@
 - **Never fake a tool result.** A missing binary is reported, never
   substituted.
 - **Run the real thing.** `gatepack-toolchain:m6` has Yosys 0.23, Icarus, sby,
-  z3 and pydantic, and the CLI runs in it:
-  `docker run --rm -v "$PWD:/repo" -w /repo gatepack-toolchain:m6 bash -c '...'`
-  Claims that a tool closes must come from that, not a fake runner. Files it
-  writes are owned by root — delete them from inside the container.
+  z3 and pydantic, and the CLI runs in it. Always pass `-u`, or everything the
+  container writes into the checkout is owned by root and your *next* local
+  command fails with EACCES:
+  `docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/repo" -w /repo gatepack-toolchain:m6 bash -c '...'`
+  Claims that a tool closes must come from that, not a fake runner.
+  `tests/toolchain/docker_runner.py` builds this command for the test suite;
+  use it rather than hand-rolling a `docker run` in a test.
 - Write `docs/BUILD-NOTES-<scope>.md`: what you implemented, what you guessed,
   what is a placeholder, what you could not verify, what is weakest. Your notes
   have three times caught defects you could not reach yourself — record
