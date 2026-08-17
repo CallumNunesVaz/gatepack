@@ -222,6 +222,33 @@ def test_parse_sby_no_status_line_is_not_run():
     assert props.parse_sby("", _tasks())["gp_assert_0"].status == "not_run"
 
 
+def test_parse_sby_error_is_failed_with_sby_message():
+    # sby exits rc=16 on ERROR; the parser must report it as *failed* carrying
+    # sby's own message, never as an "unrecognized output" -> not_run.  A
+    # "not_run" here would be the status-reporting-lies failure mode: sby ran,
+    # failed, and told us exactly why, and the reason must survive.
+    stdout = (
+        "SBY 12:00:00 [gp_assert_0] base: starting process "
+        '"cd src; yosys -ql ../model/design.log ../model/design.ys"\n'
+        "SBY 12:00:00 [gp_assert_0] base: /usr/bin/env: 'bash': No such file or "
+        "directory\n"
+        "SBY 12:00:00 [gp_assert_0] base: finished (returncode=127)\n"
+        "SBY 12:00:00 [gp_assert_0] base: COMMAND NOT FOUND. ERROR.\n"
+        "SBY 12:00:00 [gp_assert_0] DONE (ERROR, rc=16)\n"
+    )
+    result = props.parse_sby(stdout, _tasks(), returncode=16)["gp_assert_0"]
+    assert result.status == "failed"
+    assert "No such file or directory" in result.detail
+    assert "bash" in result.detail
+
+
+def test_parse_sby_error_without_returncode_still_parses_normally():
+    # Without a returncode (the pure-over-stdout mode the fixtures use), an
+    # empty/unknown log is still "not_run" — the caller that owns the exit code
+    # is what upgrades it to an error.
+    assert props.parse_sby("", _tasks())["gp_assert_0"].status == "not_run"
+
+
 # ---------------------------------------------------------------------------
 # Vacuity guard (§11) — the single most important behaviour
 # ---------------------------------------------------------------------------
@@ -383,9 +410,10 @@ def test_parse_vcd_extracts_steps():
 
 
 class FakeRunner:
-    def __init__(self, available=(), stdout=""):
+    def __init__(self, available=(), stdout="", returncode=0):
         self._available = set(available)
         self.stdout = stdout
+        self.returncode = returncode
         self.argv = None
 
     def available(self, name):
@@ -395,7 +423,7 @@ class FakeRunner:
         self.argv = argv
         from gatepack.verify.base import ToolResult
 
-        return ToolResult(0, self.stdout, "")
+        return ToolResult(self.returncode, self.stdout, "")
 
 
 def test_run_properties_without_sby_is_not_run(tmp_path):
@@ -451,3 +479,28 @@ def test_run_properties_with_sby_present_passes(tmp_path):
     assert by_name["property m1"].status is CheckStatus.PASSED
     assert by_name["property r1"].status is CheckStatus.BOUNDED_PASS
     assert by_name["property l1"].status is CheckStatus.BOUNDED_PASS
+
+
+def test_run_properties_with_sby_error_reports_the_cause(tmp_path):
+    # sby exits rc=16 (ERROR); the check must be FAILED naming sby's own cause,
+    # not "not_run" and not "unrecognized output".  This is the exact regression
+    # the review caught: an sby ERROR was being reported as not_run.
+    compiled = _compiled()
+    config = VerifyConfig(
+        top=compiled.design.name,
+        generated_v=str(tmp_path / "generated.v"),
+        properties_sv=str(tmp_path / "properties.sv"),
+        cwd=str(tmp_path),
+    )
+    stdout = (
+        "SBY 12:00:00 [gp_assert_0] base: /usr/bin/env: 'bash': No such file or "
+        "directory\n"
+        "SBY 12:00:00 [gp_assert_0] base: COMMAND NOT FOUND. ERROR.\n"
+        "SBY 12:00:00 [gp_assert_0] DONE (ERROR, rc=16)\n"
+    )
+    runner = FakeRunner(available=("sby",), stdout=stdout, returncode=16)
+    checks = props.run_properties(compiled, config, runner)
+    by_name = {c.name: c for c in checks}
+    assert by_name["property p1"].status is CheckStatus.FAILED
+    assert "No such file or directory" in by_name["property p1"].detail
+    assert "bash" in by_name["property p1"].detail

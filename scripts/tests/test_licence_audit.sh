@@ -143,4 +143,28 @@ check "bundle rejection names PyInstaller" grep -q "PyInstaller" "$WORK/notbundl
 rc=$(run_audit "$WORK/reqb.txt" --bundle "$WORK/does-not-exist" --require-bundle)
 check_eq "--require-bundle fails on a missing bundle" "1" "$rc"
 
+# -- the bundled-toolchain audit ----------------------------------------------
+#    A bundled binary with an incompatible licence (a hypothetical GPL-2.0-only
+#    Icarus) must reject, naming the licence; a bundled binary the manifest does
+#    not name must also reject.  The real toolchain tree lives at
+#    app/resources/, so these build a synthetic one to avoid depending on docker.
+T="$WORK/toolchain"; mkdir -p "$T/bin"
+cat > "$T/bin/toolchain-manifest.json" <<'EOF'
+{"schema_version": 1, "tools": [{"name": "iverilog", "component": "Icarus Verilog", "licence": "GPL-2.0-only", "files": ["iverilog"]}], "shared_libs": [], "data_dirs": []}
+EOF
+printf 'not a real binary' > "$T/bin/iverilog"
+rc=$(run_audit "$WORK/tc.txt" --toolchain "$T")
+check_eq "toolchain binary with GPL-2.0-only licence fails" "1" "$rc"
+check "toolchain failure names GPL-2.0-only" grep -q "GPL-2.0-only" "$WORK/tc.txt"
+
+# a binary present but undeclared is rejected (no licence on record)
+printf 'not a real binary' > "$T/bin/mystery"
+rc=$(run_audit "$WORK/tc2.txt" --toolchain "$T")
+check_eq "undeclared toolchain binary fails" "1" "$rc"
+check "undeclared toolchain binary is named" grep -q "mystery" "$WORK/tc2.txt"
+
+# --require-toolchain fails when the manifest is absent -----------------------
+rc=$(run_audit "$WORK/reqt.txt" --toolchain "$WORK/does-not-exist" --require-toolchain)
+check_eq "--require-toolchain fails on a missing manifest" "1" "$rc"
+
 finish

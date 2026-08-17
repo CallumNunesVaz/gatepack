@@ -61,17 +61,19 @@ def test_doctor_json_envelope():
     assert set(data) == {"version", "tools", "resources", "allToolsPresent"}
     assert isinstance(data["allToolsPresent"], bool)
     # every tool entry names the binary and its purpose, and reports a version
-    # string only when found
+    # string and a source (bundled/system) only when found
     for tool in data["tools"]:
-        assert set(tool) == {"name", "found", "purpose", "direct", "path", "version"}
-        assert tool["name"] in {"yosys", "sby", "iverilog", "vvp", "z3", "espresso"}
+        assert set(tool) == {"name", "found", "purpose", "direct", "path", "version", "source"}
+        assert tool["name"] in {"yosys", "sby", "iverilog", "vvp", "z3", "bash", "espresso"}
         assert tool["purpose"]
         if tool["found"]:
             assert tool["path"]
             assert tool["version"]
+            assert tool["source"] in {"bundled", "system", "env"}
         else:
             assert tool["path"] is None
             assert tool["version"] is None
+            assert tool["source"] is None
     # bundled resources are loadable from the source tree
     assert data["resources"]["commonFrontendYs"] is True
     assert data["resources"]["mcellModels"] is True
@@ -91,7 +93,13 @@ def test_doctor_exits_zero_even_with_no_toolchain(tmp_path):
     assert proc.returncode == 0, proc.stderr
     data = json.loads(proc.stdout)["data"]
     assert data["allToolsPresent"] is False
-    assert all(t["found"] is False for t in data["tools"])
+    by_name = {t["name"]: t for t in data["tools"]}
+    # every EDA tool is missing (empty PATH, no bundle); the shell is a host
+    # requirement checked by absolute path, so it is still found.
+    for name in ("yosys", "sby", "iverilog", "vvp", "z3", "espresso"):
+        assert by_name[name]["found"] is False, name
+    assert by_name["bash"]["found"] is True
+    assert by_name["bash"]["source"] == "system"
 
 
 def test_build_without_yosys_names_tool_and_purpose(tmp_path):

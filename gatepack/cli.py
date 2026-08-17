@@ -913,7 +913,8 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     for tool in payload["tools"]:
         if tool["found"]:
             version = f" ({tool['version']})" if tool.get("version") else ""
-            print(f"  {tool['name']:<10} found{version}")
+            source = tool.get("source") or "?"
+            print(f"  {tool['name']:<10} found [{source}]{version}")
         else:
             print(f"  {tool['name']:<10} MISSING")
         print(f"            {tool['purpose']}")

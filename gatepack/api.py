@@ -162,8 +162,16 @@ def check_payload(check: CheckResult) -> dict:
     }
     if check.bound is not None:
         out["bound"] = check.bound
-    if status == "not_run" and check.detail:
-        out["skippedReason"] = check.detail
+    if status == "not_run":
+        if check.detail:
+            out["skippedReason"] = check.detail
+    elif check.detail:
+        # A failed/bounded check's reason is the difference between "your design
+        # is wrong" and "the toolchain could not run" (e.g. an sby ERROR).  The
+        # IPC `Check` contract does not type this field yet (api.ts/envelope.cts
+        # are read-only here), so the app strips it; the CLI `--json` and the
+        # manifest.json carry it, which is where a wrong-result diagnosis starts.
+        out["detail"] = check.detail
     if check.counterexample is not None:
         out["counterexample"] = {
             "steps": [dict(step) for step in check.counterexample.steps],
