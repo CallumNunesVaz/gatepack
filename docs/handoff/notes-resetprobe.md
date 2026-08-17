@@ -17,12 +17,29 @@ $ gatepack verify examples/pelican/design.yaml --library .../parts.csv
   mutation reset_polarity_flip: detected
 ```
 
-`reset_polarity_flip` is **already detected on pelican**. The coverage gap is
-design-dependent, not universal, and the same is true in the other direction:
-`nand_to_and` is detected on pelican and unobservable on `sequence_detector`.
-Any claim that "the simulation cannot catch reset faults" is too strong; the
-accurate claim is that it cannot catch them *on designs where the fault is
-confined to the reset window*.
+`reset_polarity_flip` is **already detected on pelican**. Measured across all
+six bundled examples:
+
+| example           | nand_to_and    | flop_d_invert  | reset_polarity_flip |
+|-------------------|----------------|----------------|---------------------|
+| debounce          | detected       | detected       | detected            |
+| mux2to1           | detected       | not applicable | not applicable      |
+| parity            | not applicable | not applicable | not applicable      |
+| pelican           | detected       | detected       | detected            |
+| power_sequencer   | not applicable | detected       | detected            |
+| sequence_detector | eq only        | detected       | **eq only**         |
+
+`sequence_detector` is the **only** design where the reset fault escapes the
+simulation. The coverage gap is design-dependent, not universal, and the same
+holds in the other direction: `nand_to_and` is detected on pelican and
+unobservable on `sequence_detector`. Any claim that "the simulation cannot catch
+reset faults" is too strong; the accurate claim is that it cannot catch them *on
+designs where the fault is confined to the reset window*.
+
+This makes the acceptance check precise: exactly one cell of that table may
+change (`sequence_detector` / `reset_polarity_flip`, eq only -> detected), and
+the other seventeen must be identical afterwards. A change anywhere else is a
+regression or an over-strict testbench, not a bonus.
 
 ## The behaviour, measured
 
