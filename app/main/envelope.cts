@@ -59,6 +59,10 @@ export const CounterexampleSchema = z.object({
   pointers: z.array(z.string()),
 });
 
+export const NativeThemeSchema = z.object({
+  theme: z.enum(['light', 'dark']),
+});
+
 export const CheckSchema = z.object({
   name: z.string(),
   kind: z.enum(['equivalence', 'simulation', 'mutation', 'property', 'hazard']),

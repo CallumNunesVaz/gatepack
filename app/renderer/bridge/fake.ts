@@ -172,6 +172,13 @@ export class FakeGatepack implements GatepackApi {
     // no-op in the fake
   }
 
+  /** Records what the shell last reported, so a test can assert it followed. */
+  nativeTheme: 'light' | 'dark' | null = null;
+
+  async setNativeTheme(theme: 'light' | 'dark'): Promise<void> {
+    this.nativeTheme = theme;
+  }
+
   async saveProject(): Promise<Envelope<ProjectInfo>> {
     return ok('saveProject', { ...this.project, dirty: false });
   }

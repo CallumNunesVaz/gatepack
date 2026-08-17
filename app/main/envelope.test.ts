@@ -11,6 +11,7 @@ import {
   okEnvelope,
   parseEnvelope,
   VerifyResultSchema,
+  NativeThemeSchema,
 } from './envelope.cjs';
 
 const validCompile = {
@@ -196,5 +197,17 @@ describe('envelope schemas', () => {
     if (env.ok) {
       expect(env.data.checks[0].detail).toBe('ERROR: engine returned 2');
     }
+  });
+});
+
+describe('NativeThemeSchema', () => {
+  // The renderer is untrusted (§5.2), and this payload is handed straight to
+  // `nativeTheme.themeSource`. Only the two themes the app has may pass.
+  it('accepts the two themes and nothing else', () => {
+    expect(NativeThemeSchema.safeParse({ theme: 'dark' }).success).toBe(true);
+    expect(NativeThemeSchema.safeParse({ theme: 'light' }).success).toBe(true);
+    expect(NativeThemeSchema.safeParse({ theme: 'system' }).success).toBe(false);
+    expect(NativeThemeSchema.safeParse({ theme: 42 }).success).toBe(false);
+    expect(NativeThemeSchema.safeParse({}).success).toBe(false);
   });
 });

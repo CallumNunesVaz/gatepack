@@ -42,6 +42,55 @@ body {
 }
 
 /*
+ * Scrollbars.
+ *
+ * Chromium draws its default scrollbar from the *platform* theme, not the
+ * page's, so every scrolling container in the app — the truth table, the
+ * inspector, the netlist panes — carried a white trough and a grey thumb
+ * regardless of the theme the rest of the window was painted in. They are the
+ * one piece of chrome the tokens did not reach.
+ *
+ * Both syntaxes are declared on purpose: the standard `scrollbar-color` is what
+ * a future Chromium (and any non-Chromium host) honours, and the `::-webkit-`
+ * pseudo-elements are what this Electron actually renders today. Monaco draws
+ * its own scrollbars internally and is themed alongside these in
+ * views/spec/MonacoEditor.tsx.
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--gp-border-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--gp-border-strong);
+  border-radius: 999px;
+  /* A transparent border inset by the background clip keeps the thumb visually
+   * narrower than its hit target, so it stays easy to grab. */
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--gp-text-faint);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: var(--gp-accent);
+  background-clip: padding-box;
+}
+
+/*
  * The shell workspace. A CSS grid: rail | main | inspector, with a status bar
  * spanning the bottom. The body never scrolls — the main region and the
  * inspector scroll inside their own containers, so wide content (netlists,

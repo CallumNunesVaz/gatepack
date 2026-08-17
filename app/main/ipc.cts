@@ -5,7 +5,7 @@
  * to a well-formed error envelope.
  */
 
-import { dialog, ipcMain, type OpenDialogOptions } from 'electron';
+import { dialog, ipcMain, nativeTheme, type OpenDialogOptions } from 'electron';
 
 import { z } from 'zod';
 
@@ -15,6 +15,7 @@ import {
   CancelTokenSchema,
   CheckLibrarySchema,
   InvokeTokenSchema,
+  NativeThemeSchema,
   OpenExampleSchema,
   OpenProjectPathSchema,
   SaveProjectAsSchema,
@@ -81,6 +82,15 @@ export function registerIpc(deps: IpcDeps): void {
   handle('gatepack:saveProjectAs', SaveProjectAsSchema, (p) =>
     session.saveProjectAs(p.gpkPath),
   );
+
+  // Chrome, not project state: the renderer reports the theme it is showing so
+  // Electron's own menu bar matches it. Fire-and-forget — there is no result to
+  // report, and a host whose chrome does not follow `nativeTheme` is not an
+  // error.
+  ipcMain.handle('gatepack:setNativeTheme', async (_event, raw: unknown) => {
+    const parsed = NativeThemeSchema.safeParse(raw ?? {});
+    if (parsed.success) nativeTheme.themeSource = parsed.data.theme;
+  });
 
   handle('gatepack:readSpec', NoPayloadSchema, () => session.readSpec());
 

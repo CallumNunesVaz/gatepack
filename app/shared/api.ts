@@ -394,6 +394,15 @@ export interface GatepackApi {
   /** Re-bundles the working form back into a single `.gpk` (§10.4). */
   saveProjectAs(gpkPath: string): Promise<Envelope<ProjectInfo>>;
 
+  /**
+   * Tell the main process which theme the renderer is showing, so Electron's
+   * own chrome — on Linux, the application menu bar drawn inside the window —
+   * matches it. `nativeTheme` otherwise follows the OS, which is a different
+   * setting: a user on a light desktop who chose the dark theme in-app got a
+   * white File/Edit bar above a dark window.
+   */
+  setNativeTheme(theme: 'light' | 'dark'): Promise<void>;
+
   readSpec(): Promise<Envelope<{ text: string; path: string }>>;
   writeSpec(text: string): Promise<Envelope<{ path: string }>>;
 

@@ -48,6 +48,9 @@ const api: GatepackApi = {
   saveProjectAs: (gpkPath: string) =>
     ipcRenderer.invoke('gatepack:saveProjectAs', { gpkPath }) as Promise<Envelope<ProjectInfo>>,
 
+  setNativeTheme: (theme: 'light' | 'dark') =>
+    ipcRenderer.invoke('gatepack:setNativeTheme', { theme }) as Promise<void>,
+
   readSpec: () =>
     ipcRenderer.invoke('gatepack:readSpec') as Promise<Envelope<{ text: string; path: string }>>,
 

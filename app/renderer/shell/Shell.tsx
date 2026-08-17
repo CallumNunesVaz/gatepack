@@ -15,6 +15,7 @@
 
 import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import { useProject } from '../state/project';
+import { useApi } from '../bridge/context';
 import { useTheme } from './theme';
 import { useDensity } from './density';
 import { CommandBusProvider, createCommandBus, useCommandBus } from './commands';
@@ -57,6 +58,7 @@ const VIEWS: ViewDef[] = [
 
 function ShellContent() {
   const { theme, toggle } = useTheme();
+  const api = useApi();
   useDensity();
   const bus = useCommandBus();
   const { model } = useProject();
@@ -75,6 +77,14 @@ function ShellContent() {
     ];
     return () => unregisters.forEach((unregister) => unregister());
   }, [bus, toggle]);
+
+  // Electron's own chrome — on Linux the menu bar drawn inside the window —
+  // follows `nativeTheme`, which tracks the OS and knows nothing about the
+  // in-app choice. Tell main which theme is actually on screen so a dark
+  // window does not sit under a white File/Edit bar.
+  useEffect(() => {
+    void api.setNativeTheme?.(theme);
+  }, [api, theme]);
 
   useGlobalShortcuts(bus.dispatch);
 
