@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from gatepack.emit.bom import emit_bom
-from gatepack.emit.kicad import emit_netlist
+from gatepack.emit.kicad import PIN_NUMBER_NOTICE, emit_netlist
 from gatepack.emit.refdes import assign_refdes, package_id, refdes_delta, refdes_map
 from gatepack.netlist import stable_cell_names
 from gatepack.pack.packer import PackerConfig, pack
@@ -90,6 +90,26 @@ def test_kicad_netlist_rails_and_tieoffs():
     assert "date" not in text
     # no_connects present (empty section)
     assert "no_connects" in text
+
+
+def test_kicad_netlist_declares_its_pin_numbers_are_placeholders():
+    """The netlist must say, in the file, that its pin numbers are positional.
+
+    `parts.csv` carries no footprint pin map, so pins are numbered gate-1
+    signal pins, gate-2 signal pins, ..., VCC, GND. That was recorded in the
+    emitter's docstring and in BUILD-NOTES, and nowhere a reader of the
+    artefact would see it: opened in KiCad the numbers look like the
+    manufacturer's pinout. An unmarked number that could reach a fabricated
+    board is precisely what this project refuses to emit.
+    """
+    nor = _nor()
+    cells = [cell("g0", nor, {"A": "0", "B": "sig", "Y": "out"})]
+    net = netlist("top", cells, inputs=("sig",), outputs=("out",))
+    names = stable_cell_names(net)
+    assigned = assign_refdes(pack(cells, [nor], stable_names=names).packed)
+    text = emit_netlist(net, assigned, names)
+    assert PIN_NUMBER_NOTICE in text
+    assert "POSITIONAL PLACEHOLDERS" in text
 
 
 def test_kicad_netlist_no_connect_flags():

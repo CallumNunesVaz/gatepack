@@ -26,6 +26,13 @@ from gatepack import pins
 from gatepack.netlist import CellNames, MappedCell, MappedNetlist
 from gatepack.pack.packer import PackageGroup
 
+PIN_NUMBER_NOTICE = (
+    "PIN NUMBERS ARE POSITIONAL PLACEHOLDERS, NOT THE MANUFACTURER PINOUT: "
+    "parts.csv carries no footprint pin map, so pins are numbered gate-1 "
+    "signal pins, gate-2 signal pins, ..., VCC, GND. Do not fabricate a board "
+    "from these numbers without applying real footprint pin data."
+)
+
 LIB_NAME = "gatepack"
 
 _TIE_HIGH = "1"
@@ -181,6 +188,16 @@ def emit_netlist(
         _sexp(
             "design",
             "source", "gatepack",
+            # Say in the artefact what was previously said only in this file's
+            # docstring: these pin *numbers* are positional, not the
+            # manufacturer's pinout. `parts.csv` carries no footprint pin map,
+            # so numbering runs gate-1 signal pins, gate-2 signal pins, ...,
+            # VCC, GND. A netlist opened in KiCad shows numbers that look
+            # authoritative, and a reader has no way to tell from the file that
+            # they are a placeholder — which is exactly the kind of unmarked
+            # claim this project exists to avoid, and this one could reach a
+            # board.
+            _sexp("comment", "number", "1", "value", PIN_NUMBER_NOTICE),
             _sexp("sheet", "number", "1", "name", "", "tstamps", "/"),
         )
     )
