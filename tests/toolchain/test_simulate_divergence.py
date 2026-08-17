@@ -16,12 +16,10 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-from pathlib import Path
 
 import pytest
 
-REPO = Path(__file__).resolve().parents[2]
-IMAGE = "gatepack-toolchain:m6"
+from tests.toolchain.docker_runner import IMAGE, run_repo
 
 
 def _toolchain() -> bool:
@@ -38,11 +36,7 @@ requires_toolchain = pytest.mark.skipif(
 
 
 def _run(script: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["docker", "run", "--rm", "-v", f"{REPO}:/repo", "-w", "/repo", IMAGE,
-         "bash", "-c", script],
-        capture_output=True, text=True,
-    )
+    return run_repo("bash", "-c", script)
 
 
 def _simulate(build: str) -> dict:

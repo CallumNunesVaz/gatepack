@@ -22,12 +22,10 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-from pathlib import Path
 
 import pytest
 
-REPO = Path(__file__).resolve().parents[2]
-IMAGE = "gatepack-toolchain:m6"
+from tests.toolchain.docker_runner import IMAGE, run_repo
 
 
 def _toolchain_available() -> bool:
@@ -45,29 +43,16 @@ requires_toolchain = pytest.mark.skipif(
 
 
 def _verify(build: str, design: str = "xor2") -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [
-            "docker", "run", "--rm",
-            "-v", f"{REPO}:/repo", "-w", "/repo", IMAGE,
-            "python3", "-m", "gatepack", "verify",
-            f"tests/golden/designs/{design}.yaml",
-            "--library", "libraries/74aup.csv",
-            "--build", build,
-        ],
-        capture_output=True,
-        text=True,
+    return run_repo(
+        "python3", "-m", "gatepack", "verify",
+        f"tests/golden/designs/{design}.yaml",
+        "--library", "libraries/74aup.csv",
+        "--build", build,
     )
 
 
 def _read(build: str, name: str) -> str:
-    return subprocess.run(
-        [
-            "docker", "run", "--rm", "-v", f"{REPO}:/repo", "-w", "/repo", IMAGE,
-            "cat", f"{build}/{name}",
-        ],
-        capture_output=True,
-        text=True,
-    ).stdout
+    return run_repo("cat", f"{build}/{name}").stdout
 
 
 @requires_toolchain

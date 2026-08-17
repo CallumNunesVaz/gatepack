@@ -18,9 +18,9 @@ from pathlib import Path
 import pytest
 
 from gatepack.frontend import compile_design_file
+from tests.toolchain.docker_runner import IMAGE, run_work
 
 DESIGNS = Path(__file__).resolve().parents[1] / "golden" / "designs"
-IMAGE = "gatepack-toolchain:m6"
 
 
 def _toolchain_available() -> bool:
@@ -42,30 +42,12 @@ requires_toolchain = pytest.mark.skipif(
 
 def _run_yosys(workdir: Path, script: str) -> subprocess.CompletedProcess[str]:
     (workdir / "probe.ys").write_text(script)
-    return subprocess.run(
-        [
-            "docker", "run", "--rm",
-            "-v", f"{workdir}:/work",
-            IMAGE,
-            "bash", "-c", "cd /work && yosys -q probe.ys",
-        ],
-        capture_output=True,
-        text=True,
-    )
+    return run_work(workdir, "bash", "-c", "cd /work && yosys -q probe.ys")
 
 
 def _run_sby(workdir: Path, sby_file: str) -> subprocess.CompletedProcess[str]:
     """Run one generated `.sby` file against real sby in the toolchain image."""
-    return subprocess.run(
-        [
-            "docker", "run", "--rm",
-            "-v", f"{workdir}:/work",
-            IMAGE,
-            "bash", "-c", f"cd /work && sby -f {sby_file}",
-        ],
-        capture_output=True,
-        text=True,
-    )
+    return run_work(workdir, "bash", "-c", f"cd /work && sby -f {sby_file}")
 
 
 def _discharge_properties(design: str, workdir: Path):

@@ -24,9 +24,9 @@ from gatepack.liberty.generator import generate as generate_liberty
 from gatepack.parts import load_parts
 from gatepack.synth.base import SynthConfig
 from gatepack.synth.synchronous import SynchronousBackend
+from tests.toolchain.docker_runner import IMAGE, run_work
 
 REPO = Path(__file__).resolve().parents[2]
-IMAGE = "gatepack-toolchain:m6"
 DESIGN = REPO / "tests" / "golden" / "designs" / "mux2.yaml"
 LIBRARY = REPO / "libraries" / "74aup.csv"
 
@@ -74,14 +74,7 @@ def test_synthesis_maps_mux_onto_mux2(tmp_path: Path) -> None:
     )
     (tmp_path / "yosys.ys").write_text(script)
 
-    proc = subprocess.run(
-        [
-            "docker", "run", "--rm", "-v", f"{tmp_path}:/work", IMAGE,
-            "bash", "-c", "cd /work && yosys -q yosys.ys",
-        ],
-        capture_output=True,
-        text=True,
-    )
+    proc = run_work(tmp_path, "bash", "-c", "cd /work && yosys -q yosys.ys")
     assert proc.returncode == 0, (
         f"yosys failed on the mux2 design:\n{proc.stdout}\n{proc.stderr}"
     )

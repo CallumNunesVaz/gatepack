@@ -23,12 +23,11 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-from pathlib import Path
 
 import pytest
 
-REPO = Path(__file__).resolve().parents[2]
-IMAGE = "gatepack-toolchain:m6"
+from tests.toolchain.docker_runner import IMAGE, run_repo
+
 DESIGN = "examples/pelican/design.yaml"
 LIBRARY = "libraries/74aup.csv"
 
@@ -48,42 +47,25 @@ requires_toolchain = pytest.mark.skipif(
 
 
 def _run(*argv: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [
-            "docker", "run", "--rm", "-v", f"{REPO}:/repo", "-w", "/repo", IMAGE,
-            "python3", "-m", "gatepack", *argv,
-        ],
-        capture_output=True,
-        text=True,
-    )
+    return run_repo("python3", "-m", "gatepack", *argv)
 
 
 def _build_package_count(out: str) -> int:
     # The shipped library's multi-gate parts now carry verified gates_per_pkg,
     # so `build` proceeds without an acknowledgement; these tests measure
     # packing, not the data gate.
-    proc = subprocess.run(
-        [
-            "docker", "run", "--rm", "-v", f"{REPO}:/repo", "-w", "/repo", IMAGE,
-            "python3", "-c",
-            "from gatepack.build import run_build; "
-            f"r, _ = run_build({DESIGN!r}, {LIBRARY!r}, out_dir={out!r}); "
-            "print(r.packed_stats.package_count)",
-        ],
-        capture_output=True,
-        text=True,
+    proc = run_repo(
+        "python3", "-c",
+        "from gatepack.build import run_build; "
+        f"r, _ = run_build({DESIGN!r}, {LIBRARY!r}, out_dir={out!r}); "
+        "print(r.packed_stats.package_count)",
     )
     assert proc.returncode == 0, proc.stderr or proc.stdout
     return int(proc.stdout.strip())
 
 
 def _rm(*paths: str) -> None:
-    subprocess.run(
-        ["docker", "run", "--rm", "-v", f"{REPO}:/repo", "-w", "/repo", IMAGE,
-         "rm", "-rf", *paths],
-        capture_output=True,
-        text=True,
-    )
+    run_repo("rm", "-rf", *paths)
 
 
 def _data(proc: subprocess.CompletedProcess) -> dict:

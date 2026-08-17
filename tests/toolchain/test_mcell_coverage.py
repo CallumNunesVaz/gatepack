@@ -24,9 +24,10 @@ from pathlib import Path
 
 import pytest
 
+from tests.toolchain.docker_runner import IMAGE, run_repo, run_work
+
 REPO = Path(__file__).resolve().parents[2]
 DESIGNS = REPO / "tests" / "golden" / "designs"
-IMAGE = "gatepack-toolchain:m6"
 
 
 def _toolchain_available() -> bool:
@@ -45,25 +46,11 @@ requires_toolchain = pytest.mark.skipif(
 
 def _run_yosys(workdir: Path, script: str) -> subprocess.CompletedProcess[str]:
     (workdir / "probe.ys").write_text(script)
-    return subprocess.run(
-        [
-            "docker", "run", "--rm", "-v", f"{workdir}:/work", IMAGE,
-            "bash", "-c", "cd /work && yosys probe.ys",
-        ],
-        capture_output=True,
-        text=True,
-    )
+    return run_work(workdir, "bash", "-c", "cd /work && yosys probe.ys")
 
 
 def _run_cli(*argv: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [
-            "docker", "run", "--rm", "-v", f"{REPO}:/repo", "-w", "/repo", IMAGE,
-            "python3", "-m", "gatepack", *argv,
-        ],
-        capture_output=True,
-        text=True,
-    )
+    return run_repo("python3", "-m", "gatepack", *argv)
 
 
 def test_mcell_model_is_shared_between_equivalence_and_simulation():
@@ -129,12 +116,7 @@ def test_verify_on_macro_design_reaches_c4():
         assert "(* blackbox *)" in generated
         assert ".EN(state_COUNT)" in generated
     finally:
-        subprocess.run(
-            ["docker", "run", "--rm", "-v", f"{REPO}:/repo", "-w", "/repo", IMAGE,
-             "rm", "-rf", build_dir],
-            capture_output=True,
-            text=True,
-        )
+        run_repo("rm", "-rf", build_dir)
 
 
 @requires_toolchain

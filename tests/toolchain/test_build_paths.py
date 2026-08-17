@@ -14,12 +14,10 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-from pathlib import Path
 
 import pytest
 
-REPO = Path(__file__).resolve().parents[2]
-IMAGE = "gatepack-toolchain:m6"
+from tests.toolchain.docker_runner import IMAGE, run_repo
 
 
 def _toolchain_available() -> bool:
@@ -40,18 +38,12 @@ def _build(out: str) -> subprocess.CompletedProcess[str]:
     # The shipped library's multi-gate parts now carry verified gates_per_pkg
     # (§1.3 / §23), so the default build proceeds without an acknowledgement.
     # These tests exercise path handling and observability, not the data gate.
-    return subprocess.run(
-        [
-            "docker", "run", "--rm",
-            "-v", f"{REPO}:/repo", "-w", "/repo", IMAGE,
-            "python3", "-c",
-            "from gatepack.build import run_build; "
-            "run_build('examples/pelican/design.yaml', 'libraries/74aup.csv', "
-            f"out_dir={out!r}); "
-            "print('wrote')",
-        ],
-        capture_output=True,
-        text=True,
+    return run_repo(
+        "python3", "-c",
+        "from gatepack.build import run_build; "
+        "run_build('examples/pelican/design.yaml', 'libraries/74aup.csv', "
+        f"out_dir={out!r}); "
+        "print('wrote')",
     )
 
 
@@ -80,16 +72,10 @@ def test_missing_yosys_says_so_rather_than_blaming_something_else() -> None:
     A message that says "install yosys" when yosys is installed sends the
     reader to the wrong place, which is how the path bug above survived.
     """
-    proc = subprocess.run(
-        [
-            "docker", "run", "--rm",
-            "-v", f"{REPO}:/repo", "-w", "/repo", IMAGE,
-            "env", "PATH=/nonexistent", "/usr/bin/python3", "-m", "gatepack",
-            "build", "examples/pelican/design.yaml",
-            "--library", "libraries/74aup.csv", "--out", ".gpout/t_noyosys",
-        ],
-        capture_output=True,
-        text=True,
+    proc = run_repo(
+        "env", "PATH=/nonexistent", "/usr/bin/python3", "-m", "gatepack",
+        "build", "examples/pelican/design.yaml",
+        "--library", "libraries/74aup.csv", "--out", ".gpout/t_noyosys",
     )
     assert proc.returncode != 0
     combined = proc.stdout + proc.stderr
@@ -117,14 +103,7 @@ def test_outputs_are_observable_on_a_real_netlist() -> None:
     proc = _build(out)
     assert proc.returncode == 0, proc.stderr or proc.stdout
 
-    report = subprocess.run(
-        [
-            "docker", "run", "--rm", "-v", f"{REPO}:/repo", "-w", "/repo", IMAGE,
-            "cat", f"{out}/report.md",
-        ],
-        capture_output=True,
-        text=True,
-    ).stdout
+    report = run_repo("cat", f"{out}/report.md").stdout
 
     line = next(
         (ln for ln in report.splitlines() if ln.startswith("Unobservable nets")),

@@ -24,9 +24,9 @@ import pytest
 
 from gatepack.provenance.capture import read_netlist_json
 from gatepack.provenance.coverage import CoverageReport, measure_coverage
+from tests.toolchain.docker_runner import IMAGE, run_repo
 
 REPO = Path(__file__).resolve().parents[2]
-IMAGE = "gatepack-toolchain:m6"
 
 GOLDEN_DESIGNS = REPO / "tests" / "golden" / "designs"
 FIXTURES = REPO / "tests" / "fixtures" / "provenance"
@@ -47,15 +47,7 @@ requires_toolchain = pytest.mark.skipif(
 
 
 def _run(command: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [
-            "docker", "run", "--rm",
-            "-v", f"{REPO}:/repo", "-w", "/repo", IMAGE,
-            "bash", "-c", command,
-        ],
-        capture_output=True,
-        text=True,
-    )
+    return run_repo("bash", "-c", command)
 
 
 def _build_and_measure(design: str, design_path: str) -> tuple[str, CoverageReport, CoverageReport]:
