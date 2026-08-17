@@ -70,22 +70,25 @@ def _generate(csv_path=LIBRARY_CSV, **kwargs):
 
 def test_valid_library_round_trips_with_expected_cell_count():
     result = _generate()
-    # 10 G-cells + DFF/DFF_R/DFF_SR; DFF_S is single-sourced and excluded.
+    # 8 G-cells + DFF/DFF_R/DFF_SR; NAND3/NOR3 have no candidate part and are
+    # single-sourced (excluded, like DFF_S and MUX2).
     assert result.cells == [
-        "INV", "BUF", "NAND2", "NAND3", "NOR2", "NOR3",
-        "AND2", "AND3", "OR2", "XOR2",
+        "INV", "BUF", "NAND2", "NOR2", "AND2", "AND3", "OR2", "XOR2",
         "DFF", "DFF_R", "DFF_SR",
     ]
-    assert len(result.cells) == 13
+    assert len(result.cells) == 11
     assert "cell (DFF_S)" not in result.text
 
 
 def test_allow_single_source_includes_dff_s():
     result = _generate(allow_single_source=True)
-    # 13 default cells + single-sourced DFF_S and MUX2 (74AUP1G157).
+    # 11 default cells + single-sourced DFF_S, MUX2 (74AUP1G157) and the
+    # no-candidate NAND3/NOR3.
     assert len(result.cells) == 15
     assert "cell (DFF_S)" in result.text
     assert "cell (MUX2)" in result.text
+    assert "cell (NAND3)" in result.text
+    assert "cell (NOR3)" in result.text
 
 
 def test_g_cell_has_function():

@@ -219,6 +219,61 @@ def test_mutation_detected_only_when_both_checks_fail():
     assert mutation.is_detected(CheckStatus.PASSED, CheckStatus.PASSED) is False
 
 
+def test_mutation_equivalence_only_when_equivalence_catches_but_simulation_passes():
+    assert mutation.is_equivalence_only(CheckStatus.FAILED, CheckStatus.PASSED) is True
+    assert mutation.is_equivalence_only(CheckStatus.FAILED, CheckStatus.FAILED) is False
+    assert mutation.is_equivalence_only(CheckStatus.PASSED, CheckStatus.PASSED) is False
+    assert mutation.is_equivalence_only(CheckStatus.PASSED, CheckStatus.FAILED) is False
+
+
+def test_run_mutation_suite_equivalence_only_fault_is_not_undetected():
+    # A fault equivalence catches but the simulation does not is *not*
+    # undetected: the mutation was seen, so it must not count as a vacuity
+    # finding.  (Whether the check as a whole passes is a separate question —
+    # see the `simulation_was_exercised` tests below.)
+    from gatepack.verify.base import VerificationReport
+
+    lib, sim = _artefacts()
+
+    def failing_equiv(_text):
+        return CheckStatus.FAILED
+
+    def passing_sim(_text):
+        return CheckStatus.PASSED
+
+    outcomes = mutation.run_mutation_suite(
+        mutation.MUTATIONS, lib, sim, failing_equiv, passing_sim
+    )
+    assert all(o.applicable for o in outcomes)
+    assert all(not o.detected and o.equivalence_only for o in outcomes)
+    report = VerificationReport(checks=[], mutations=outcomes)
+    assert not report.has_failure
+
+
+def test_run_mutation_suite_equivalence_passing_but_simulation_failing_is_undetected():
+    # If equivalence (the stronger, full-state check) passes while the
+    # output-only simulation fails, the equivalence check is the vacuous one:
+    # that is exactly the misconfiguration this suite exists to catch.  It must
+    # remain a hard failure, never "caught by equivalence only".
+    from gatepack.verify.base import VerificationReport
+
+    lib, sim = _artefacts()
+
+    def passing_equiv(_text):
+        return CheckStatus.PASSED
+
+    def failing_sim(_text):
+        return CheckStatus.FAILED
+
+    outcomes = mutation.run_mutation_suite(
+        mutation.MUTATIONS, lib, sim, passing_equiv, failing_sim
+    )
+    assert all(o.applicable for o in outcomes)
+    assert all(not o.detected and not o.equivalence_only for o in outcomes)
+    report = VerificationReport(checks=[], mutations=outcomes)
+    assert report.has_failure
+
+
 def test_run_mutation_suite_vacuous_pass_is_not_detected():
     lib, sim = _artefacts()
     vacuous_equiv = lambda _text: CheckStatus.PASSED
@@ -378,3 +433,35 @@ def test_strategy_simulation_passes_on_iverilog_output():
     report = _strategy_report(runner)
     statuses = {c.name: c.status for c in report.checks}
     assert statuses["exhaustive simulation"] is CheckStatus.PASSED
+
+
+def test_simulation_must_be_shown_to_fail_by_something():
+    """All-equivalence-only is not a pass: nothing exercised the simulation.
+
+    The suite exists to prove *both* checks can fail. An "equivalence only"
+    outcome proves it about equivalence and says nothing about the simulation,
+    so a run where every applicable mutation lands there is indistinguishable
+    from one where the simulation passes unconditionally — the exact vacuity
+    this suite is for, one check over.
+    """
+    from gatepack.verify.base import MutationOutcome
+
+    equivalence_only = [
+        MutationOutcome("a", detected=False, detail="", applicable=True, equivalence_only=True),
+        MutationOutcome("b", detected=False, detail="", applicable=True, equivalence_only=True),
+    ]
+    assert mutation.simulation_was_exercised(equivalence_only) is False
+
+    # One genuinely detected mutation is enough: the simulation demonstrably
+    # failed for that fault, so the others are informative rather than suspect.
+    mixed = equivalence_only + [
+        MutationOutcome("c", detected=True, detail="", applicable=True)
+    ]
+    assert mutation.simulation_was_exercised(mixed) is True
+
+    # A design no mutation applies to (purely combinational, say) proves
+    # nothing and is not asked to — that is a category error, not a vacuity.
+    not_applicable = [
+        MutationOutcome("a", detected=False, detail="", applicable=False)
+    ]
+    assert mutation.simulation_was_exercised(not_applicable) is True

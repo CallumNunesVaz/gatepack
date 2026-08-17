@@ -41,16 +41,23 @@ def test_every_multi_gate_row_has_a_packaging_citation():
     assert missing == [], f"multi-gate rows without a packaging citation: {missing}"
 
 
-def test_packaging_part_numbers_are_in_bijection_with_csv_multi_gate_rows():
-    # A packaging citation keyed to a part number that is not a real multi-gate
-    # row in the CSV (or a multi-gate row whose part number has no packaging
-    # citation) is a citation that has drifted away from its row.
+def test_packaging_part_numbers_do_not_drift_from_csv():
+    # A packaging citation keyed to a part number that is not a real row in the
+    # CSV, or a multi-gate row whose part number has no packaging citation, is a
+    # citation that has drifted away from its row.  Single-gate rows are cited
+    # in the same table too (their package was corrected, e.g. 74AUP1G11 in
+    # SOT-363), so the check is "every multi-gate row cited, every citation a
+    # real row" rather than the old multi-gate-only bijection.
     parts = load_parts(LIBRARY)
     csv_multi_gate = {p.part_number for p in parts if p.gates_per_pkg > 1}
+    csv_all = {p.part_number for p in parts if p.part_number}
     packaging = set(parse_refs_packaging(REFS))
-    assert packaging == csv_multi_gate, (
-        f"packaging table {sorted(packaging)} != CSV multi-gate rows "
-        f"{sorted(csv_multi_gate)}"
+    assert csv_multi_gate <= packaging, (
+        f"multi-gate rows without a packaging citation: "
+        f"{sorted(csv_multi_gate - packaging)}"
+    )
+    assert packaging <= csv_all, (
+        f"packaging citations with no CSV row: {sorted(packaging - csv_all)}"
     )
 
 

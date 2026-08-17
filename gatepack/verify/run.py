@@ -110,7 +110,13 @@ def _manifest(
             entry["bound"] = check.bound
         checks.append(entry)
     mutations = [
-        {"mutation": m.mutation, "detected": m.detected, "applicable": m.applicable, "detail": m.detail}
+        {
+            "mutation": m.mutation,
+            "detected": m.detected,
+            "applicable": m.applicable,
+            "equivalenceOnly": m.equivalence_only,
+            "detail": m.detail,
+        }
         for m in report.mutations
     ]
     if report.has_failure:

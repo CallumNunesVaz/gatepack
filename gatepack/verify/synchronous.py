@@ -175,11 +175,26 @@ class SynchronousVerify(VerificationStrategy):
             run_simulation,
             mapped_v or None,
         )
-        undetected = [o.mutation for o in outcomes if o.applicable and not o.detected]
-        status = CheckStatus.FAILED if undetected else CheckStatus.PASSED
-        detail = (
-            "one or more mutations NOT detected: " + ", ".join(undetected)
-            if undetected
-            else "all applicable mutations detected"
-        )
+        undetected = [
+            o.mutation
+            for o in outcomes
+            if o.applicable and not o.detected and not o.equivalence_only
+        ]
+        # Every applicable mutation caught by equivalence alone proves nothing
+        # about the simulation, which is the other half of what this suite is
+        # for; a simulation that could never fail would look exactly like this.
+        unexercised = not mutation_mod.simulation_was_exercised(outcomes)
+        if undetected:
+            status = CheckStatus.FAILED
+            detail = "one or more mutations NOT detected: " + ", ".join(undetected)
+        elif unexercised:
+            status = CheckStatus.FAILED
+            detail = (
+                "no applicable mutation was caught by the exhaustive simulation: "
+                "every one was caught by equivalence alone, so nothing here shows "
+                "the simulation can fail"
+            )
+        else:
+            status = CheckStatus.PASSED
+            detail = "all applicable mutations detected or caught by equivalence alone"
         return CheckResult("mutation", status, detail, kind="mutation"), outcomes

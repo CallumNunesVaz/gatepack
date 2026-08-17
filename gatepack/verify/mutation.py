@@ -16,8 +16,44 @@ failure (R2, R18).
 
 Mutations are pure text transforms on the generated ``cells.lib`` and
 ``cells_sim.v``.  Both equivalence and simulation read ``cells_sim.v`` as the
-behavioural model, so a corrupted model is seen by both; a mutation is
-*detected* only when **both** checks fail.
+behavioural model, so a corrupted model is seen by both.
+
+Verdicts for an applied mutation:
+
+* **detected** — equivalence *and* exhaustive simulation both fail: the fault
+  is real and reaches a primary output, and both checks catch it.
+* **equivalence only** — equivalence fails but exhaustive simulation passes.
+  The fault is real and was caught, by the stronger of the two checks; the
+  output-only simulation did not see it.  Not a vacuity finding, and reported
+  under a name that says only what was observed.
+
+  Two very different situations produce this verdict, and **the checker cannot
+  tell them apart** — it sees two status values, nothing more:
+
+  - the fault genuinely cannot reach a primary output in any reachable state
+    (classical fault masking); or
+  - the fault *can* reach an output, but in a phase the exhaustive simulation
+    does not exercise.  §9.6 makes reset a setup step and checks outputs only
+    at transition edges, so a reset-polarity fault is observable and unlooked
+    for.  That is a coverage gap in the simulation, not a benign fault.
+
+  Calling both of those "masked" would assert the first when the evidence only
+  supports "equivalence caught it".  Establishing masking takes an argument
+  about reachability that no status code carries, so the verdict names the
+  observation and the distinction is left to whoever reads it.
+* **undetected** — equivalence passes.  The full-state check did not catch the
+  injected fault, so the checks are insensitive (or vacuous); this remains a
+  hard failure (R2, R18).
+
+If *every* applicable mutation is "equivalence only" and none is detected, the
+suite has shown nothing about the exhaustive simulation at all — a simulation
+that passed unconditionally would look exactly like that — so the check does
+**not** pass (see ``simulation_was_exercised``).
+
+Requiring *both* checks to fail before calling a mutation "detected" was the
+original rule, and it is wrong: it reports a fault that equivalence alone
+catches as if no check had caught it.  The honest distinction is between
+*caught by equivalence only* and *not caught at all*.
 """
 
 from __future__ import annotations
@@ -96,8 +132,31 @@ def is_applicable(mutation: Mutation, mapped_v: str) -> bool:
 
 
 def is_detected(equivalence: CheckStatus, simulation: CheckStatus) -> bool:
-    """A mutation is caught only when *both* checks fail (§C4.4)."""
+    """A mutation is caught when *both* checks fail — the fault reaches an output."""
     return equivalence is CheckStatus.FAILED and simulation is CheckStatus.FAILED
+
+
+def is_equivalence_only(equivalence: CheckStatus, simulation: CheckStatus) -> bool:
+    """True when equivalence caught the fault and the simulation did not.
+
+    Deliberately named for the observation rather than a cause: from two status
+    values one cannot tell a fault that *cannot* reach an output from one the
+    simulation never looks for.  See the module docstring.
+    """
+    return equivalence is CheckStatus.FAILED and simulation is CheckStatus.PASSED
+
+
+def simulation_was_exercised(outcomes) -> bool:
+    """True when some applicable mutation made the *simulation* fail.
+
+    The mutation suite exists to prove the checks are not vacuous.  An
+    "equivalence only" verdict proves that about equivalence and says nothing
+    about the simulation — so if every applicable mutation lands there and none
+    is detected, nothing has demonstrated the simulation can fail at all, which
+    is indistinguishable from a simulation that passes unconditionally.
+    """
+    applicable = [o for o in outcomes if o.applicable]
+    return not applicable or any(o.detected for o in applicable)
 
 
 def run_mutation_suite(
@@ -143,10 +202,12 @@ def run_mutation_suite(
         equiv = run_equivalence(mutated_sim)
         sim = run_simulation(mutated_sim)
         detected = is_detected(equiv, sim)
+        equivalence_only = is_equivalence_only(equiv, sim)
         outcomes.append(
             MutationOutcome(
                 mutation.name,
                 detected=detected,
+                equivalence_only=equivalence_only,
                 detail=f"equivalence={equiv.value}, simulation={sim.value}",
                 applicable=True,
             )

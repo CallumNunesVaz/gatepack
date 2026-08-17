@@ -12,8 +12,8 @@
 #
 #   spec editor        five states and seven guarded transitions
 #   truth table        four outputs driven by state, exhaustively checkable
-#   schematic          ~20 mapped gates from a real Yosys run
-#   packing / BOM      74AUP single-gate packages with refdes assigned
+#   schematic          23 mapped cells from a real Yosys run
+#   packing / BOM      23 single-gate 74AUP packages with refdes assigned
 #   analysis           flop count, static current by tier, against constraints
 #   verification       a mutex property that genuinely proves
 #

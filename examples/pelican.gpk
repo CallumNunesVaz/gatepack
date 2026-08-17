@@ -16,8 +16,8 @@ kind: design
 #
 #   spec editor        five states and seven guarded transitions
 #   truth table        four outputs driven by state, exhaustively checkable
-#   schematic          ~20 mapped gates from a real Yosys run
-#   packing / BOM      74AUP single-gate packages with refdes assigned
+#   schematic          23 mapped cells from a real Yosys run
+#   packing / BOM      23 single-gate 74AUP packages with refdes assigned
 #   analysis           flop count, static current by tier, against constraints
 #   verification       a mutex property that genuinely proves
 #
@@ -105,18 +105,18 @@ parts:
   - {area: 1.0, cell: INV, equivalents: ~, family: AUP, function: "!A", gates_per_pkg: 1, inputs: 1, iq_ua: 0.9, mfrs: "TI;Nexperia;Diodes", package: SOT-353, part_suffix: 1G04, tier: G, tpd_ns: 4.6, vcc_max: 3.6, vcc_min: 0.8}
   - {area: 1.0, cell: BUF, equivalents: ~, family: AUP, function: A, gates_per_pkg: 1, inputs: 1, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-353, part_suffix: 1G34, tier: G, tpd_ns: 4.6, vcc_max: 3.6, vcc_min: 0.8}
   - {area: 1.0, cell: NAND2, equivalents: ~, family: AUP, function: "!(A&B)", gates_per_pkg: 1, inputs: 2, iq_ua: 0.9, mfrs: "TI;Nexperia;Diodes", package: SOT-353, part_suffix: 1G00, tier: G, tpd_ns: 5.1, vcc_max: 3.6, vcc_min: 0.8}
-  - {area: 1.0, cell: NAND3, equivalents: ~, family: AUP, function: "!(A&B&C)", gates_per_pkg: 1, inputs: 3, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-353, part_suffix: 1G10, tier: G, tpd_ns: 5.5, vcc_max: 3.6, vcc_min: 0.8}
+  - {area: 1.0, cell: NAND3, equivalents: ~, family: AUP, function: "!(A&B&C)", gates_per_pkg: 1, inputs: 3, iq_ua: 0.9, mfrs: ~, package: SOT-353, part_suffix: "", tier: G, tpd_ns: 5.5, vcc_max: 3.6, vcc_min: 0.8}
   - {area: 1.0, cell: NOR2, equivalents: ~, family: AUP, function: "!(A|B)", gates_per_pkg: 1, inputs: 2, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-353, part_suffix: 1G02, tier: G, tpd_ns: 5.1, vcc_max: 3.6, vcc_min: 0.8}
-  - {area: 1.0, cell: NOR3, equivalents: ~, family: AUP, function: "!(A|B|C)", gates_per_pkg: 1, inputs: 3, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-353, part_suffix: 1G27, tier: G, tpd_ns: 5.5, vcc_max: 3.6, vcc_min: 0.8}
+  - {area: 1.0, cell: NOR3, equivalents: ~, family: AUP, function: "!(A|B|C)", gates_per_pkg: 1, inputs: 3, iq_ua: 0.9, mfrs: ~, package: SOT-353, part_suffix: "", tier: G, tpd_ns: 5.5, vcc_max: 3.6, vcc_min: 0.8}
   - {area: 1.0, cell: AND2, equivalents: ~, family: AUP, function: "A&B", gates_per_pkg: 1, inputs: 2, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-353, part_suffix: 1G08, tier: G, tpd_ns: 5.1, vcc_max: 3.6, vcc_min: 0.8}
-  - {area: 1.0, cell: AND3, equivalents: ~, family: AUP, function: "A&B&C", gates_per_pkg: 1, inputs: 3, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-353, part_suffix: 1G11, tier: G, tpd_ns: 5.5, vcc_max: 3.6, vcc_min: 0.8}
+  - {area: 1.0, cell: AND3, equivalents: ~, family: AUP, function: "A&B&C", gates_per_pkg: 1, inputs: 3, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-363, part_suffix: 1G11, tier: G, tpd_ns: 5.5, vcc_max: 3.6, vcc_min: 0.8}
   - {area: 1.0, cell: OR2, equivalents: ~, family: AUP, function: "A|B", gates_per_pkg: 1, inputs: 2, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-353, part_suffix: 1G32, tier: G, tpd_ns: 5.1, vcc_max: 3.6, vcc_min: 0.8}
   - {area: 1.0, cell: XOR2, equivalents: ~, family: AUP, function: "A^B", gates_per_pkg: 1, inputs: 2, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-353, part_suffix: 1G86, tier: G, tpd_ns: 5.1, vcc_max: 3.6, vcc_min: 0.8}
   - {area: 1.0, cell: DFF, equivalents: ~, family: AUP, function: ~, gates_per_pkg: 1, inputs: 2, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-353, part_suffix: 1G79, tier: F, tpd_ns: 7.2, vcc_max: 3.6, vcc_min: 0.8}
-  - {area: 1.0, cell: DFF_R, equivalents: ~, family: AUP, function: ~, gates_per_pkg: 1, inputs: 3, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-353, part_suffix: 1G175, tier: F, tpd_ns: 7.5, vcc_max: 3.6, vcc_min: 0.8}
+  - {area: 1.0, cell: DFF_R, equivalents: ~, family: AUP, function: ~, gates_per_pkg: 1, inputs: 3, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-363, part_suffix: 1G175, tier: F, tpd_ns: 7.5, vcc_max: 3.6, vcc_min: 0.8}
   - {area: 1.0, cell: DFF_S, equivalents: ~, family: AUP, function: ~, gates_per_pkg: 1, inputs: 3, iq_ua: 0.9, mfrs: ~, package: SOT-353, part_suffix: "", tier: F, tpd_ns: 7.5, vcc_max: 3.6, vcc_min: 0.8}
-  - {area: 1.0, cell: DFF_SR, equivalents: ~, family: AUP, function: ~, gates_per_pkg: 1, inputs: 4, iq_ua: 0.9, mfrs: "TI;Nexperia", package: SOT-353, part_suffix: 1G74, tier: F, tpd_ns: 7.5, vcc_max: 3.6, vcc_min: 0.8}
+  - {area: 1.0, cell: DFF_SR, equivalents: ~, family: AUP, function: ~, gates_per_pkg: 1, inputs: 4, iq_ua: 0.9, mfrs: "TI;Nexperia", package: VSSOP-8, part_suffix: 1G74, tier: F, tpd_ns: 7.5, vcc_max: 3.6, vcc_min: 0.8}
   - {area: 8.0, cell: CNT4, equivalents: ~, family: LVC, function: ~, gates_per_pkg: 1, inputs: 3, iq_ua: 4.0, mfrs: "TI;Nexperia", package: SO-16, part_suffix: 74LVC161, tier: M, tpd_ns: ~, vcc_max: 5.5, vcc_min: 1.65}
   - {area: 2.0, cell: SUPERVISOR, equivalents: "APX803:Diodes;NCP303:onsemi", family: "-", function: ~, gates_per_pkg: 1, inputs: 1, iq_ua: 0.15, mfrs: TI, package: SOT-23, part_suffix: TPS3839, tier: S, tpd_ns: ~, vcc_max: 6.0, vcc_min: 1.6}
-sha256: 8e15b6a8b4c3126920deca031facc1d6b9801dc6900b65c2d2ba47716cfa0e75
+sha256: ac89f9664feac6836e08e7b3a037185f3e50dca0021122efde563a454e6dfc87
 source: parts.csv

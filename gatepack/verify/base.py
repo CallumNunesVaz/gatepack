@@ -89,6 +89,12 @@ class MutationOutcome:
     # (a category error, not a vacuity finding).  Such outcomes are reported
     # separately and do not count towards the vacuity verdict (R2, R18).
     applicable: bool = True
+    # True when equivalence caught the fault and the exhaustive simulation did
+    # not.  The fault *was* caught, so this is not a vacuity finding and must
+    # never be reported as "not detected" — but it is named for the observation,
+    # because two status values cannot distinguish a fault that cannot reach an
+    # output from one the simulation never exercises (see mutation.py).
+    equivalence_only: bool = False
 
 
 @dataclass
@@ -99,7 +105,8 @@ class VerificationReport:
     @property
     def has_failure(self) -> bool:
         return any(c.status == CheckStatus.FAILED for c in self.checks) or any(
-            m.applicable and not m.detected for m in self.mutations
+            m.applicable and not m.detected and not m.equivalence_only
+            for m in self.mutations
         )
 
     @property

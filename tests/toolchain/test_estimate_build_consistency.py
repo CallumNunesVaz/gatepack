@@ -5,7 +5,7 @@ classifies must be the number the board ends up with.  ``estimate`` used to
 count *mapped cells* as its ``packageCount`` while ``build`` counted *packed
 packages*: with a one-gate-per-package library the two coincided and the gap was
 invisible, and once the library gained multi-gate parts (M9) they diverged —
-measured on the pelican showcase, ``estimate`` said 23 where ``build`` said 20.
+measured on the pelican showcase, ``estimate`` said 23 where ``build`` said 19.
 
 ``estimate`` now runs the same packer, so this is the agreement check.  It runs
 the real toolchain against the real showcase, which is the only place the two
@@ -92,7 +92,7 @@ def test_estimate_package_count_agrees_with_build():
     )
 
     # And it must be the *packed* number, not the gate count that happens to
-    # equal it for a single-gate library — the showcase maps 23 cells into 20
+    # equal it for a single-gate library — the showcase maps 23 cells into 19
     # packages, so agreement here is only possible if the packer ran.
     assert build_packages < sum(est["cellCounts"].values())
 

@@ -2,7 +2,7 @@
 
 The same shape as ``test_core_bundle.py``, and both halves matter.  With the
 toolchain bundled, a *scrubbed* environment (``env -i``, no ``PATH``) must run
-``gatepack build`` on the pelican showcase and produce the same 20-package BOM
+``gatepack build`` on the pelican showcase and produce the same 19-package BOM
 the toolchain container produces.  Then the bundled binaries are moved aside and
 the same invocation must *fail* — without that negative half, a host yosys
 answering the call would prove nothing.
@@ -116,8 +116,8 @@ def test_bundled_toolchain_builds_pelican_under_scrubbed_env(bundled_toolchain, 
     assert proc.returncode == 0, proc.stderr or proc.stdout
     envelope = json.loads(proc.stdout)
     assert envelope["ok"] is True
-    # the same 20-package BOM the toolchain container produces
-    assert envelope["data"]["packageCount"] == 20
+    # the same 19-package BOM the toolchain container produces
+    assert envelope["data"]["packageCount"] == 19
 
 
 def test_bundled_toolchain_doctor_reports_bundled_copies(bundled_toolchain, tmp_path):

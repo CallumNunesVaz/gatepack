@@ -579,6 +579,8 @@ def _cmd_verify(args: argparse.Namespace) -> int:
                 state = "not applicable"
             elif mutation.detected:
                 state = "detected"
+            elif mutation.equivalence_only:
+                state = "caught by equivalence only"
             else:
                 state = "NOT DETECTED"
             print(f"  mutation {mutation.mutation + ':':17} {state}")
