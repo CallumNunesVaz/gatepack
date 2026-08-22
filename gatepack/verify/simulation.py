@@ -19,6 +19,15 @@ the trap that made ``traffic_light`` fail before this was modelled (M6-FINDINGS
 Above the runtime cap the result is **not applicable** and correctness rests on
 formal equivalence; the tool **never** falls back to random vectors with a
 coverage figure (§21.4, [R4-18]).
+
+The reset is *not* only a setup step.  In addition to the transition traces,
+the stimulus asserts reset from every reachable state while the clock is low and
+compares every output against the emitter's reset value before the next rising
+edge — pinning both that reset drives the specified outputs and that it is
+asynchronous (§9.3) — and then takes one edge with reset still held to pin that
+reset *holds* the design cleared rather than only clearing it once.  The reset value is derived from the emitter: one-hot
+clears every state bit (no ``state == S`` predicate is true), binary/gray loads
+the initial code, and every ``sync`` input's synchroniser clears to 0.
 """
 
 from __future__ import annotations
@@ -95,7 +104,7 @@ def _all_assignments(inputs: list[str]) -> list[dict[str, bool]]:
     return out
 
 
-def _eval_with_state(ast: expr_mod.Expr, env: dict[str, bool], state: str) -> bool:
+def _eval_with_state(ast: expr_mod.Expr, env: dict[str, bool], state: str | None) -> bool:
     if isinstance(ast, expr_mod.Var):
         return env[ast.name]
     if isinstance(ast, expr_mod.Const):
@@ -113,7 +122,9 @@ def _eval_with_state(ast: expr_mod.Expr, env: dict[str, bool], state: str) -> bo
             return left != right
         raise expr_mod.ExprError(f"unknown operator {ast.op!r}")
     if isinstance(ast, expr_mod.StateEq):
-        return ast.state == state
+        # ``state`` is ``None`` while reset is asserted on the one-hot path: no
+        # state bit is set, so no ``state == S`` predicate is true.
+        return state is not None and ast.state == state
     raise TypeError(ast)
 
 
@@ -128,7 +139,7 @@ def _next_state(
 
 
 def _outputs(
-    compiled: CompiledDesign, state: str, eff: dict[str, bool]
+    compiled: CompiledDesign, state: str | None, eff: dict[str, bool]
 ) -> dict[str, bool]:
     out: dict[str, bool] = {}
     for name in compiled.output_names:
@@ -152,15 +163,69 @@ def expected_outputs(
     return _outputs(compiled, state, env)
 
 
+def _reset_state(compiled: CompiledDesign) -> str | None:
+    """The logical state the FSM occupies while reset is asserted.
+
+    Derived from the emitter (:mod:`gatepack.frontend.verilog`), not guessed:
+
+    * ``one_hot`` — every state bit clears, so *no* ``state == S`` predicate is
+      true while reset is asserted.  The initial state is not loaded until the
+      third clock edge after release, by set-via-feedback (M0-FINDINGS §6
+      option 2), so "during reset" and "in the initial state" are genuinely
+      different conditions.  ``None`` means "no state active".
+    * ``binary`` / ``gray`` — the state vector resets to the initial code,
+      which *is* a real state (an all-zero code may well be a real state here).
+    """
+    if compiled.encoding == "one_hot":
+        return None
+    return compiled.design.initial
+
+
+def _reset_outputs(
+    compiled: CompiledDesign, raw: dict[str, bool]
+) -> dict[str, bool]:
+    """The specification's outputs while reset is asserted (the reset phase).
+
+    Derived from the emitter: the state flops are cleared (see
+    :func:`_reset_state`); every ``sync`` input's two-flop synchroniser is
+    cleared on the reset edge, so its effective value is 0; a non-``sync``
+    input passes through combinationally and keeps whatever the testbench is
+    driving (``raw``).
+    """
+    eff = dict(raw)
+    for name in compiled.input_names:
+        if compiled.input_sync[name]:
+            eff[name] = False
+    return _outputs(compiled, _reset_state(compiled), eff)
+
+
+def _outputs_reference_state(compiled: CompiledDesign) -> bool:
+    """True when any primary output depends on the state register.
+
+    A reset fault reaches a primary output only through a state-dependent
+    output.  When every output is a pure function of the inputs (parity,
+    mux2to1), asserting reset cannot change any output and a reset-assertion
+    probe would be vacuous — it is skipped rather than emitted to pass.
+    """
+    for name in compiled.output_names:
+        ast = expr_mod.expand(compiled.output_asts[name], compiled.expression_asts)
+        if expr_mod.states_referenced(ast):
+            return True
+    return False
+
+
 class _ReferenceDesign:
     """The compiled FSM with the two-flop input-synchroniser latency of §9.3.
 
     For every ``sync`` input C1 emits ``s1 <= raw; s2 <= raw_s1`` on the clock
     edge, and the FSM reads ``s2``.  The FSM therefore sees the value of a sync
-    input from **two** clock edges ago; non-sync inputs apply immediately.  The
-    reset path is not modelled here — the testbench's reset flush (§9.6) leaves
-    the design in the initial state with all synchronisers cleared, which is the
-    fixed starting point this model assumes.
+    input from **two** clock edges ago; non-sync inputs apply immediately.
+
+    The reset *phase* is modelled by :meth:`reset_outputs`: while reset is
+    asserted the state flops and the input synchronisers are cleared, so the
+    outputs are those of the cleared state with every sync input forced to 0.
+    That is distinct from the post-reset initial state, which the testbench's
+    reset flush (§9.6) reaches on the third clock edge after release.
     """
 
     def __init__(self, compiled: CompiledDesign) -> None:
@@ -184,6 +249,15 @@ class _ReferenceDesign:
         self.s1 = {n: raw[n] for n in self.sync_names}
         self.s2 = dict(old_s1)  # s2 <= old s1 (non-blocking)
         return _outputs(self.compiled, self.state, self._effective(raw))
+
+    def reset_outputs(self, raw: dict[str, bool]) -> dict[str, bool]:
+        """Outputs while reset is asserted, independent of the current state.
+
+        Asserting reset clears the state flops and the sync-input
+        synchronisers; the pre-reset state is irrelevant, so this delegates to
+        :func:`_reset_outputs` rather than reading ``self.state``.
+        """
+        return _reset_outputs(self.compiled, raw)
 
     def _key(self) -> tuple:
         return (
@@ -254,16 +328,36 @@ def _drive_paths(
     return paths
 
 
+def _path_to_state(
+    paths: dict[tuple[str, tuple], list[dict[str, bool]]], state: str
+) -> list[dict[str, bool]]:
+    """The shortest drive path to ``state``, from any settled-input variant.
+
+    ``_drive_paths`` keys paths by ``(state, s2)``; a reset probe only needs to
+    *reach* the state, not a specific synchroniser value (reset clears the
+    synchronisers anyway), so the first (BFS-shortest) path for the state wins.
+    """
+    for (st, _s2), path in paths.items():
+        if st == state:
+            return path
+    return []
+
+
 def _stimulus(
     compiled: CompiledDesign,
 ) -> list[tuple[str, dict[str, bool] | None, dict[str, bool] | None]]:
-    """Linear stimulus: ``(kind, inputs, expected)`` with kind ``reset`` or ``edge``.
+    """Linear stimulus: ``(kind, inputs, expected)`` with kind ``reset``, ``edge``
+    or ``reset_assert``.
 
     For every reachable logical transition ``(state, input)`` the trace resets,
     drives the synchronised design to that state with the synchroniser settled
     on that input, and takes the transition edge.  ``expected`` is the reference
     model's output after *every* edge (drive edges included), so any netlist
     deviation anywhere in the trace is a failure.
+
+    A ``reset_assert`` step follows the transition traces: one per reachable
+    state, asserting reset from that state while the clock is low and checking
+    the outputs against the reset phase before the next rising edge.
     """
     steps: list[tuple[str, dict[str, bool] | None, dict[str, bool] | None]] = []
     paths = _drive_paths(compiled)
@@ -287,6 +381,26 @@ def _stimulus(
             for raw in path:
                 steps.append(("edge", raw, ref.edge(raw)))
             steps.append(("edge", assignment, ref.edge(assignment)))
+
+    # Reset-assertion probes (§9.3): one per reachable state.  From each
+    # reachable state, assert reset while the clock is low and compare every
+    # output against the emitter's reset value BEFORE the next rising edge.
+    # This pins two properties at once — reset drives the specified outputs,
+    # and it is asynchronous (a synchronous reset would still show the
+    # pre-reset output here).  The expected value is the same for every state:
+    # reset clears the state, so the pre-reset state matters only insofar as it
+    # decides whether the pre-reset output differs from the reset value — which
+    # is exactly where a fault shows.  Probes are skipped when no output
+    # depends on state: there is then nothing for a reset fault to corrupt.
+    if _outputs_reference_state(compiled):
+        probe = {name: False for name in compiled.input_names}
+        for state in compiled.state_order:
+            path = _path_to_state(paths, state)
+            steps.append(("reset", None, None))
+            ref = _ReferenceDesign(compiled)
+            for raw in path:
+                steps.append(("edge", raw, ref.edge(raw)))
+            steps.append(("reset_assert", probe, ref.reset_outputs(probe)))
     return steps
 
 
@@ -300,7 +414,10 @@ def build_testbench(compiled: CompiledDesign, config: VerifyConfig) -> str:
 
     Each input is held across enough clock edges for its two-flop synchroniser
     to settle; expected outputs come from :class:`_ReferenceDesign`, so they
-    include the synchroniser latency the netlist actually has.
+    include the synchroniser latency the netlist actually has.  In addition to
+    the transition traces, a reset-assertion probe per reachable state checks
+    the outputs during reset while the clock is low (async-assert + specified
+    reset outputs).
     """
     design = compiled.design
     reset = design.reset
@@ -366,6 +483,48 @@ def build_testbench(compiled: CompiledDesign, config: VerifyConfig) -> str:
             # advances unconditionally, is what exposed it.
             for _ in range(3):
                 lines.append(f"    {clock_name} = 1'b1; #1; {clock_name} = 1'b0; #1;")
+        elif kind == "reset_assert":
+            # Assert reset while the clock is LOW and compare every output
+            # BEFORE the next rising edge.  This pins both reset properties:
+            #
+            #   * async-assert (§9.3): the reset must take effect without a
+            #     clock edge.  A synchronous reset would not have cleared the
+            #     state yet and would still show the pre-reset output here.
+            #   * reset drives the specified outputs: the comparison is against
+            #     the emitter's reset value (cleared state + cleared sync
+            #     inputs), NOT the initial state, which one-hot does not load
+            #     until three edges after release.
+            for name in compiled.input_names:
+                bit = "1'b1" if assignment[name] else "1'b0"
+                lines.append(f"    {name} = {bit};")
+            lines.append("    #1;")
+            lines.append(f"    {reset_name} = {assert_val};")
+            lines.append("    #1;")
+            for name in compiled.output_names:
+                bit = "1'b1" if expected[name] else "1'b0"
+                lines.append(f"    if ({name} !== {bit}) begin")
+                lines.append(f'      $display("FAIL: {name} during reset");')
+                lines.append("      _failures = _failures + 1;")
+                lines.append("    end")
+            # ...and reset must *hold* the design cleared across a clock edge,
+            # not merely clear it at the instant of assertion.  §9.3 asserts
+            # asynchronously and de-asserts synchronously, so any number of
+            # edges taken while reset is held leaves the same reset outputs.
+            #
+            # This is the only check that clocks an edge with reset asserted,
+            # and without it two distinct faults are indistinguishable: a reset
+            # that never asserts (the flop is a plain DFF) and a reset that
+            # became synchronous both leave the pre-edge comparison failing for
+            # the same reason.  With the edge they separate — a synchronous
+            # reset clears *on* it and matches the golden design from here,
+            # while an absent reset takes D and does not.
+            lines.append(f"    {clock_name} = 1'b1; #1; {clock_name} = 1'b0; #1;")
+            for name in compiled.output_names:
+                bit = "1'b1" if expected[name] else "1'b0"
+                lines.append(f"    if ({name} !== {bit}) begin")
+                lines.append(f'      $display("FAIL: {name} held in reset");')
+                lines.append("      _failures = _failures + 1;")
+                lines.append("    end")
         else:
             for name in compiled.input_names:
                 bit = "1'b1" if assignment[name] else "1'b0"

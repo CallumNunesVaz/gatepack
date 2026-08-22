@@ -98,6 +98,103 @@ def _reset_polarity_flip(lib: str, sim: str) -> tuple[str, str]:
     )
 
 
+# The ``DFF_R`` cell as C2 emits it in both artefacts.  These anchors are shared
+# by the reset-family mutations below so each one corrupts exactly the reset
+# path and nothing else (``DFF_SR`` has a ``preset`` and an ``else if`` line,
+# so neither anchor collides with it).
+_DFF_R_FF = (
+    '    ff (IQ, IQN) {\n'
+    '      next_state : "D";\n'
+    '      clocked_on : "CK";\n'
+    '      clear : "!RST_N";\n'
+    '    }'
+)
+
+_DFF_R_ALWAYS = (
+    '  always @(posedge CK or negedge RST_N) begin\n'
+    "    if (!RST_N) Q <= 1'b0;\n"
+    '    else Q <= D;\n'
+    '  end'
+)
+
+
+def _reset_never_asserts(lib: str, sim: str) -> tuple[str, str]:
+    """Drop the async clear entirely, so the flop is a plain ``DFF``.
+
+    Stands for the "somebody forgot to wire the reset" fault: the reset pin is
+    present in the netlist but does nothing, so the flop never asserts it.
+    Distinct from ``reset_polarity_flip``, which keeps a reset but inverts it.
+    """
+    return (
+        lib.replace(
+            _DFF_R_FF,
+            '    ff (IQ, IQN) {\n'
+            '      next_state : "D";\n'
+            '      clocked_on : "CK";\n'
+            '    }',
+        ),
+        sim.replace(
+            _DFF_R_ALWAYS,
+            '  always @(posedge CK) begin\n'
+            '    Q <= D;\n'
+            '  end',
+        ),
+    )
+
+
+def _reset_becomes_synchronous(lib: str, sim: str) -> tuple[str, str]:
+    """Move the clear inside the clock edge: async-assert becomes sync reset.
+
+    Stands for the implementation error of gating the reset through the clock
+    (a reset only sampled at ``posedge CK``) where §9.3 promises async-assert /
+    sync-de-assert.  A check suite that cannot tell async from sync reset is not
+    verifying that promise.
+    """
+    return (
+        lib.replace(
+            _DFF_R_FF,
+            '    ff (IQ, IQN) {\n'
+            '      next_state : "(RST_N & D)";\n'
+            '      clocked_on : "CK";\n'
+            '    }',
+        ),
+        sim.replace(
+            _DFF_R_ALWAYS,
+            '  always @(posedge CK) begin\n'
+            "    if (!RST_N) Q <= 1'b0;\n"
+            '    else Q <= D;\n'
+            '  end',
+        ),
+    )
+
+
+def _reset_value_flips(lib: str, sim: str) -> tuple[str, str]:
+    """Reset clears to 1 instead of 0 (the reset value is inverted).
+
+    Stands for a wrong reset-value constant / a clear-preset confusion.  On the
+    one-hot path every state bit clears to 0 on reset; a flop that instead
+    asserts 1 on reset leaves the state register in a physically impossible
+    encoding, which is observable only through the reset phase.
+    """
+    return (
+        lib.replace(
+            _DFF_R_FF,
+            '    ff (IQ, IQN) {\n'
+            '      next_state : "D";\n'
+            '      clocked_on : "CK";\n'
+            '      preset : "!RST_N";\n'
+            '    }',
+        ),
+        sim.replace(
+            _DFF_R_ALWAYS,
+            '  always @(posedge CK or negedge RST_N) begin\n'
+            "    if (!RST_N) Q <= 1'b1;\n"
+            '    else Q <= D;\n'
+            '  end',
+        ),
+    )
+
+
 MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         name="nand_to_and",
@@ -116,6 +213,24 @@ MUTATIONS: tuple[Mutation, ...] = (
         description="flip the async reset polarity (active-low -> active-high)",
         targets=("DFF_R", "DFF_SR"),
         mutate=_reset_polarity_flip,
+    ),
+    Mutation(
+        name="reset_never_asserts",
+        description="drop the async clear entirely (reset never asserts, flop is a plain DFF)",
+        targets=("DFF_R",),
+        mutate=_reset_never_asserts,
+    ),
+    Mutation(
+        name="reset_becomes_synchronous",
+        description="move the clear inside the clock edge (async-assert becomes sync reset)",
+        targets=("DFF_R",),
+        mutate=_reset_becomes_synchronous,
+    ),
+    Mutation(
+        name="reset_value_flips",
+        description="reset clears to 1 instead of 0 (inverted reset value)",
+        targets=("DFF_R",),
+        mutate=_reset_value_flips,
     ),
 )
 

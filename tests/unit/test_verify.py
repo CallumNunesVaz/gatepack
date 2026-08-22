@@ -181,10 +181,15 @@ def _artefacts() -> tuple[str, str]:
 
 
 def test_mutations_all_change_both_artefacts():
+    # A mutation whose str.replace silently no-ops on either artefact measures
+    # nothing while looking green: the Liberty file is never read by the checks
+    # and the sim file is the only model both checks see, so a mutation must
+    # change *both* for the fault to actually reach a check.
     lib, sim = _artefacts()
     for m in mutation.MUTATIONS:
         lib2, sim2 = m.mutate(lib, sim)
-        assert lib2 != lib or sim2 != sim, m.name
+        assert lib2 != lib, f"{m.name}: did not change cells.lib"
+        assert sim2 != sim, f"{m.name}: did not change cells_sim.v"
 
 
 def test_nand_to_and_mutation():
@@ -210,6 +215,72 @@ def test_reset_polarity_mutation():
     lib2, sim2 = m.mutate(lib, sim)
     assert 'clear : "RST_N";' in lib2
     assert "if (RST_N) Q <= 1'b0;" in sim2
+
+
+def test_reset_never_asserts_mutation():
+    lib, sim = _artefacts()
+    m = next(x for x in mutation.MUTATIONS if x.name == "reset_never_asserts")
+    lib2, sim2 = m.mutate(lib, sim)
+    # DFF_R loses its clear (DFF_SR keeps its own), so exactly one clear remains.
+    assert lib.count('clear : "!RST_N";') == 2
+    assert lib2.count('clear : "!RST_N";') == 1
+    # DFF_R's async-clear always block is gone; the plain-DFF block appears.
+    assert "always @(posedge CK or negedge RST_N) begin\n    if (!RST_N) Q <= 1'b0;" not in sim2
+    assert "always @(posedge CK) begin\n    Q <= D;" in sim2
+    # DFF_SR (a different cell) is untouched.
+    assert 'preset : "!SET_N";' in lib2
+    assert "else if (!SET_N) Q <= 1'b1;" in sim2
+
+
+def test_reset_becomes_synchronous_mutation():
+    lib, sim = _artefacts()
+    m = next(x for x in mutation.MUTATIONS if x.name == "reset_becomes_synchronous")
+    lib2, sim2 = m.mutate(lib, sim)
+    # async clear removed from DFF_R, reset folded into next_state.
+    assert lib2.count('clear : "!RST_N";') == 1
+    assert 'next_state : "(RST_N & D)";' in lib2
+    # the async event is dropped but the clear test survives, inside the edge.
+    assert "always @(posedge CK or negedge RST_N) begin" not in sim2
+    assert "always @(posedge CK) begin\n    if (!RST_N) Q <= 1'b0;" in sim2
+
+
+def test_reset_value_flips_mutation():
+    lib, sim = _artefacts()
+    m = next(x for x in mutation.MUTATIONS if x.name == "reset_value_flips")
+    lib2, sim2 = m.mutate(lib, sim)
+    # DFF_R's clear becomes a preset (reset asserts 1); DFF_SR keeps its clear.
+    assert lib2.count('clear : "!RST_N";') == 1
+    assert 'preset : "!RST_N";' in lib2
+    assert "if (!RST_N) Q <= 1'b1;" in sim2
+    # the async sensitivity list is unchanged (still async-assert).
+    assert "always @(posedge CK or negedge RST_N) begin" in sim2
+
+
+def test_reset_family_mutations_target_only_dff_r():
+    # The reset-family mutations must not corrupt DFF_SR's lib entry: the reset
+    # path they model is the async-clear path of DFF_R (the flop the one-hot
+    # state machines actually instantiate).
+    lib, sim = _artefacts()
+    for name in (
+        "reset_never_asserts",
+        "reset_becomes_synchronous",
+        "reset_value_flips",
+    ):
+        m = next(x for x in mutation.MUTATIONS if x.name == name)
+        assert m.targets == ("DFF_R",), name
+        lib2, _ = m.mutate(lib, sim)
+        assert 'preset : "!SET_N";' in lib2, f"{name} corrupted DFF_SR"
+
+
+def test_reset_family_mutations_not_applicable_to_combinational():
+    combinational = "module t;\n  XOR2 _0_ (.A(a), .B(b), .Y(y));\nendmodule\n"
+    for name in (
+        "reset_never_asserts",
+        "reset_becomes_synchronous",
+        "reset_value_flips",
+    ):
+        m = next(x for x in mutation.MUTATIONS if x.name == name)
+        assert not mutation.is_applicable(m, combinational), name
 
 
 def test_mutation_detected_only_when_both_checks_fail():
