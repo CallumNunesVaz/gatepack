@@ -9,7 +9,7 @@
  *      rather than silently overwritten.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ApiProvider } from '../bridge/context';
 import { setApi } from '../api';
@@ -203,5 +203,43 @@ describe('editSpec — the several-editing-surfaces case', () => {
     // not happen must not do that.
     expect(h.get().specText).toBe(before);
     expect(h.get().revision).toBe(rev);
+  });
+
+  it('two rapid editSpec calls coalesce into ONE write of the final text', async () => {
+    // State surviving is not the same as reaching disk. The write is debounced,
+    // so this pins the other half: no intermediate document is ever persisted,
+    // and the single write carries both edits.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const fake = new FakeGatepack({ specText: SPEC });
+    const writes: string[] = [];
+    const original = fake.writeSpec.bind(fake);
+    fake.writeSpec = (t: string) => {
+      writes.push(t);
+      return original(t);
+    };
+    setApi(fake);
+    const h = harness();
+    render(
+      <ApiProvider>
+        <ProjectProvider>
+          <h.Probe />
+        </ProjectProvider>
+      </ApiProvider>,
+    );
+    await waitFor(() => expect(h.get().specText.length).toBeGreaterThan(0));
+    writes.length = 0;
+
+    await act(async () => {
+      h.get().editSpec((t) => t.replace('encoding: one_hot', 'encoding: binary'));
+      h.get().editSpec((t) => t.replace('timing_model: synchronous', 'timing_model: asynchronous'));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+    vi.useRealTimers();
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toContain('encoding: binary');
+    expect(writes[0]).toContain('timing_model: asynchronous');
   });
 });
