@@ -21,10 +21,10 @@
   that climb out of the worktree.
 - **Do not run `npm install`.** `app/node_modules` is already populated.
 - Run the tests and fix what you break. Python:
-  `.venv/bin/python -m pytest tests -q` (**706 pass, 5 skip** at baseline,
+  `.venv/bin/python -m pytest -q` (**723 pass, 5 skip** at baseline,
   including 59 toolchain tests that need docker).
   From `app/`: `npx tsc --noEmit -p tsconfig.json`,
-  `npx tsc --noEmit -p tsconfig.main.json`, `npx vitest run` (**275 pass**),
+  `npx tsc --noEmit -p tsconfig.main.json`, `npx vitest run` (**334 pass**),
   and `DISPLAY=:1 npx playwright test --config playwright.config.cjs`
   (**24 pass**, after `npm run build:main && npx vite build`).
 - **A check that cannot fail is worth nothing.** For everything you add, build
