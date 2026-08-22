@@ -16,8 +16,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from gatepack.examples import SHOWCASE, examples_root, list_examples
+from gatepack.examples import SHOWCASE, examples_root, get_example, list_examples
 from gatepack.frontend import compile_design_file
+from gatepack.frontend import expr as expr_mod
+from gatepack.parts import load_parts
 
 REPO = Path(__file__).resolve().parents[2]
 LIBRARY = REPO / "libraries" / "74aup.csv"
@@ -98,6 +100,83 @@ def test_example_parts_csv_rows_are_verbatim_from_the_library():
             )
 
 
+def test_every_example_library_contains_the_cells_its_design_names():
+    """`design.yaml` names cells; the project's `parts.csv` must provide them.
+
+    The two places a design *names* a cell without synthesising are the reset
+    source (`reset.source`, an S-cell) and any `macros[].cell` (an M-cell). A
+    design whose `parts.csv` lacks a cell it names cannot be built from its own
+    library — the path the GUI takes — so the two files must agree. This is the
+    toolchain-free half of the "build against the project's own library" check
+    (`tests/toolchain/test_examples.py`), which requires Yosys and skips without
+    it; this runs everywhere.
+    """
+    for example in list_examples():
+        parts = example.path / "parts.csv"
+        if not parts.exists():
+            continue
+        cells = {part.cell for part in load_parts(parts)}
+        compiled = compile_design_file(example.path / "design.yaml").compiled
+        design = compiled.design
+        if design.reset.source:
+            assert design.reset.source in cells, (
+                f"{example.name}: reset source {design.reset.source!r} is not a "
+                "cell in its parts.csv — the GUI build path cannot place it"
+            )
+        for macro in design.macros:
+            assert macro.cell in cells, (
+                f"{example.name}: macro {macro.instance!r} names M-cell "
+                f"{macro.cell!r}, which is not in its parts.csv"
+            )
+
+
+def test_seven_segment_matches_the_reference_glyph_table():
+    """The decoder's segment logic is the textbook seven-segment glyph table.
+
+    ``gatepack verify`` proves the *synthesised* netlist matches the spec, not
+    that the spec matches the digit shapes a human expects — a wrong boolean
+    expression verifies just as green as a right one. So the segment expressions
+    are checked here against an independent reference: for each of the 16 input
+    codes, the set of segments that must light, written as the classic on-segment
+    letters (a..g) rather than as the minterms the design spells out. The two
+    representations are different enough that a transcription error in either
+    one shows up as a mismatch.
+    """
+    glyphs = {
+        0x0: "abcdef",
+        0x1: "bc",
+        0x2: "abdeg",
+        0x3: "abcdg",
+        0x4: "bcfg",
+        0x5: "acdfg",
+        0x6: "acdefg",
+        0x7: "abc",
+        0x8: "abcdefg",
+        0x9: "abcdfg",
+        0xA: "abcefg",
+        0xB: "cdefg",
+        0xC: "adef",
+        0xD: "bcdeg",
+        0xE: "adefg",
+        0xF: "aefg",
+    }
+    compiled = compile_design_file(
+        get_example("seven_segment").path / "design.yaml"
+    ).compiled
+    inputs = ["b3", "b2", "b1", "b0"]
+    for segment in "abcdefg":
+        ast = compiled.output_asts[f"seg_{segment}"]
+        for value in range(16):
+            env = {
+                name: bool((value >> (3 - index)) & 1)
+                for index, name in enumerate(inputs)
+            }
+            assert expr_mod.evaluate(ast, env) is (segment in glyphs[value]), (
+                f"seg_{segment} at code {value:#x}: decoder logic disagrees with "
+                f"the reference glyph {glyphs[value]!r}"
+            )
+
+
 def test_no_new_example_ships_a_gpk():
     # §10.4's single-file form currently loses comments and key order, so a new
     # example shipping a lossy copy of itself is a trap. The showcase's .gpk
@@ -111,3 +190,43 @@ def test_no_new_example_ships_a_gpk():
         assert not (directory.parent / f"{directory.name}.gpk").exists(), (
             f"{directory.name}: new example ships a .gpk (a lossy round-trip copy)"
         )
+
+
+def test_seven_segment_glyphs_match_the_hex_font():
+    """The decoder lights the right segments for all sixteen digits.
+
+    The example's own SOP test catches a *transcription* error — an expression
+    that does not match the table beside it. It cannot catch a wrong table,
+    which the package flagged as its weakest point. This asserts the glyphs
+    themselves against the hex seven-segment font written out independently
+    here, so a plausible-but-wrong entry fails rather than teaching a wrong
+    circuit.
+    """
+    import re
+
+    from gatepack.frontend import expr as expr_mod
+    from gatepack.examples import get_example
+
+    text = (get_example("seven_segment").path / "design.yaml").read_text()
+    body = text.split("output_logic:")[1]
+    logic = {
+        m.group(1): expr_mod.parse(m.group(2))
+        for m in re.finditer(r'^\s+(seg_[a-g]):\s*"(.*)"\s*$', body, re.M)
+    }
+    assert sorted(logic) == [f"seg_{s}" for s in "abcdefg"]
+
+    font = {
+        0x0: "abcdef", 0x1: "bc", 0x2: "abdeg", 0x3: "abcdg",
+        0x4: "bcfg", 0x5: "acdfg", 0x6: "acdefg", 0x7: "abc",
+        0x8: "abcdefg", 0x9: "abcdfg", 0xA: "abcefg", 0xB: "cdefg",
+        0xC: "adef", 0xD: "bcdeg", 0xE: "adefg", 0xF: "aefg",
+    }
+
+    for value, expected in font.items():
+        env = {f"b{bit}": bool((value >> bit) & 1) for bit in range(4)}
+        lit = "".join(
+            segment
+            for segment in "abcdefg"
+            if expr_mod.evaluate(logic[f"seg_{segment}"], env)
+        )
+        assert lit == expected, f"digit {value:X}: lights {lit!r}, font says {expected!r}"

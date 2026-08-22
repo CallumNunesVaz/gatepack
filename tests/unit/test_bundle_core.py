@@ -33,6 +33,37 @@ def test_binary_name_is_platform_aware(monkeypatch):
     assert mod.binary_name() == "gatepack.exe"
 
 
+def test_binary_name_accepts_explicit_platform():
+    mod = _load_bundler()
+    # The Windows name is pinnable without monkeypatching os.name — the same
+    # injectable-platform pattern app/main/core.cts uses.
+    assert mod.binary_name("win32") == "gatepack.exe"
+    assert mod.binary_name("linux") == "gatepack"
+    assert mod.binary_name("darwin") == "gatepack"
+
+
+def test_host_platform_tracks_os_name(monkeypatch):
+    mod = _load_bundler()
+    assert mod.host_platform() == ("win32" if os.name == "nt" else os.sys.platform)
+    monkeypatch.setattr(mod.os, "name", "nt")
+    assert mod.host_platform() == "win32"
+
+
+def test_cross_compile_is_refused_not_silently_renamed(monkeypatch):
+    # PyInstaller cannot cross-compile: asking for a Windows binary on a POSIX
+    # host must be a loud refusal, never a host binary named gatepack.exe.
+    mod = _load_bundler()
+    if mod.host_platform() == "win32":
+        # This test host is already Windows; a "cross" request is the inverse.
+        foreign = "linux"
+    else:
+        foreign = "win32"
+    with __import__("pytest").raises(RuntimeError) as excinfo:
+        mod.build_core(platform=foreign)
+    assert "cross-compile" in str(excinfo.value)
+    assert foreign in str(excinfo.value)
+
+
 def test_has_executable_detects_exe_variant(tmp_path):
     mod = _load_bundler()
     assert not mod._has_executable(tmp_path, "gatepack")

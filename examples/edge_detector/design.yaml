@@ -1,0 +1,61 @@
+# ---------------------------------------------------------------------------
+# A rising-edge detector — why "detect a change" needs memory.
+#
+# A purely combinational circuit cannot tell you the input *changed*: it can
+# only tell you the input's current value. To notice the 0 -> 1 transition you
+# must remember what the input was on the previous clock, and "remember" is
+# exactly what a state is. This machine emits a one-cycle `pulse` immediately
+# after the input rises, and holds it back while the input stays high or low.
+#
+# What it demonstrates:
+#
+#   memory is state      S0 means "the input was low", S1 "it was high"; the
+#                        edge is the crossing between them
+#   a one-cycle pulse     PULSE is entered once per rising edge and left on the
+#                        next clock, so the pulse is exactly one cycle wide
+#   sustained input       after the pulse the machine settles in S1 and does
+#                        not re-pulse until the input falls and rises again
+#   the registered form   the pulse appears one cycle after the raw edge, which
+#                        is the usual synchronous (registered) edge detector
+#
+# This is the smallest genuinely sequential example in the set: one input, one
+# output, three states, readable whole on screen.
+#
+# Synthetic, written for this project (§1.3). Not derived from any real product
+# or datasheet application note.
+# ---------------------------------------------------------------------------
+name: edge_detector
+timing_model: synchronous
+
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+
+reset:
+  signal: rst_n
+  active: low
+  source: SUPERVISOR
+
+encoding: one_hot
+
+inputs:
+  # A clocked data bit, so no synchroniser (§9.3).
+  - {name: din, sync: false}
+
+outputs:
+  - {name: pulse}
+
+states: [S0, PULSE, S1]
+initial: S0
+
+transitions:
+  # S0: the input was low. A rise is the edge we are looking for.
+  - {from: S0,    to: PULSE, when: "din"}
+  - {from: S0,    to: S0,    when: "!din"}
+  # PULSE: the edge was just seen; emit for this cycle, then track the input.
+  - {from: PULSE, to: S1,    when: "din"}
+  - {from: PULSE, to: S0,    when: "!din"}
+  # S1: the input is high; wait for it to fall before another edge can occur.
+  - {from: S1,    to: S1,    when: "din"}
+  - {from: S1,    to: S0,    when: "!din"}
+
+output_logic:
+  pulse: "state == PULSE"

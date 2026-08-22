@@ -32,15 +32,28 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 
 
-def binary_name() -> str:
-    """The frozen binary's file name on this platform.
+def host_platform() -> str:
+    """The platform this interpreter is running on (``"win32"`` vs ``sys.platform``).
+
+    PyInstaller builds *only* for the platform it runs on; it does not
+    cross-compile.  So the only way to produce ``gatepack.exe`` is to run this
+    script on Windows (or a ``windows-latest`` CI runner — see
+    ``.github/workflows/release.yml``, which already does).  A request for a
+    foreign platform is refused by :func:`build_core`, never silently built for
+    the host with a misleading name.
+    """
+    return "win32" if os.name == "nt" else sys.platform
+
+
+def binary_name(platform: str | None = None) -> str:
+    """The frozen binary's file name on ``platform`` (default: this host).
 
     PyInstaller appends ``.exe`` on Windows.  The packaged app's core locator
     (``app/main/core.cts``) and the release workflow must resolve the *same*
-    name, or a Windows bundle is produced but never found.  This is a pure
-    function of ``os.name`` so a test can pin it without building anything.
+    name, or a Windows bundle is produced but never found.  ``platform`` is
+    injectable so a test can pin the Windows name without a Windows host.
     """
-    return "gatepack.exe" if os.name == "nt" else "gatepack"
+    return "gatepack.exe" if (platform or host_platform()) == "win32" else "gatepack"
 
 
 OUTPUT = REPO / "app" / "resources" / "bin" / binary_name()
@@ -109,12 +122,30 @@ def _scrubbed_env() -> dict[str, str]:
 def build_core(
     output: Path | None = None,
     workdir: Path | None = None,
+    platform: str | None = None,
 ) -> Path:
     """Run PyInstaller and install the frozen binary at ``output``.
+
+    ``platform`` defaults to the host; any *other* value is refused up front
+    because PyInstaller does not cross-compile (a Windows binary must be built
+    on Windows — ``.github/workflows/release.yml`` runs this script on
+    ``windows-latest`` for exactly that reason).  The refusal is a clear error,
+    never a host binary silently named ``gatepack.exe``.
 
     Raises :class:`RuntimeError` on any failure (PyInstaller missing, build
     failed, or the smoke test refused the result).  Never returns a stub.
     """
+    platform = host_platform() if platform is None else platform
+    if platform != host_platform():
+        raise RuntimeError(
+            f"PyInstaller does not cross-compile: this host is "
+            f"{host_platform()!r}, but a {platform!r} binary was requested. "
+            f"Build the {platform} core on a {platform} machine instead — "
+            f".github/workflows/release.yml already runs scripts/bundle_core.py "
+            f"on windows-latest/macos-13/macos-14 so each platform's core is "
+            f"built natively."
+        )
+
     if not pyinstaller_available():
         raise RuntimeError(
             "PyInstaller is not importable from this interpreter "
@@ -175,7 +206,7 @@ def build_core(
             f"({proc.returncode}):\n{proc.stdout}\n{proc.stderr}"
         )
 
-    built = dist / binary_name()
+    built = dist / binary_name(platform)
     if not built.exists():
         raise RuntimeError(
             f"PyInstaller reported success but no binary exists at {built}"
@@ -312,11 +343,18 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="scratch dir for PyInstaller (default: .gpout/core-bundle)",
     )
+    parser.add_argument(
+        "--platform",
+        default=None,
+        help="target platform (default: this host). PyInstaller cannot "
+        "cross-compile, so any non-host value is refused with a clear error.",
+    )
     args = parser.parse_args(argv)
     try:
         path = build_core(
             output=Path(args.output),
             workdir=Path(args.workdir) if args.workdir else None,
+            platform=args.platform,
         )
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)

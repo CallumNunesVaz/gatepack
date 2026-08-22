@@ -142,6 +142,19 @@ cd app && npm install && npm run build && npm start
 The application is strictly a **view over artefacts the CLI produces**. It never
 reimplements core logic — everything it shows comes from invoking `gatepack`.
 
+## Windows
+
+The core is pure Python and runs on Windows; the desktop installer and the
+native toolchain are the parts that differ. See **`docs/WINDOWS.md`** for
+install/run instructions, what needs OSS CAD Suite or WSL2, and — plainly —
+what has never been run on a Windows machine. In short:
+
+```powershell
+start.ps1 doctor       # what is installed, what is missing, where to get it
+start.ps1 cli ARGS...  # the command-line core
+start.ps1              # the desktop app (after `cd app` + `npm ci`)
+```
+
 ## Commands
 
 | | |

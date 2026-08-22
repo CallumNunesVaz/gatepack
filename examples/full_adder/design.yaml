@@ -1,0 +1,56 @@
+# ---------------------------------------------------------------------------
+# A one-bit full adder — the arithmetic building block.
+#
+# The parity example showed a combinational circuit with a single output; this
+# is the same shape but with two outputs, and it is the smallest place where
+# "multi-output" means something real: `sum` and `cout` are not two independent
+# functions, they share the same three inputs and the same XOR/AND structure, so
+# the synthesis can reuse intermediate terms. Every binary adder, ALU and
+# comparator you have ever used is a row of these.
+#
+# What it demonstrates:
+#
+#   states: [S0]        purely combinational, like parity — no memory at all
+#   sum = a ^ b ^ cin    the classic three-way XOR, mapped to XOR2 gates
+#   cout = majority      (a & b) | (a & cin) | (b & cin), the carry-out
+#   multi-output         two outputs from one truth table, 2^3 = 8 rows
+#   shared subterms      a real synthesis reuses the XOR2 for sum and cout,
+#                        which the schematic makes visible
+#
+# It is also the smallest of these examples: the whole design is three inputs,
+# two outputs and one self-transition, readable top to bottom on one screen.
+#
+# Synthetic, written for this project (§1.3). Nothing here is derived from any
+# real product or datasheet application note.
+# ---------------------------------------------------------------------------
+name: full_adder
+timing_model: synchronous
+
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+
+reset:
+  signal: rst_n
+  active: low
+  source: SUPERVISOR
+
+encoding: one_hot
+
+inputs:
+  # Combinational inputs from a clocked source, so no synchroniser (§9.3).
+  - {name: a, sync: false}
+  - {name: b, sync: false}
+  - {name: cin, sync: false}
+
+outputs:
+  - {name: sum}
+  - {name: cout}
+
+states: [S0]
+initial: S0
+
+transitions:
+  - {from: S0, to: S0, when: "1"}
+
+output_logic:
+  sum: "a ^ b ^ cin"
+  cout: "(a & b) | (a & cin) | (b & cin)"

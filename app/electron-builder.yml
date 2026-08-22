@@ -198,9 +198,17 @@ win:
     - target: nsis
   # Authenticode signing is driven entirely by the same `CSC_LINK` /
   # `CSC_KEY_PASSWORD` secrets (electron-builder reads `WIN_CSC_LINK` with a
-  # `CSC_LINK` fallback).  Absent them it logs "no signing info identified,
+  # `CSC_LINK` fallback).  Absent them it logs "no signing information identified,
   # signing is skipped" and produces an unsigned installer; present, it signs
   # with signtool (sha1+sha256).  Nothing here fabricates a certificate.
+  #
+  # Windows toolchain note: the Windows installer ships the PyInstaller core
+  # (`resources/bin/gatepack.exe`, built by `scripts/bundle_core.py` on a
+  # Windows host — PyInstaller cannot cross-compile), but NO native toolchain.
+  # `scripts/bundle_toolchain.py` bundles Linux x86-64 ELF binaries and refuses
+  # to run on a non-Linux host; the Windows app therefore reports each missing
+  # tool honestly and `gatepack doctor` names where a Windows user gets it
+  # (OSS CAD Suite, or WSL2 — see docs/WINDOWS.md).
 
 nsis:
   oneClick: false

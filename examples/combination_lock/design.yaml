@@ -1,0 +1,72 @@
+# ---------------------------------------------------------------------------
+# A three-digit combination lock — the non-trivial state graph.
+#
+# A lock that opens only when three buttons are pressed in the exact order
+# A, B, A, and resets to the start on any wrong press. It is the counterpoint
+# to `sequence_detector`: that machine watches a *single* bit for an overlapping
+# pattern, while this one watches *two* buttons for a strict order and has to
+# decide what a wrong press means. The state graph is the point — a wrong digit
+# anywhere in the sequence throws you back to LOCKED, so the graph branches back
+# on itself rather than stepping in a straight line.
+#
+# What it demonstrates:
+#
+#   a real sequence          LOCKED -> S1 (A) -> S2 (B) -> OPEN (A)
+#   wrong-digit handling     any out-of-order press returns to LOCKED
+#   priority encoding        the guards cover the whole (btn_a, btn_b) input
+#                            space, so the transition set is exhaustive: a
+#                            press of both buttons at once is rejected, not
+#                            left as a hole the compiler would refuse
+#   a dedicated relock       `relock` drops OPEN back to LOCKED; it is ignored
+#                            while the lock is closed or part-entered
+#
+# The buttons are assumed to come from an already-debounced and synchronised
+# source — that layer is the `debounce` example's job, not this one's — so they
+# are declared `sync: false` (§9.3).
+#
+# Synthetic, written for this project (§1.3). Not derived from any real product
+# or datasheet application note.
+# ---------------------------------------------------------------------------
+name: combination_lock
+timing_model: synchronous
+
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+
+reset:
+  signal: rst_n
+  active: low
+  source: SUPERVISOR
+
+encoding: one_hot
+
+inputs:
+  - {name: btn_a, sync: false}
+  - {name: btn_b, sync: false}
+  - {name: relock, sync: false}
+
+outputs:
+  - {name: unlock}
+
+states: [LOCKED, S1, S2, OPEN]
+initial: LOCKED
+
+transitions:
+  # First digit: A advances, anything else (B alone, both, or neither) waits.
+  - {from: LOCKED, to: S1,     when: "btn_a & !btn_b & !relock"}
+  - {from: LOCKED, to: LOCKED, when: "!(btn_a & !btn_b & !relock)"}
+  # Second digit: B advances; A again (or both) is wrong and resets.
+  - {from: S1, to: S2,     when: "!btn_a & btn_b"}
+  - {from: S1, to: LOCKED, when: "btn_a & !btn_b"}
+  - {from: S1, to: LOCKED, when: "btn_a & btn_b"}
+  - {from: S1, to: S1,     when: "!btn_a & !btn_b"}
+  # Third digit: A opens; B (or both) is wrong and resets.
+  - {from: S2, to: OPEN,   when: "btn_a & !btn_b"}
+  - {from: S2, to: LOCKED, when: "!btn_a & btn_b"}
+  - {from: S2, to: LOCKED, when: "btn_a & btn_b"}
+  - {from: S2, to: S2,     when: "!btn_a & !btn_b"}
+  # Open until relock is pressed.
+  - {from: OPEN, to: LOCKED, when: "relock"}
+  - {from: OPEN, to: OPEN,   when: "!relock"}
+
+output_logic:
+  unlock: "state == OPEN"

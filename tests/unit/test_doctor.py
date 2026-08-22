@@ -8,7 +8,7 @@ sby, espresso via the not-yet-built async backend).
 
 from __future__ import annotations
 
-from gatepack.doctor import TOOLS, ToolSpec, run_doctor
+from gatepack.doctor import TOOLS, ToolSpec, is_windows, run_doctor
 
 
 def test_tool_table_is_the_pinned_order():
@@ -85,3 +85,47 @@ def test_all_tools_present_false_when_a_direct_tool_is_missing(monkeypatch):
     by_name = {t["name"]: t for t in payload["tools"]}
     assert by_name["vvp"]["found"] is False
     assert by_name["yosys"]["found"] is True
+
+
+def test_is_windows_is_injectable():
+    assert is_windows("win32") is True
+    assert is_windows("linux") is False
+    assert is_windows("darwin") is False
+    import sys
+
+    assert is_windows() is (sys.platform == "win32")
+
+
+def test_windows_guidance_only_on_windows(monkeypatch):
+    # The host is not Windows, so the default report carries no Windows wording.
+    monkeypatch.setattr("gatepack.doctor._probe_version", lambda name, args: None)
+    payload = run_doctor()
+    by_name = {t["name"]: t for t in payload["tools"]}
+    assert "On Windows" not in by_name["yosys"]["purpose"]
+    assert "OSS CAD Suite" not in by_name["yosys"]["purpose"]
+
+
+def test_windows_guidance_names_a_real_distribution(monkeypatch):
+    # The Windows code path, exercised on this POSIX host the way
+    # app/main/core.test.ts exercises core.cts with platform: 'win32'.
+    monkeypatch.setattr("gatepack.doctor._probe_version", lambda name, args: None)
+    payload = run_doctor(platform="win32")
+    # the JSON envelope shape is byte-identical to the non-Windows report —
+    # only the purpose text differs, so the contract holds on Windows too.
+    assert set(payload) == {"version", "tools", "resources", "allToolsPresent"}
+    by_name = {t["name"]: t for t in payload["tools"]}
+    for tool in payload["tools"]:
+        assert set(tool) == {"name", "found", "purpose", "direct", "path", "version", "source"}
+    # every EDA tool points a Windows user at a real distribution, and the
+    # bash entry explains the one thing the native build can never provide.
+    assert "OSS CAD Suite" in by_name["yosys"]["purpose"]
+    assert "WSL2" in by_name["yosys"]["purpose"]
+    assert "OSS CAD Suite" in by_name["sby"]["purpose"]
+    assert "Icarus Verilog" in by_name["iverilog"]["purpose"]
+    assert "WSL2" in by_name["iverilog"]["purpose"]
+    assert "Icarus Verilog" in by_name["vvp"]["purpose"]
+    assert "OSS CAD Suite" in by_name["z3"]["purpose"]
+    assert "WSL2" in by_name["bash"]["purpose"]
+    # a tool that is still "missing" on Windows says so, and says where to get it
+    assert by_name["yosys"]["found"] is False
+    assert by_name["yosys"]["purpose"].startswith("logic synthesis")

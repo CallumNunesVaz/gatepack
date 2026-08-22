@@ -194,6 +194,34 @@ jobs:
         # outside the asar — a real check on real output, not a config read.
         run: GATEPACK_PACKAGING=1 .venv/bin/pytest tests/toolchain/test_packaging.py -q
 
+  windows-core:
+    # The Windows half of the core bundle: PyInstaller does not cross-compile,
+    # so `scripts/bundle_core.py` must run on a Windows host to produce
+    # `gatepack.exe`. This job is the only place that path is exercised on a
+    # real Windows runner — the release matrix runs the same build on
+    # windows-latest, but only on tag pushes. It is *not* runnable on Linux:
+    # the acceptance test pins `gatepack.exe` naming and the `.exe`-aware
+    # environment scrub. UNVERIFIED: this job is written against the GitHub
+    # Actions Windows runner contract and has never been executed here.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install core + bundler
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . pyinstaller pytest
+
+      - name: Build the bundled core (PyInstaller -> gatepack.exe)
+        run: python scripts/bundle_core.py
+
+      - name: Bundled-core acceptance test (must not skip)
+        run: python -m pytest tests/toolchain/test_core_bundle.py -q
+
   e2e:
     # The app tested end to end: Playwright drives the real Electron main
     # process (`_electron.launch`, no downloaded Playwright browser — the suite

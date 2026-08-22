@@ -17,6 +17,7 @@ this check instead of failing later, deep inside a synthesis run.
 from __future__ import annotations
 
 import subprocess
+import sys
 from dataclasses import dataclass
 
 from gatepack import __version__
@@ -38,6 +39,11 @@ class ToolSpec:
     # True when gatepack invokes this tool directly (not just indirectly via a
     # wrapper such as sby -> smtbmc -> z3).
     direct: bool = True
+    # Where a Windows user gets this tool, appended to ``purpose`` when
+    # :func:`run_doctor` runs on Windows.  The native Windows build bundles no
+    # toolchain, so "missing" alone would strand a user; this names the real
+    # distribution instead.  Empty means "no Windows-specific guidance".
+    windows_note: str = ""
 
 
 # The tools gatepack shells out to today, plus the two that the design reserves
@@ -48,6 +54,10 @@ TOOLS: tuple[ToolSpec, ...] = (
         "yosys",
         "logic synthesis (C3): behavioural Verilog -> mapped netlist",
         ("--version",),
+        windows_note=(
+            "install OSS CAD Suite (YosysHQ/oss-cad-suite-build) and put yosys "
+            "on PATH, or run gatepack under WSL2"
+        ),
     ),
     ToolSpec(
         "sby",
@@ -56,22 +66,32 @@ TOOLS: tuple[ToolSpec, ...] = (
         # and comes from the toolchain manifest when bundled (see
         # :func:`gatepack.toolchain.bundled_tool_versions`).
         (),
+        windows_note=(
+            "SymbiYosys ships with OSS CAD Suite (YosysHQ/oss-cad-suite-build); "
+            "otherwise run gatepack under WSL2"
+        ),
     ),
     ToolSpec(
         "iverilog",
         "compiles the exhaustive-simulation testbench (Icarus, §12 C4)",
         ("-V",),
+        windows_note=(
+            "Icarus Verilog for Windows (MSYS2 or an official build) on PATH, "
+            "or run gatepack under WSL2"
+        ),
     ),
     ToolSpec(
         "vvp",
         "Icarus runtime: runs the compiled simulation testbench",
         ("-V",),
+        windows_note="ships with Icarus Verilog (the same distribution as iverilog)",
     ),
     ToolSpec(
         "z3",
         "SMT solver used by sby's smtbmc engine (reached indirectly)",
         ("--version",),
         direct=False,
+        windows_note="ships with OSS CAD Suite; reached indirectly through sby",
     ),
     ToolSpec(
         "bash",
@@ -79,14 +99,41 @@ TOOLS: tuple[ToolSpec, ...] = (
         "host requirement, never bundled",
         ("--version",),
         direct=False,
+        windows_note=(
+            "on native Windows there is no bash, so sby cannot run its engine "
+            "steps; use WSL2 (bash is a POSIX host requirement, never bundled)"
+        ),
     ),
     ToolSpec(
         "espresso",
         "two-level logic minimiser (async backend, v0.2; not in the sync path)",
         (),
         direct=False,
+        windows_note="not in the sync path; build from source if the async backend needs it",
     ),
 )
+
+
+def is_windows(platform: str | None = None) -> bool:
+    """True when running on (or asked to report for) Windows.
+
+    ``platform`` is injectable so a test can exercise the Windows guidance on a
+    POSIX host, the same pattern ``app/main/core.cts`` uses (``platform:
+    'win32'``).  When ``None`` it reflects the host (``sys.platform``).
+    """
+    return (platform if platform is not None else sys.platform) == "win32"
+
+
+def _purpose(spec: ToolSpec, platform: str | None) -> str:
+    """``spec.purpose``, extended with Windows guidance only on Windows.
+
+    The base purpose is unchanged on every platform; the extension is appended,
+    never a replacement, so the contract's "name the binary *and* what it is for"
+    is preserved and the Windows user additionally gets "… and here is where".
+    """
+    if is_windows(platform) and spec.windows_note:
+        return f"{spec.purpose}. On Windows: {spec.windows_note}"
+    return spec.purpose
 
 
 def _first_line(text: str) -> str:
@@ -116,14 +163,14 @@ def _probe_version(resolution: ToolResolution, version_args: tuple[str, ...]) ->
     return _first_line(proc.stdout) or _first_line(proc.stderr) or None
 
 
-def _probe_tool(spec: ToolSpec) -> dict:
+def _probe_tool(spec: ToolSpec, platform: str | None = None) -> dict:
     resolution = resolve_tool(spec.name)
     found = resolution is not None
     if not found:
         return {
             "name": spec.name,
             "found": False,
-            "purpose": spec.purpose,
+            "purpose": _purpose(spec, platform),
             "direct": spec.direct,
             "path": None,
             "version": None,
@@ -135,7 +182,7 @@ def _probe_tool(spec: ToolSpec) -> dict:
     return {
         "name": spec.name,
         "found": True,
-        "purpose": spec.purpose,
+        "purpose": _purpose(spec, platform),
         "direct": spec.direct,
         "path": resolution.path,
         "version": version,
@@ -165,9 +212,16 @@ def _probe_resources() -> dict:
     return status
 
 
-def run_doctor() -> dict:
-    """Return the ``data`` payload for ``gatepack doctor --json``."""
-    tools = [_probe_tool(spec) for spec in TOOLS]
+def run_doctor(platform: str | None = None) -> dict:
+    """Return the ``data`` payload for ``gatepack doctor --json``.
+
+    ``platform`` selects whose guidance the report carries (``"win32"`` for the
+    Windows wording); ``None`` means the host platform.  The envelope shape is
+    identical either way — only the ``purpose`` text differs, so the JSON
+    contract is stable and the human reading it gets the right "where to get
+    this" for their OS.
+    """
+    tools = [_probe_tool(spec, platform) for spec in TOOLS]
     direct = [t for t in tools if t["direct"]]
     return {
         "version": __version__,
@@ -179,4 +233,4 @@ def run_doctor() -> dict:
     }
 
 
-__all__ = ["TOOLS", "ToolSpec", "run_doctor"]
+__all__ = ["TOOLS", "ToolSpec", "is_windows", "run_doctor"]

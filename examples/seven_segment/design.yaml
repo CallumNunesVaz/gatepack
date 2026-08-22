@@ -1,0 +1,78 @@
+# ---------------------------------------------------------------------------
+# A hexadecimal seven-segment decoder — the wide-truth-table case.
+#
+# Four bits go in and seven segment outputs come out, one per bar of a classic
+# seven-segment digit. It is the largest purely combinational example in the
+# set: 2^4 = 16 input vectors drive a seven-output truth table, and every
+# output is written as a canonical sum of minterms (the SOP form you meet in a
+# logic textbook), one product term per lit digit. If parity is where you learn
+# that gatepack maps an expression to gates, this is where you watch it handle a
+# table too wide to hold in your head.
+#
+# What it demonstrates:
+#
+#   states: [S0]        purely combinational, like parity and full_adder
+#   multi-output        7 outputs, each a boolean function of the same 4 bits
+#   canonical SOP        each `seg_*` is a sum of minterms over the 16 codes
+#   wide truth table     16 rows exhaustively simulated and checked
+#   decoders             the general shape of every address decoder / demux
+#
+# The expressions are deliberately written out as minterms rather than
+# minimised. Minimising would hide the correspondence between the YAML and the
+# digit shapes; the point here is that the truth table IS the specification, and
+# synthesis owns the minimisation. Segments are a (top), b (top-right),
+# c (bottom-right), d (bottom), e (bottom-left), f (top-left), g (middle).
+#
+# Synthetic, written for this project (§1.3). The digit shapes are the common
+# textbook seven-segment glyphs; nothing is derived from any product or
+# datasheet application note.
+# ---------------------------------------------------------------------------
+name: seven_segment
+timing_model: synchronous
+
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+
+reset:
+  signal: rst_n
+  active: low
+  source: SUPERVISOR
+
+encoding: one_hot
+
+inputs:
+  # b3 is the most significant of the four binary-coded digits.
+  - {name: b3, sync: false}
+  - {name: b2, sync: false}
+  - {name: b1, sync: false}
+  - {name: b0, sync: false}
+
+outputs:
+  - {name: seg_a}
+  - {name: seg_b}
+  - {name: seg_c}
+  - {name: seg_d}
+  - {name: seg_e}
+  - {name: seg_f}
+  - {name: seg_g}
+
+states: [S0]
+initial: S0
+
+transitions:
+  - {from: S0, to: S0, when: "1"}
+
+output_logic:
+  # Segment a lights for 0, 2, 3, 5, 6, 7, 8, 9, A, C, E, F.
+  seg_a: "!b3 & !b2 & !b1 & !b0 | !b3 & !b2 & b1 & !b0 | !b3 & !b2 & b1 & b0 | !b3 & b2 & !b1 & b0 | !b3 & b2 & b1 & !b0 | !b3 & b2 & b1 & b0 | b3 & !b2 & !b1 & !b0 | b3 & !b2 & !b1 & b0 | b3 & !b2 & b1 & !b0 | b3 & b2 & !b1 & !b0 | b3 & b2 & b1 & !b0 | b3 & b2 & b1 & b0"
+  # Segment b lights for 0, 1, 2, 3, 4, 7, 8, 9, A, d.
+  seg_b: "!b3 & !b2 & !b1 & !b0 | !b3 & !b2 & !b1 & b0 | !b3 & !b2 & b1 & !b0 | !b3 & !b2 & b1 & b0 | !b3 & b2 & !b1 & !b0 | !b3 & b2 & b1 & b0 | b3 & !b2 & !b1 & !b0 | b3 & !b2 & !b1 & b0 | b3 & !b2 & b1 & !b0 | b3 & b2 & !b1 & b0"
+  # Segment c lights for 0, 1, 3, 4, 5, 6, 7, 8, 9, A, b, d.
+  seg_c: "!b3 & !b2 & !b1 & !b0 | !b3 & !b2 & !b1 & b0 | !b3 & !b2 & b1 & b0 | !b3 & b2 & !b1 & !b0 | !b3 & b2 & !b1 & b0 | !b3 & b2 & b1 & !b0 | !b3 & b2 & b1 & b0 | b3 & !b2 & !b1 & !b0 | b3 & !b2 & !b1 & b0 | b3 & !b2 & b1 & !b0 | b3 & !b2 & b1 & b0 | b3 & b2 & !b1 & b0"
+  # Segment d lights for 0, 2, 3, 5, 6, 8, 9, b, C, d, E.
+  seg_d: "!b3 & !b2 & !b1 & !b0 | !b3 & !b2 & b1 & !b0 | !b3 & !b2 & b1 & b0 | !b3 & b2 & !b1 & b0 | !b3 & b2 & b1 & !b0 | b3 & !b2 & !b1 & !b0 | b3 & !b2 & !b1 & b0 | b3 & !b2 & b1 & b0 | b3 & b2 & !b1 & !b0 | b3 & b2 & !b1 & b0 | b3 & b2 & b1 & !b0"
+  # Segment e lights for 0, 2, 6, 8, A, b, C, d, E, F.
+  seg_e: "!b3 & !b2 & !b1 & !b0 | !b3 & !b2 & b1 & !b0 | !b3 & b2 & b1 & !b0 | b3 & !b2 & !b1 & !b0 | b3 & !b2 & b1 & !b0 | b3 & !b2 & b1 & b0 | b3 & b2 & !b1 & !b0 | b3 & b2 & !b1 & b0 | b3 & b2 & b1 & !b0 | b3 & b2 & b1 & b0"
+  # Segment f lights for 0, 4, 5, 6, 8, 9, A, b, C, E, F.
+  seg_f: "!b3 & !b2 & !b1 & !b0 | !b3 & b2 & !b1 & !b0 | !b3 & b2 & !b1 & b0 | !b3 & b2 & b1 & !b0 | b3 & !b2 & !b1 & !b0 | b3 & !b2 & !b1 & b0 | b3 & !b2 & b1 & !b0 | b3 & !b2 & b1 & b0 | b3 & b2 & !b1 & !b0 | b3 & b2 & b1 & !b0 | b3 & b2 & b1 & b0"
+  # Segment g lights for 2, 3, 4, 5, 6, 8, 9, A, b, d, E, F.
+  seg_g: "!b3 & !b2 & b1 & !b0 | !b3 & !b2 & b1 & b0 | !b3 & b2 & !b1 & !b0 | !b3 & b2 & !b1 & b0 | !b3 & b2 & b1 & !b0 | b3 & !b2 & !b1 & !b0 | b3 & !b2 & !b1 & b0 | b3 & !b2 & b1 & !b0 | b3 & !b2 & b1 & b0 | b3 & b2 & !b1 & b0 | b3 & b2 & b1 & !b0 | b3 & b2 & b1 & b0"
