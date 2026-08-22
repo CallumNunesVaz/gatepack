@@ -1,0 +1,387 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     xmlns:s="https://github.com/nturley/netlistsvg"
+     width="1000" height="600">
+  <!--
+    gatepack netlistsvg skin (§C12).
+
+    The stock netlistsvg skin only aliases Yosys *internal* cell names ($_AND_,
+    $dff, …). A gatepack mapped netlist is post-`abc` and post-`techmap`: every
+    cell is a 74AUP library cell — AND2, NAND2, DFF_R — and none of those match
+    an alias, so every gate fell through to the `generic` template. Combined
+    with post-ABC `write_json` carrying no `port_directions`, `generic` could
+    not classify a single pin, so netlistsvg dropped every port and drew no
+    wires at all: the "schematic" was a column of type names.
+
+    This skin aliases the library cell set from `libraries/74aup.csv` onto IEEE
+    distinctive-shape symbols. It is paired with `prepareNetlist.ts`, which
+    supplies the missing `port_directions` from the same pin table the core
+    uses (`gatepack/pins.py`) — a symbol whose pids the netlist never mentions
+    is still an unrouted cell.
+
+    Conventions, held across every symbol so the sheet reads evenly:
+      - body 30 wide, 25 tall for a 2-input gate; 36 tall for 3-input.
+      - inversion bubble r=3, centred 3 past the body, output pin 3 past that.
+      - `gp_refdes` above the body and `gp_type` below it, matching the way a
+        schematic names U1/AND2. Both are injected by `prepareNetlist.ts`;
+        netlistsvg blanks a `s:attribute` text whose attribute is absent, so an
+        unpacked cell simply shows no refdes rather than a wrong one.
+  -->
+  <s:properties>
+    <!-- Spacing is set for *labelled* symbols. Each gate carries a refdes 8
+         units above its body and a type 11 below, so the stock 35/35 packed
+         rows tight enough for a routed wire to run straight through a label.
+         Extra room between layers also keeps the orthogonal routing channels
+         clear of the type labels. -->
+    <s:layoutEngine
+      org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers="65"
+      org.eclipse.elk.spacing.nodeNode="50"
+      org.eclipse.elk.layered.spacing.edgeNodeBetweenLayers="20"
+      org.eclipse.elk.spacing.edgeNode="16"
+      org.eclipse.elk.layered.layering.strategy="LONGEST_PATH"
+    />
+    <s:low_priority_alias val="$dff" />
+  </s:properties>
+
+  <style>
+svg { stroke: #000; fill: none; }
+text { fill: #000; stroke: none; font-size: 10px; font-weight: bold; font-family: "Courier New", monospace; }
+.nodelabel { text-anchor: middle; }
+.gp-refdes { font-size: 9px; text-anchor: middle; }
+.gp-celltype { font-size: 8px; font-weight: normal; text-anchor: middle; }
+.inputPortLabel { text-anchor: end; }
+.splitjoinBody { fill: #000; }
+  </style>
+
+  <!-- ==================== combinational: AND family ==================== -->
+  <g s:type="and2" transform="translate(40,60)" s:width="30" s:height="25">
+    <s:alias val="AND2"/>
+    <s:alias val="$_AND_"/>
+    <s:alias val="$and"/>
+    <text x="15" y="-8" class="gp-refdes $cell_id" s:attribute="gp_refdes">U?</text>
+    <text x="15" y="36" class="gp-celltype $cell_id" s:attribute="gp_type">AND2</text>
+    <path d="M0,0 L0,25 L15,25 A15 12.5 0 0 0 15,0 Z" class="$cell_id"/>
+    <g s:x="0" s:y="6" s:pid="A"/>
+    <g s:x="0" s:y="19" s:pid="B"/>
+    <g s:x="30" s:y="12.5" s:pid="Y"/>
+  </g>
+
+  <g s:type="and3" transform="translate(120,60)" s:width="30" s:height="36">
+    <s:alias val="AND3"/>
+    <text x="15" y="-8" class="gp-refdes $cell_id" s:attribute="gp_refdes">U?</text>
+    <text x="15" y="47" class="gp-celltype $cell_id" s:attribute="gp_type">AND3</text>
+    <path d="M0,0 L0,36 L15,36 A15 18 0 0 0 15,0 Z" class="$cell_id"/>
+    <g s:x="0" s:y="7" s:pid="A"/>
+    <g s:x="0" s:y="18" s:pid="B"/>
+    <g s:x="0" s:y="29" s:pid="C"/>
+    <g s:x="30" s:y="18" s:pid="Y"/>
+  </g>
+
+  <g s:type="nand2" transform="translate(200,60)" s:width="36" s:height="25">
+    <s:alias val="NAND2"/>
+    <s:alias val="$_NAND_"/>
+    <s:alias val="$nand"/>
+    <text x="15" y="-8" class="gp-refdes $cell_id" s:attribute="gp_refdes">U?</text>
+    <text x="15" y="36" class="gp-celltype $cell_id" s:attribute="gp_type">NAND2</text>
+    <path d="M0,0 L0,25 L15,25 A15 12.5 0 0 0 15,0 Z" class="$cell_id"/>
+    <circle cx="33" cy="12.5" r="3" class="$cell_id"/>
+    <g s:x="0" s:y="6" s:pid="A"/>
+    <g s:x="0" s:y="19" s:pid="B"/>
+    <g s:x="36" s:y="12.5" s:pid="Y"/>
+  </g>
+
+  <g s:type="nand3" transform="translate(280,60)" s:width="36" s:height="36">
+    <s:alias val="NAND3"/>
+    <text x="15" y="-8" class="gp-refdes $cell_id" s:attribute="gp_refdes">U?</text>
+    <text x="15" y="47" class="gp-celltype $cell_id" s:attribute="gp_type">NAND3</text>
+    <path d="M0,0 L0,36 L15,36 A15 18 0 0 0 15,0 Z" class="$cell_id"/>
+    <circle cx="33" cy="18" r="3" class="$cell_id"/>
+    <g s:x="0" s:y="7" s:pid="A"/>
+    <g s:x="0" s:y="18" s:pid="B"/>
+    <g s:x="0" s:y="29" s:pid="C"/>
+    <g s:x="36" s:y="18" s:pid="Y"/>
+  </g>
+
+  <!-- ==================== combinational: OR family ==================== -->
+  <g s:type="or2" transform="translate(360,60)" s:width="30" s:height="25">
+    <s:alias val="OR2"/>
+    <s:alias val="$_OR_"/>
+    <s:alias val="$or"/>
+    <text x="15" y="-8" class="gp-refdes $cell_id" s:attribute="gp_refdes">U?</text>
+    <text x="15" y="36" class="gp-celltype $cell_id" s:attribute="gp_type">OR2</text>
+    <path d="M0,25 L15,25 A15 12.5 0 0 0 15,0 L0,0" class="$cell_id"/>
+    <path d="M0,0 A30 25 0 0 1 0,25" class="$cell_id"/>
+    <g s:x="3" s:y="6" s:pid="A"/>
+    <g s:x="3" s:y="19" s:pid="B"/>
+    <g s:x="30" s:y="12.5" s:pid="Y"/>
+  </g>
+
+  <g s:type="or3" transform="translate(440,60)" s:width="30" s:height="36">
+    <s:alias val="OR3"/>
+    <text x="15" y="-8" class="gp-refdes $cell_id" s:attribute="gp_refdes">U?</text>
+    <text x="15" y="47" class="gp-celltype $cell_id" s:attribute="gp_type">OR3</text>
+    <path d="M0,36 L15,36 A15 18 0 0 0 15,0 L0,0" class="$cell_id"/>
+    <path d="M0,0 A30 36 0 0 1 0,36" class="$cell_id"/>
+    <g s:x="3" s:y="7" s:pid="A"/>
+    <g s:x="4" s:y="18" s:pid="B"/>
+    <g s:x="3" s:y="29" s:pid="C"/>
+    <g s:x="30" s:y="18" s:pid="Y"/>
+  </g>
+
+  <g s:type="nor2" transform="translate(520,60)" s:width="36" s:height="25">
+    <s:alias val="NOR2"/>
+    <s:alias val="$_NOR_"/>
+    <s:alias val="$nor"/>
+    <text x="15" y="-8" class="gp-refdes $cell_id" s:attribute="gp_refdes">U?</text>
+    <text x="15" y="36" class="gp-celltype $cell_id" s:attribute="gp_type">NOR2</text>
+    <path d="M0,25 L15,25 A15 12.5 0 0 0 15,0 L0,0" class="$cell_id"/>
+    <path d="M0,0 A30 25 0 0 1 0,25" class="$cell_id"/>
+    <circle cx="33" cy="12.5" r="3" class="$cell_id"/>
+    <g s:x="3" s:y="6" s:pid="A"/>
+    <g s:x="3" s:y="19" s:pid="B"/>
+    <g s:x="36" s:y="12.5" s:pid="Y"/>
+  </g>
+
+  <g s:type="nor3" transform="translate(600,60)" s:width="36" s:height="36">
+    <s:alias val="NOR3"/>
+    <text x="15" y="-8" class="gp-refdes $cell_id" s:attribute="gp_refdes">U?</text>
+    <text x="15" y="47" class="gp-celltype $cell_id" s:attribute="gp_type">NOR3</text>
+    <path d="M0,36 L15,36 A15 18 0 0 0 15,0 L0,0" class="$cell_id"/>
+    <path d="M0,0 A30 36 0 0 1 0,36" class="$cell_id"/>
+    <circle cx="33" cy="18" r="3" class="$cell_id"/>
+    <g s:x="3" s:y="7" s:pid="A"/>
+    <g s:x="4" s:y="18" s:pid="B"/>
+    <g s:x="3" s:y="29" s:pid="C"/>
+    <g s:x="36" s:y="18" s:pid="Y"/>
+  </g>
+
+  <!-- ==================== combinational: XOR family ==================== -->
+  <g s:type="xor2" transform="translate(680,60)" s:width="33" s:height="25">
+    <s:alias val="XOR2"/>
+    <s:alias val="$_XOR_"/>
+    <s:alias val="$xor"/>
+    <text x="16" y="-8" class="gp-refdes $cell_id" s:attribute="gp_refdes">U?</text>
+    <text x="16" y="36" class="gp-celltype $cell_id" s:attribute="gp_type">XOR2</text>
+    <path d="M3,0 A30 25 0 0 1 3,25 A30 25 0 0 0 33,12.5 A30 25 0 0 0 3,0" class="$cell_id"/>
+    <path d="M0,0 A30 25 0 0 1 0,25" class="$cell_id"/>
+    <g s:x="5" s:y="6" s:pid="A"/>
+    <g s:x="5" s:y="19" s:pid="B"/>
+    <g s:x="33" s:y="12.5" s:pid="Y"/>
+  </g>
+
+  <g s:type="xnor2" transform="translate(760,60)" s:width="39" s:height="25">
+    <s:alias val="XNOR2"/>
+    <s:alias val="$_XNOR_"/>
+    <s:alias val="$xnor"/>
+    <text x="16" y="-8" class="gp-refdes $cell_id" s:attribute="gp_refdes">U?</text>
+    <text x="16" y="36" class="gp-celltype $cell_id" s:attribute="gp_type">XNOR2</text>
+    <path d="M3,0 A30 25 0 0 1 3,25 A30 25 0 0 0 33,12.5 A30 25 0 0 0 3,0" class="$cell_id"/>
+    <path d="M0,0 A30 25 0 0 1 0,25" class="$cell_id"/>
+    <circle cx="36" cy="12.5" r="3" class="$cell_id"/>
+    <g s:x="5" s:y="6" s:pid="A"/>
+    <g s:x="5" s:y="19" s:pid="B"/>
+    <g s:x="39" s:y="12.5" s:pid="Y"/>
+  </g>
+
+  <!-- ==================== inverter / buffer ==================== -->
+  <g s:type="inv" transform="translate(840,60)" s:width="26" s:height="20">
+    <s:alias val="INV"/>
+    <s:alias val="$_NOT_"/>
+    <s:alias val="$not"/>
+    <text x="11" y="-8" class="gp-refdes $cell_id" s:attribute="gp_refdes">U?</text>
+    <text x="11" y="31" class="gp-celltype $cell_id" s:attribute="gp_type">INV</text>
+    <path d="M0,0 L0,20 L20,10 Z" class="$cell_id"/>
+    <circle cx="23" cy="10" r="3" class="$cell_id"/>
+    <g s:x="0" s:y="10" s:pid="A"/>
+    <g s:x="26" s:y="10" s:pid="Y"/>
+  </g>
+
+  <g s:type="buf" transform="translate(900,60)" s:width="20" s:height="20">
+    <s:alias val="BUF"/>
+    <s:alias val="$_BUF_"/>
+    <s:alias val="$buf"/>
+    <text x="10" y="-8" class="gp-refdes $cell_id" s:attribute="gp_refdes">U?</text>
+    <text x="10" y="31" class="gp-celltype $cell_id" s:attribute="gp_type">BUF</text>
+    <path d="M0,0 L0,20 L20,10 Z" class="$cell_id"/>
+    <g s:x="0" s:y="10" s:pid="A"/>
+    <g s:x="20" s:y="10" s:pid="Y"/>
+  </g>
+
+  <!-- ==================== multiplexer ====================
+       MUX2 is a G-cell in `libraries/74aup.csv` with function
+       `(A&!C)|(B&C)`, so C is the select and it enters from the bottom edge
+       the way a schematic mux select does — not as a third data pin. -->
+  <g s:type="mux2" transform="translate(40,160)" s:width="22" s:height="40">
+    <s:alias val="MUX2"/>
+    <s:alias val="$_MUX_"/>
+    <s:alias val="$mux"/>
+    <text x="11" y="-8" class="gp-refdes $cell_id" s:attribute="gp_refdes">U?</text>
+    <text x="11" y="52" class="gp-celltype $cell_id" s:attribute="gp_type">MUX2</text>
+    <path d="M0,0 L22,10 L22,30 L0,40 Z" class="$cell_id"/>
+    <g s:x="0" s:y="10" s:pid="A"/>
+    <g s:x="0" s:y="30" s:pid="B"/>
+    <g s:x="11" s:y="35" s:pid="C"/>
+    <g s:x="22" s:y="20" s:pid="Y"/>
+  </g>
+
+  <!-- ==================== sequential: D flip-flops ====================
+       §9.2 [R4-3] pin layout: D / CK / Q, with the async controls RST_N and
+       SET_N active low, drawn with the inversion bubble that says so. RST_N
+       enters the bottom edge and SET_N the top, which is the conventional
+       placement and keeps them off the D/Q data path. -->
+  <g s:type="dff" transform="translate(120,160)" s:width="34" s:height="40">
+    <s:alias val="DFF"/>
+    <s:alias val="$_DFF_P_"/>
+    <s:alias val="$_DFF_"/>
+    <text x="17" y="-8" class="gp-refdes $cell_id" s:attribute="gp_refdes">U?</text>
+    <text x="17" y="52" class="gp-celltype $cell_id" s:attribute="gp_type">DFF</text>
+    <rect width="34" height="40" x="0" y="0" class="$cell_id"/>
+    <path d="M0,20 L7,26 L0,32" class="$cell_id"/>
+    <text x="9" y="14" class="gp-celltype $cell_id" style="text-anchor:start">D</text>
+    <text x="25" y="14" class="gp-celltype $cell_id" style="text-anchor:end">Q</text>
+    <g s:x="0" s:y="10" s:pid="D"/>
+    <g s:x="0" s:y="26" s:pid="CK"/>
+    <g s:x="34" s:y="10" s:pid="Q"/>
+  </g>
+
+  <g s:type="dff_r" transform="translate(200,160)" s:width="34" s:height="40">
+    <s:alias val="DFF_R"/>
+    <text x="17" y="-8" class="gp-refdes $cell_id" s:attribute="gp_refdes">U?</text>
+    <text x="0" y="60" class="gp-celltype $cell_id" style="text-anchor:start" s:attribute="gp_type">DFF_R</text>
+    <rect width="34" height="40" x="0" y="0" class="$cell_id"/>
+    <path d="M0,20 L7,26 L0,32" class="$cell_id"/>
+    <circle cx="27" cy="43" r="3" class="$cell_id"/>
+    <text x="9" y="14" class="gp-celltype $cell_id" style="text-anchor:start">D</text>
+    <text x="25" y="14" class="gp-celltype $cell_id" style="text-anchor:end">Q</text>
+    <g s:x="0" s:y="10" s:pid="D"/>
+    <g s:x="0" s:y="26" s:pid="CK"/>
+    <g s:x="27" s:y="46" s:pid="RST_N"/>
+    <g s:x="34" s:y="10" s:pid="Q"/>
+  </g>
+
+  <g s:type="dff_s" transform="translate(280,160)" s:width="34" s:height="40">
+    <s:alias val="DFF_S"/>
+    <text x="17" y="-16" class="gp-refdes $cell_id" s:attribute="gp_refdes">U?</text>
+    <text x="17" y="52" class="gp-celltype $cell_id" s:attribute="gp_type">DFF_S</text>
+    <rect width="34" height="40" x="0" y="0" class="$cell_id"/>
+    <path d="M0,20 L7,26 L0,32" class="$cell_id"/>
+    <circle cx="7" cy="-3" r="3" class="$cell_id"/>
+    <text x="9" y="14" class="gp-celltype $cell_id" style="text-anchor:start">D</text>
+    <text x="25" y="14" class="gp-celltype $cell_id" style="text-anchor:end">Q</text>
+    <g s:x="0" s:y="10" s:pid="D"/>
+    <g s:x="0" s:y="26" s:pid="CK"/>
+    <g s:x="7" s:y="-6" s:pid="SET_N"/>
+    <g s:x="34" s:y="10" s:pid="Q"/>
+  </g>
+
+  <g s:type="dff_sr" transform="translate(360,160)" s:width="34" s:height="40">
+    <s:alias val="DFF_SR"/>
+    <text x="17" y="-16" class="gp-refdes $cell_id" s:attribute="gp_refdes">U?</text>
+    <text x="0" y="60" class="gp-celltype $cell_id" style="text-anchor:start" s:attribute="gp_type">DFF_SR</text>
+    <rect width="34" height="40" x="0" y="0" class="$cell_id"/>
+    <path d="M0,20 L7,26 L0,32" class="$cell_id"/>
+    <circle cx="7" cy="-3" r="3" class="$cell_id"/>
+    <circle cx="27" cy="43" r="3" class="$cell_id"/>
+    <text x="9" y="14" class="gp-celltype $cell_id" style="text-anchor:start">D</text>
+    <text x="25" y="14" class="gp-celltype $cell_id" style="text-anchor:end">Q</text>
+    <g s:x="0" s:y="10" s:pid="D"/>
+    <g s:x="0" s:y="26" s:pid="CK"/>
+    <g s:x="7" s:y="-6" s:pid="SET_N"/>
+    <g s:x="27" s:y="46" s:pid="RST_N"/>
+    <g s:x="34" s:y="10" s:pid="Q"/>
+  </g>
+
+  <!-- ==================== S-cells (§9.5 infrastructure) ==================== -->
+  <g s:type="osc" transform="translate(440,160)" s:width="40" s:height="26">
+    <s:alias val="OSC"/>
+    <text x="20" y="-8" class="gp-refdes $cell_id" s:attribute="gp_refdes">U?</text>
+    <text x="20" y="38" class="gp-celltype $cell_id" s:attribute="gp_type">OSC</text>
+    <rect width="40" height="26" x="0" y="0" rx="2" class="$cell_id"/>
+    <path d="M8,17 L8,9 L16,9 L16,17 L24,17 L24,9 L32,9" class="$cell_id"/>
+    <g s:x="40" s:y="13" s:pid="OUT"/>
+  </g>
+
+  <g s:type="supervisor" transform="translate(520,160)" s:width="40" s:height="26">
+    <s:alias val="SUPERVISOR"/>
+    <text x="20" y="-8" class="gp-refdes $cell_id" s:attribute="gp_refdes">U?</text>
+    <text x="20" y="38" class="gp-celltype $cell_id" s:attribute="gp_type">SUPERVISOR</text>
+    <rect width="40" height="26" x="0" y="0" rx="2" class="$cell_id"/>
+    <path d="M6,20 L14,20 L14,7 L34,7" class="$cell_id"/>
+    <g s:x="40" s:y="13" s:pid="RESET"/>
+  </g>
+
+  <!-- ==================== external ports ==================== -->
+  <g s:type="inputExt" transform="translate(600,160)" s:width="30" s:height="20">
+    <s:alias val="$_inputExt_"/>
+    <text x="15" y="-6" class="nodelabel $cell_id" s:attribute="ref">input</text>
+    <path d="M0,0 L0,20 L15,20 L30,10 L15,0 Z" class="$cell_id"/>
+    <g s:x="30" s:y="10" s:pid="Y"/>
+  </g>
+
+  <g s:type="outputExt" transform="translate(680,160)" s:width="30" s:height="20">
+    <s:alias val="$_outputExt_"/>
+    <text x="15" y="-6" class="nodelabel $cell_id" s:attribute="ref">output</text>
+    <path d="M30,0 L30,20 L15,20 L0,10 L15,0 Z" class="$cell_id"/>
+    <g s:x="0" s:y="10" s:pid="A"/>
+  </g>
+
+  <g s:type="constant" transform="translate(760,160)" s:width="30" s:height="20">
+    <s:alias val="$_constant_"/>
+    <text x="15" y="-6" class="nodelabel $cell_id" s:attribute="ref">0</text>
+    <path d="M0,0 L0,20 L15,20 L30,10 L15,0 Z" class="$cell_id"/>
+    <g s:x="30" s:y="10" s:pid="Y"/>
+  </g>
+
+  <!-- ==================== bus split / join ==================== -->
+  <g s:type="split" transform="translate(840,160)" s:width="5" s:height="40">
+    <s:alias val="$_split_"/>
+    <rect s:generic="body" width="5" height="40" x="0" y="0" class="splitjoinBody $cell_id"/>
+    <g s:x="0" s:y="0" s:pid="in">
+      <text x="-3" y="-4" class="inputPortLabel $cell_id">in</text>
+    </g>
+    <g s:x="5" s:y="0" s:pid="out0">
+      <text x="8" y="-4" class="$cell_id">out0</text>
+    </g>
+    <g s:x="5" s:y="10" s:pid="out1">
+      <text x="8" y="6" class="$cell_id">out1</text>
+    </g>
+  </g>
+
+  <g s:type="join" transform="translate(900,160)" s:width="4" s:height="40">
+    <s:alias val="$_join_"/>
+    <rect s:generic="body" width="4" height="40" x="0" y="0" class="splitjoinBody $cell_id"/>
+    <g s:x="0" s:y="0" s:pid="out">
+      <text x="6" y="-4" class="$cell_id">out</text>
+    </g>
+    <g s:x="-3" s:y="0" s:pid="in0">
+      <text x="-6" y="-4" class="inputPortLabel $cell_id">in0</text>
+    </g>
+    <g s:x="-3" s:y="10" s:pid="in1">
+      <text x="-6" y="6" class="inputPortLabel $cell_id">in1</text>
+    </g>
+  </g>
+
+  <!-- ==================== fallback ====================
+       Anything this skin has no symbol for (an M-cell macro, a Yosys cell type
+       that survived techmap) is drawn as a labelled box with its real pins
+       rather than dropped. `prepareNetlist.ts` reports the same types in the
+       view's header, so an unrecognised cell is visible twice over and never
+       silently absent. -->
+  <g s:type="generic" transform="translate(40,260)" s:width="40" s:height="40">
+    <text x="20" y="-8" class="gp-refdes $cell_id" s:attribute="gp_refdes">U?</text>
+    <rect width="40" height="40" x="0" y="0" s:generic="body" class="$cell_id"/>
+    <text x="20" y="-14" class="nodelabel $cell_id">generic</text>
+    <g s:x="0" s:y="10" s:pid="in0">
+      <text x="-3" y="4" class="inputPortLabel $cell_id">in0</text>
+    </g>
+    <g s:x="0" s:y="25" s:pid="in1">
+      <text x="-3" y="19" class="inputPortLabel $cell_id">in1</text>
+    </g>
+    <g s:x="40" s:y="10" s:pid="out0">
+      <text x="43" y="4" class="$cell_id">out0</text>
+    </g>
+    <g s:x="40" s:y="25" s:pid="out1">
+      <text x="43" y="19" class="$cell_id">out1</text>
+    </g>
+  </g>
+</svg>

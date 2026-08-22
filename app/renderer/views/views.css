@@ -1614,3 +1614,229 @@ th.sortable[aria-sort='descending'] .sort-indicator svg {
   letter-spacing: 0.05em;
   color: var(--gp-text-muted);
 }
+
+/* --- schematic: cell labels (§C12) ---------------------------------------
+ * The skin draws a refdes above each gate and its library type below, the way
+ * a schematic names U1/AND2. `schematicDecorate.ts` fills them in; a cell in no
+ * package gets an empty refdes rather than an invented one, so an empty label
+ * here is a real state and not a rendering failure. */
+.schematic__canvas svg text.gp-refdes {
+  fill: var(--gp-accent);
+}
+
+.schematic__canvas svg text.gp-celltype {
+  fill: var(--gp-text-muted);
+}
+
+/* netlistsvg draws wire junctions as circles with an inline `fill:#000`, which
+ * is drawn as black on near-black in the dark theme — every junction dot
+ * vanished while the wires themselves were fine. Inline style needs
+ * `!important` to out-rank; the selector is narrow enough that it cannot touch
+ * an inversion bubble, which carries a `cell_…` class instead. */
+.schematic__canvas svg circle[class*='net_'] {
+  fill: var(--gp-text) !important;
+}
+
+/* --- schematic: signal values (§24.2, M16) -------------------------------
+ * Every wire is stamped `data-gp-value` by `schematicDecorate.ts`. Colour is
+ * never the only carrier: a high net is *also* thicker and animated, an unknown
+ * net is *also* dashed, so the three states are distinguishable without colour
+ * vision (the same rule the status tokens follow). */
+.schematic__canvas svg [data-gp-value='1'] {
+  stroke: var(--gp-signal-high);
+  stroke-width: 1.8;
+  filter: drop-shadow(0 0 2px var(--gp-signal-high-glow));
+}
+
+/* Dashes mean exactly one thing on this sheet — unknown — so a high wire is
+ * solid even while its dots are running over it. */
+.schematic__canvas svg line[data-gp-value='1'],
+.schematic__canvas svg path[data-gp-value='1'] {
+  stroke-dasharray: none;
+}
+
+.schematic__canvas svg circle[data-gp-value='1'] {
+  fill: var(--gp-signal-high) !important;
+}
+
+.schematic__canvas svg [data-gp-value='0'] {
+  stroke: var(--gp-signal-low);
+  stroke-width: 1;
+  opacity: 0.75;
+}
+
+.schematic__canvas svg circle[data-gp-value='0'] {
+  fill: var(--gp-signal-low) !important;
+}
+
+.schematic__canvas svg [data-gp-value='x'] {
+  stroke: var(--gp-signal-unknown);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
+.schematic__canvas svg circle[data-gp-value='x'] {
+  fill: var(--gp-signal-unknown) !important;
+  stroke-dasharray: none;
+}
+
+/* Flow, after Falstad's Circuit Simulator: the wire stays a plain solid line
+ * and the movement is carried by discrete dots running along it. A zero-length
+ * dash with a round cap *is* a dot; repeating it every 26 units and walking the
+ * offset sends a train of them down the wire. `schematicDecorate.ts` copies each
+ * high wire into an overlay group so the real wire keeps its stroke, its
+ * hit-testing and its selection styling.
+ *
+ * Only high nets carry dots: an animated low net would say "something is moving
+ * here" about a wire that is holding still. Clock nets are exempt — a clock is
+ * not data flowing through the cone, and marching every clock branch at once
+ * drowns the sheet. */
+@keyframes gp-schematic-flow {
+  to {
+    /* One whole gap per cycle, so the train loops seamlessly. */
+    stroke-dashoffset: -26;
+  }
+}
+
+.schematic__canvas svg .gp-flow-layer .gp-flow {
+  fill: none;
+  stroke: var(--gp-signal-high);
+  /* Dot diameter is the stroke width; the gap is what makes them read as
+   * separate dots rather than as a thicker wire. */
+  stroke-width: 4.5;
+  stroke-linecap: round;
+  stroke-dasharray: 0 26;
+  opacity: 0;
+}
+
+.schematic__canvas[data-flow='on'] svg .gp-flow-layer .gp-flow {
+  opacity: 1;
+  animation: gp-schematic-flow 900ms linear infinite;
+}
+
+/* A net the pointer is over reads out below the sheet; mark it on the sheet
+ * too, so the readout and the wire are unambiguously the same net. Every
+ * segment of the net lights, not just the run under the pointer. */
+.schematic__canvas svg [data-gp-hover] {
+  stroke: var(--gp-accent) !important;
+  stroke-width: 3 !important;
+}
+
+.schematic__canvas svg circle[data-gp-hover] {
+  fill: var(--gp-accent) !important;
+}
+
+/* --- schematic: probe bar ------------------------------------------------ */
+.schematic__probe {
+  display: flex;
+  align-items: center;
+  gap: var(--gp-space-2);
+  flex-wrap: wrap;
+  padding: var(--gp-space-2);
+  border: 1px solid var(--gp-border);
+  border-radius: var(--gp-radius);
+  background: var(--gp-surface-2);
+}
+
+.schematic__probe .probe__title {
+  font-size: var(--gp-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--gp-text-faint);
+}
+
+.schematic__probe .probe__pin {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gp-space-2);
+  padding: var(--gp-space-1) var(--gp-space-2);
+  border: 1px solid var(--gp-border-strong);
+  border-radius: var(--gp-radius-sm);
+  background: var(--gp-surface);
+  color: var(--gp-text);
+  font-family: var(--gp-font-mono);
+  font-size: var(--gp-text-sm);
+  cursor: pointer;
+}
+
+.schematic__probe .probe__pin:focus-visible {
+  outline: 2px solid var(--gp-focus);
+  outline-offset: 1px;
+}
+
+.schematic__probe .probe__pin-value {
+  min-width: 1.1em;
+  text-align: center;
+  font-weight: 700;
+}
+
+.schematic__probe .probe__pin[data-value='1'] {
+  border-color: var(--gp-signal-high);
+  color: var(--gp-signal-high);
+}
+
+.schematic__probe .probe__pin[data-value='x'] {
+  border-color: var(--gp-signal-unknown);
+  color: var(--gp-signal-unknown);
+}
+
+.schematic__probe .probe__clock {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gp-space-2);
+  margin-inline-start: auto;
+}
+
+/* --- schematic: value readout -------------------------------------------- */
+.schematic__readout {
+  display: flex;
+  align-items: center;
+  gap: var(--gp-space-4);
+  flex-wrap: wrap;
+  font-size: var(--gp-text-xs);
+  color: var(--gp-text-muted);
+  font-family: var(--gp-font-mono);
+}
+
+.schematic__readout .readout__net--idle {
+  color: var(--gp-text-faint);
+}
+
+.schematic__readout strong[data-value='1'] {
+  color: var(--gp-signal-high);
+}
+
+.schematic__readout strong[data-value='x'] {
+  color: var(--gp-signal-unknown);
+}
+
+.schematic__readout .readout__forced {
+  color: var(--gp-warn);
+}
+
+.legend-swatch--high {
+  background: var(--gp-signal-high);
+  border-color: var(--gp-signal-high);
+}
+
+.legend-swatch--low {
+  background: var(--gp-signal-low);
+  border-color: var(--gp-signal-low);
+}
+
+.legend-swatch--unknown {
+  background: transparent;
+  border-color: var(--gp-signal-unknown);
+  border-style: dashed;
+}
+
+/* Motion off: the ants stop, and the high/low/unknown distinction survives
+ * because it was never carried by the animation alone. */
+@media (prefers-reduced-motion: reduce) {
+  /* The dots stop where they are. High/low/unknown survives untouched, because
+   * it was never carried by the animation: the wire's own colour, width and
+   * dash pattern say it. */
+  .schematic__canvas[data-flow='on'] svg .gp-flow-layer .gp-flow {
+    animation: none;
+  }
+}

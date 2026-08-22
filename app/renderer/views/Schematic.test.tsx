@@ -316,3 +316,333 @@ describe('Schematic — overlay layer', () => {
   });
 });
 
+
+/**
+ * A sequential design with the §9.3 reset chain, shaped as Yosys writes it
+ * after `abc`: no `port_directions` on any cell. The view has to supply them
+ * before netlistsvg sees the netlist, or nothing routes.
+ */
+const SEQ_SPEC = `name: seq
+timing_model: synchronous
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+reset: {signal: rst_n, active: low, source: SUPERVISOR}
+encoding: one_hot
+inputs:
+  - {name: d, sync: false}
+outputs:
+  - {name: q}
+states: [S0]
+initial: S0
+transitions:
+  - {from: S0, to: S0, when: "1"}
+output_logic:
+  q: "d"
+`;
+
+const SEQ_NETLIST = {
+  modules: {
+    top: {
+      ports: {
+        clk: { direction: 'input', bits: [0] },
+        rst_n: { direction: 'input', bits: [1] },
+        d: { direction: 'input', bits: [2] },
+        q: { direction: 'output', bits: [5] },
+      },
+      netnames: {
+        clk: { bits: [0] },
+        rst_n: { bits: [1] },
+        d: { bits: [2] },
+        s1: { bits: [3] },
+        s2: { bits: [4] },
+        q: { bits: [5] },
+      },
+      cells: {
+        sync1: { type: 'DFF_R', attributes: {}, connections: { CK: [0], D: ['1'], Q: [3], RST_N: [1] } },
+        sync2: { type: 'DFF_R', attributes: {}, connections: { CK: [0], D: [3], Q: [4], RST_N: [1] } },
+        state: { type: 'DFF_R', attributes: {}, connections: { CK: [0], D: [2], Q: [5], RST_N: [4] } },
+      },
+    },
+  },
+};
+
+function stamps(container: HTMLElement, cls: string): string[] {
+  return Array.from(container.querySelectorAll(`.${cls}`)).map(
+    (el) => el.getAttribute('data-gp-value') ?? '',
+  );
+}
+
+describe('Schematic — the netlist actually routes', () => {
+  it('draws wires for a post-abc netlist that carries no port_directions', async () => {
+    // The defect that made this view useless: with no directions netlistsvg
+    // classified no ports, drew no wires, and rendered a column of type names.
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setOk('mappedNetlist', {
+      modules: {
+        top: {
+          ports: {
+            a: { direction: 'input', bits: [0] },
+            b: { direction: 'input', bits: [1] },
+            y: { direction: 'output', bits: [2] },
+          },
+          netnames: { a: { bits: [0] }, b: { bits: [1] }, y: { bits: [2] } },
+          cells: {
+            '$abc$1$auto$blifparse.cc:386:parse_blif$10': {
+              hide_name: 1,
+              type: 'NAND2',
+              parameters: {},
+              attributes: {},
+              connections: { A: [0], B: [1], Y: [2] },
+            },
+          },
+        },
+      },
+    });
+    fake.setOk('packedNetlist', { packages: [] });
+    fake.setOk('analyse', analysis([]));
+    const { container } = await renderWithNetlist(fake);
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('[class*="net_"]').length).toBeGreaterThan(0);
+    });
+    expect(container.querySelector('svg')?.innerHTML).not.toContain('s:type="generic"');
+    expect(container.querySelector('[data-testid="schematic-unresolved"]')).toBeNull();
+  });
+
+  it('names a cell by its package refdes and library type', async () => {
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setOk('mappedNetlist', TWO_GATE_NETLIST);
+    fake.setOk('packedNetlist', PACKED);
+    fake.setOk('analyse', analysis([]));
+    const { container } = await renderWithNetlist(fake);
+
+    await waitFor(() => {
+      const labels = Array.from(container.querySelectorAll('text[s\\:attribute="gp_refdes"]')).map(
+        (t) => t.textContent,
+      );
+      expect(labels.sort()).toEqual(['U1', 'U2']);
+    });
+    const types = Array.from(container.querySelectorAll('text[s\\:attribute="gp_type"]')).map(
+      (t) => t.textContent,
+    );
+    expect(types).toEqual(['NAND2', 'NAND2']);
+  });
+
+  it('says which cell types it has no pin table for, rather than drawing them bare', async () => {
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setOk('mappedNetlist', {
+      modules: {
+        top: {
+          ports: { a: { direction: 'input', bits: [0] } },
+          netnames: { a: { bits: [0] } },
+          cells: { u1: { type: 'CNT4', attributes: {}, connections: { CP: [0] } } },
+        },
+      },
+    });
+    fake.setOk('packedNetlist', { packages: [] });
+    fake.setOk('analyse', analysis([]));
+    const { container } = await renderWithNetlist(fake);
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="schematic-unresolved"]')?.textContent).toContain(
+        'CNT4',
+      );
+    });
+  });
+});
+
+describe('Schematic — signal value overlay (§24.2)', () => {
+  it('stamps every wire with its evaluated value', async () => {
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setOk('mappedNetlist', TWO_GATE_NETLIST);
+    fake.setOk('packedNetlist', { packages: [] });
+    fake.setOk('analyse', analysis([]));
+    const { container } = await renderWithNetlist(fake);
+
+    // Probe defaults: both inputs low. NAND2(0,0) = 1 on n1; NAND2(1,0) = 1 on y.
+    await waitFor(() => {
+      expect(stamps(container, 'net_0').length).toBeGreaterThan(0);
+    });
+    expect(stamps(container, 'net_0').every((v) => v === '0')).toBe(true);
+    expect(stamps(container, 'net_2').every((v) => v === '1')).toBe(true);
+    expect(stamps(container, 'net_4').every((v) => v === '1')).toBe(true);
+  });
+
+  it('re-stamps the sheet when a probe pin is driven, without re-laying it out', async () => {
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setOk('mappedNetlist', TWO_GATE_NETLIST);
+    fake.setOk('packedNetlist', { packages: [] });
+    fake.setOk('analyse', analysis([]));
+    const { container } = await renderWithNetlist(fake);
+    await waitFor(() => expect(stamps(container, 'net_0').length).toBeGreaterThan(0));
+    const layout = container.querySelector('svg')?.getAttribute('width');
+
+    // a=1, b=1 -> n1 = NAND(1,1) = 0 -> y = NAND(0,1) = 1.
+    await userEvent.click(screen.getByTestId('probe-pin-a'));
+    await userEvent.click(screen.getByTestId('probe-pin-b'));
+
+    await waitFor(() => {
+      expect(stamps(container, 'net_0').every((v) => v === '1')).toBe(true);
+    });
+    expect(stamps(container, 'net_2').every((v) => v === '0')).toBe(true);
+    expect(container.querySelector('svg')?.getAttribute('width')).toBe(layout);
+  });
+
+  it('clears the stamps when the layer is switched off', async () => {
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setOk('mappedNetlist', TWO_GATE_NETLIST);
+    fake.setOk('packedNetlist', { packages: [] });
+    fake.setOk('analyse', analysis([]));
+    const { container } = await renderWithNetlist(fake);
+    await waitFor(() => expect(stamps(container, 'net_0').length).toBeGreaterThan(0));
+
+    await userEvent.click(screen.getByLabelText('signal values'));
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-gp-value]')).toHaveLength(0);
+    });
+    expect(screen.queryByTestId('schematic-probe')).toBeNull();
+  });
+
+  it('offers no clock controls for a combinational netlist', async () => {
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setOk('mappedNetlist', TWO_GATE_NETLIST);
+    fake.setOk('packedNetlist', { packages: [] });
+    fake.setOk('analyse', analysis([]));
+    await renderWithNetlist(fake);
+    await waitFor(() => expect(screen.getByTestId('schematic-probe')).toBeTruthy());
+    expect(screen.queryByTestId('schematic-step')).toBeNull();
+  });
+});
+
+describe('Schematic — clocked probe on a sequential design', () => {
+  async function seqView() {
+    const fake = new FakeGatepack({ specText: SEQ_SPEC });
+    fake.setOk('mappedNetlist', SEQ_NETLIST);
+    fake.setOk('packedNetlist', { packages: [] });
+    fake.setOk('analyse', analysis([]));
+    const view = await renderWithNetlist(fake);
+    await waitFor(() => expect(screen.getByTestId('schematic-step')).toBeTruthy());
+    return view;
+  }
+
+  it('starts with the flops unknown — a board at power-on has no state', async () => {
+    const { container } = await seqView();
+    await waitFor(() => expect(stamps(container, 'net_5').length).toBeGreaterThan(0));
+    // q is a flop output nobody has clocked yet. Unknown is the true reading;
+    // showing it as low would be a value the view did not measure.
+    expect(stamps(container, 'net_5').every((v) => v === 'x')).toBe(true);
+  });
+
+  it('a reset pulse leaves the design defined and the reset released', async () => {
+    const { container } = await seqView();
+    await waitFor(() => expect(stamps(container, 'net_5').length).toBeGreaterThan(0));
+
+    await userEvent.click(screen.getByTestId('schematic-reset'));
+
+    await waitFor(() => {
+      expect(stamps(container, 'net_5').every((v) => v === '0')).toBe(true);
+    });
+    // Assert -> release -> three edges: the synchroniser has let go, so the
+    // reset net is high again and the button now offers to re-assert it.
+    expect(stamps(container, 'net_4').every((v) => v === '1')).toBe(true);
+    expect(screen.getByTestId('schematic-reset').textContent).toContain('Reset');
+  });
+
+  it('holding reset clears the state flop with no clock edge at all', async () => {
+    const { container } = await seqView();
+    await userEvent.click(screen.getByTestId('schematic-reset'));
+    await waitFor(() => expect(stamps(container, 'net_4').every((v) => v === '1')).toBe(true));
+
+    // Drive d high and clock it in, so the flop is demonstrably holding a one.
+    await userEvent.click(screen.getByTestId('probe-pin-d'));
+    await userEvent.click(screen.getByTestId('schematic-step'));
+    await waitFor(() => expect(stamps(container, 'net_5').every((v) => v === '1')).toBe(true));
+
+    // Now assert reset by hand and take no edge. The §9.3 chain clears the
+    // synchronisers, which clears the state flop — level-sensitive, no clock.
+    await userEvent.click(screen.getByTestId('probe-pin-rst_n'));
+    await waitFor(() => {
+      expect(stamps(container, 'net_5').every((v) => v === '0')).toBe(true);
+    });
+    expect(screen.getByTestId('schematic-readout').textContent).toContain('async control holding 3 flops');
+  });
+
+  it('a step advances one edge and Clear state returns the flops to unknown', async () => {
+    const { container } = await seqView();
+    await userEvent.click(screen.getByTestId('schematic-reset'));
+    await waitFor(() => expect(stamps(container, 'net_5').every((v) => v === '0')).toBe(true));
+
+    await userEvent.click(screen.getByTestId('probe-pin-d'));
+    await userEvent.click(screen.getByTestId('schematic-step'));
+    await waitFor(() => expect(stamps(container, 'net_5').every((v) => v === '1')).toBe(true));
+
+    await userEvent.click(screen.getByTestId('schematic-clear'));
+    await waitFor(() => expect(stamps(container, 'net_5').every((v) => v === 'x')).toBe(true));
+  });
+
+  it('shows a materialised constant as the value it is tied to, not as unknown', async () => {
+    const { container } = await seqView();
+    // sync1's D is a literal 1. netlistsvg puts it on a synthesised net that
+    // appears in no `netnames`, so without the constant map it renders unknown.
+    await waitFor(() => expect(container.querySelectorAll('[data-gp-value]').length).toBeGreaterThan(0));
+    const values = Array.from(container.querySelectorAll('[data-gp-value]')).map((el) => ({
+      net: el.getAttribute('data-gp-net'),
+      value: el.getAttribute('data-gp-value'),
+    }));
+    const tie = values.filter((v) => v.net === "1'b1");
+    expect(tie.length).toBeGreaterThan(0);
+    expect(tie.every((v) => v.value === '1')).toBe(true);
+  });
+});
+
+describe('Schematic — flow and hover (Falstad cues)', () => {
+  it('runs travelling dots on the high wires and stops when the layer is off', async () => {
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setOk('mappedNetlist', TWO_GATE_NETLIST);
+    fake.setOk('packedNetlist', { packages: [] });
+    fake.setOk('analyse', analysis([]));
+    const { container } = await renderWithNetlist(fake);
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('.gp-flow-layer > *').length).toBeGreaterThan(0);
+    });
+    expect(container.querySelector('[data-testid="schematic-svg"]')?.getAttribute('data-flow')).toBe('on');
+
+    await userEvent.click(screen.getByLabelText('flow animation'));
+    await waitFor(() => {
+      expect(container.querySelectorAll('.gp-flow-layer')).toHaveLength(0);
+    });
+    // The values themselves survive: the animation was never what carried them.
+    expect(stamps(container, 'net_2').every((v) => v === '1')).toBe(true);
+  });
+
+  it('reads out the net under the pointer and lights all of its segments', async () => {
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setOk('mappedNetlist', TWO_GATE_NETLIST);
+    fake.setOk('packedNetlist', { packages: [] });
+    fake.setOk('analyse', analysis([]));
+    const { container } = await renderWithNetlist(fake);
+    await waitFor(() => expect(stamps(container, 'net_0').length).toBeGreaterThan(0));
+
+    const wire = container.querySelector('.net_2') as Element;
+    fireEvent.mouseOver(wire, { bubbles: true });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('schematic-readout').textContent).toContain('n1');
+    });
+    const lit = container.querySelectorAll('[data-gp-hover]');
+    expect(lit.length).toBe(container.querySelectorAll('.net_2').length);
+    expect(lit.length).toBeGreaterThan(0);
+  });
+
+  it('counts the sheet by value so the readout is a measurement, not a mood', async () => {
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setOk('mappedNetlist', TWO_GATE_NETLIST);
+    fake.setOk('packedNetlist', { packages: [] });
+    fake.setOk('analyse', analysis([]));
+    await renderWithNetlist(fake);
+    await waitFor(() => expect(screen.getByTestId('schematic-readout')).toBeTruthy());
+    // a=0, b=0 -> n1=1, y=1: two high nets, two low inputs, nothing unknown.
+    expect(screen.getByTestId('schematic-readout').textContent).toContain('2 high');
+    expect(screen.getByTestId('schematic-readout').textContent).toContain('0 unknown');
+  });
+});

@@ -67,6 +67,16 @@
   --gp-select-bg: rgba(242, 199, 92, 0.28);
   --gp-select-ring: rgba(201, 150, 42, 0.9);
 
+  /* --- signal values (§24.2 C12 overlay) ---------------------------------
+   * A net drawn bright is a net *measured* high; a net drawn dim is measured
+   * low; unknown is its own colour and its own dashed stroke, never a dim
+   * one — "not measured" must not read as "measured zero".
+   */
+  --gp-signal-high: #d98c00;
+  --gp-signal-high-glow: rgba(217, 140, 0, 0.55);
+  --gp-signal-low: #7f918a;
+  --gp-signal-unknown: #b3261e;
+
   /* --- space: a 4px base scale ------------------------------------------- */
   --gp-space-1: 4px;
   --gp-space-2: 8px;
@@ -163,6 +173,11 @@
 
   --gp-select-bg: rgba(242, 199, 92, 0.22);
 
+  --gp-signal-high: #ffc857;
+  --gp-signal-high-glow: rgba(255, 200, 87, 0.6);
+  --gp-signal-low: #55685f;
+  --gp-signal-unknown: #ff8a80;
+
   --gp-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --gp-shadow-2: 0 4px 12px rgba(0, 0, 0, 0.5);
   --gp-shadow-3: 0 12px 32px rgba(0, 0, 0, 0.6);
@@ -200,6 +215,11 @@
     --gp-info-bg: #12283a;
 
     --gp-select-bg: rgba(242, 199, 92, 0.22);
+
+    --gp-signal-high: #ffc857;
+    --gp-signal-high-glow: rgba(255, 200, 87, 0.6);
+    --gp-signal-low: #55685f;
+    --gp-signal-unknown: #ff8a80;
 
     --gp-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
     --gp-shadow-2: 0 4px 12px rgba(0, 0, 0, 0.5);

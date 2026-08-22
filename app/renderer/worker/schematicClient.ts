@@ -25,6 +25,8 @@
  * the schematic view is first opened, which was the other reason for the split.
  */
 
-export function renderSchematicAsync(netlist: unknown): Promise<string> {
+import type { SchematicRender } from './renderSchematic';
+
+export function renderSchematicAsync(netlist: unknown): Promise<SchematicRender> {
   return import('./renderSchematic').then((m) => m.renderSchematic(netlist));
 }
