@@ -163,8 +163,27 @@ def _search_dir_from_env(environ: Mapping[str, str]) -> tuple[Path, str] | None:
     return d, "env"
 
 
+def _in_dir(directory: Path, name: str, platform: str) -> Path | None:
+    """``name`` inside ``directory``, honouring the platform's executable suffix.
+
+    On Windows a bundled tool is ``yosys.exe``, not ``yosys``.  ``shutil.which``
+    applies ``PATHEXT`` for us on the ``PATH`` branch below, but the bundled and
+    ``GATEPACK_TOOLS`` branches look a file up directly, so without this they
+    find nothing on Windows — which is precisely the self-contained case a
+    Windows installer exists to serve.  ``app/main/core.cts::binaryName`` has
+    always done this for the core; the toolchain did not.
+    """
+    for suffix in ("", ".exe") if platform == "win32" else ("",):
+        candidate = directory / f"{name}{suffix}"
+        if _is_executable(candidate):
+            return candidate
+    return None
+
+
 def resolve_tool(
-    name: str, environ: Mapping[str, str] | None = None
+    name: str,
+    environ: Mapping[str, str] | None = None,
+    platform: str | None = None,
 ) -> ToolResolution | None:
     """Resolve ``name`` to a :class:`ToolResolution`, or ``None`` when absent.
 
@@ -173,14 +192,18 @@ def resolve_tool(
     bundled/env copy advertises its ``lib`` subdirectory (shared libraries) and
     its own directory (sibling tools) so the runner can construct the right
     environment; a system copy does not.
+
+    ``platform`` defaults to ``sys.platform``; a test passes ``"win32"`` to
+    exercise the Windows suffix rule on a POSIX host.
     """
     environ = dict(environ) if environ is not None else os.environ
+    platform = platform if platform is not None else sys.platform
 
     env_dir = _search_dir_from_env(environ)
     if env_dir is not None:
         d, source = env_dir
-        candidate = d / name
-        if _is_executable(candidate):
+        candidate = _in_dir(d, name, platform)
+        if candidate is not None:
             return ToolResolution(
                 name=name,
                 path=str(candidate),
@@ -191,8 +214,8 @@ def resolve_tool(
 
     bundled = bundled_toolchain_dir()
     if bundled is not None:
-        candidate = bundled / name
-        if _is_executable(candidate):
+        candidate = _in_dir(bundled, name, platform)
+        if candidate is not None:
             return ToolResolution(
                 name=name,
                 path=str(candidate),

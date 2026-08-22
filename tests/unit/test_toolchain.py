@@ -42,3 +42,52 @@ def test_runner_run_failure_is_a_tool_result_not_an_exception():
     assert isinstance(result, ToolResult)
     assert result.returncode == -1
     assert result.stderr  # the OSError text, never a fabricated pass
+
+
+def test_bundled_windows_tool_is_found_by_its_exe_name(tmp_path, monkeypatch):
+    """A bundled Windows toolchain ships ``yosys.exe``, and must be found.
+
+    ``shutil.which`` applies ``PATHEXT`` on the ``PATH`` branch, so a *system*
+    install on Windows always worked. The bundled and ``GATEPACK_TOOLS``
+    branches look the file up directly and used a bare ``d / name``, so they
+    found nothing — which is exactly the self-contained case a Windows
+    installer exists to serve.
+    """
+    from gatepack import toolchain
+
+    tools = tmp_path / "bin"
+    tools.mkdir()
+    exe = tools / "yosys.exe"
+    exe.write_text("")
+    exe.chmod(0o755)
+
+    env = {toolchain.GATEPACK_TOOLS_ENV: str(tools)}
+
+    # Windows: the `.exe` is found.
+    found = toolchain.resolve_tool("yosys", environ=env, platform="win32")
+    assert found is not None
+    assert found.path == str(exe)
+    assert found.source == "env"
+
+    # POSIX: `yosys.exe` is NOT a match for `yosys` — the suffix rule is
+    # platform-specific, not a blanket fallback that would mask a missing tool.
+    monkeypatch.setattr(toolchain.shutil, "which", lambda _name: None)
+    assert toolchain.resolve_tool("yosys", environ=env, platform="linux") is None
+
+
+def test_a_suffixless_tool_still_wins_on_windows(tmp_path):
+    """An extensionless file is preferred, so POSIX layouts keep working."""
+    from gatepack import toolchain
+
+    tools = tmp_path / "bin"
+    tools.mkdir()
+    for name in ("yosys", "yosys.exe"):
+        p = tools / name
+        p.write_text("")
+        p.chmod(0o755)
+
+    found = toolchain.resolve_tool(
+        "yosys", environ={toolchain.GATEPACK_TOOLS_ENV: str(tools)}, platform="win32"
+    )
+    assert found is not None
+    assert found.path == str(tools / "yosys")
