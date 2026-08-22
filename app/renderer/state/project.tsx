@@ -25,6 +25,21 @@ export interface ProjectContextValue {
    */
   specStale: boolean;
   setSpecText: (text: string) => void;
+  /**
+   * Edit the spec from the *current* text rather than from a captured one.
+   *
+   * `setSpecText` takes a finished string, so a caller has to compute it from
+   * the `specText` its render closed over. With one editing view that was
+   * fine; with several — the spec editor, the FSM graph, the BOM, the
+   * schematic and the inspector — two edits raised before a re-render both
+   * build on the same stale snapshot and the first is silently lost. Measured:
+   * two `setSpecText` calls in one tick from one snapshot keep only the second.
+   *
+   * `update` receives the latest text and returns the new text, or `null` to
+   * make no change — which is how a refusal is expressed without writing
+   * something weaker.
+   */
+  editSpec: (update: (current: string) => string | null) => void;
   /** Flush the pending write to the bridge (the explicit-save path). */
   save: () => Promise<void>;
 }
@@ -42,11 +57,15 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<string | null>(null);
   const readSeqRef = useRef(0);
+  // The latest text, readable synchronously. React state is not: an edit
+  // raised in the same tick as another would read the pre-edit value.
+  const textRef = useRef('');
 
   // Apply spec text that is already authoritative (from disk) without
   // scheduling a write, and clear the stale marker. Bumps the revision so a
   // revisioned result computed against the old text is flagged stale.
   const applySpecText = useCallback((text: string) => {
+    textRef.current = text;
     setSpecTextState(text);
     setSpecStale(false);
     setRevision((r) => r + 1);
@@ -66,8 +85,12 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         // in-flight task started just after mount (cancelling it). A project
         // switch or external edit is a real change and must invalidate prior
         // results, so those bump.
-        if (markChanged) applySpecText(env.data.text);
-        else setSpecTextState(env.data.text);
+        if (markChanged) {
+          applySpecText(env.data.text);
+        } else {
+          textRef.current = env.data.text;
+          setSpecTextState(env.data.text);
+        }
       });
     },
     [api, applySpecText],
@@ -136,6 +159,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   }, [api, readSpecFromDisk]);
 
   const setSpecText = useCallback((text: string) => {
+    textRef.current = text;
     setSpecTextState(text);
     setSpecStale(false);
     setRevision((r) => r + 1);
@@ -147,6 +171,18 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       if (value !== null) void api.writeSpec(value);
     }, WRITE_DEBOUNCE_MS);
   }, [api]);
+
+  const editSpec = useCallback(
+    (update: (current: string) => string | null) => {
+      const next = update(textRef.current);
+      // `null` is a refusal and an unchanged string is a no-op; neither should
+      // bump the revision, which would flag every other view's result stale
+      // for an edit that did not happen.
+      if (next === null || next === textRef.current) return;
+      setSpecText(next);
+    },
+    [setSpecText],
+  );
 
   const save = useCallback(async () => {
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -172,9 +208,10 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       project,
       specStale,
       setSpecText,
+      editSpec,
       save,
     }),
-    [specText, revision, model, diagnostics, project, specStale, setSpecText, save],
+    [specText, revision, model, diagnostics, project, specStale, setSpecText, editSpec, save],
   );
 
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;

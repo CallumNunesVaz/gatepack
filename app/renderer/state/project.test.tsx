@@ -114,3 +114,94 @@ describe('ProjectProvider — spec follows the project and the disk', () => {
     expect(screen.getByTestId('stale')).toHaveTextContent('true');
   });
 });
+
+describe('editSpec — the several-editing-surfaces case', () => {
+  function harness() {
+    let ctx: ReturnType<typeof useProject> | null = null;
+    function Probe() {
+      ctx = useProject();
+      return null;
+    }
+    return { get: () => ctx!, Probe };
+  }
+
+  const SPEC = [
+    'name: probe',
+    'timing_model: synchronous',
+    'encoding: one_hot',
+    'initial: S0',
+    '',
+  ].join('\n');
+
+  it('setSpecText from one snapshot loses the earlier edit — editSpec does not', async () => {
+    const fake = new FakeGatepack({ specText: SPEC });
+    setApi(fake);
+    const h = harness();
+    render(
+      <ApiProvider>
+        <ProjectProvider>
+          <h.Probe />
+        </ProjectProvider>
+      </ApiProvider>,
+    );
+    await waitFor(() => expect(h.get().specText.length).toBeGreaterThan(0));
+
+    // The defect, kept as the control: two views computing from the same
+    // render's `specText` and writing in one tick. The first edit is lost.
+    const snapshot = h.get().specText;
+    await act(async () => {
+      h.get().setSpecText(snapshot.replace('encoding: one_hot', 'encoding: binary'));
+      h.get().setSpecText(snapshot.replace('timing_model: synchronous', 'timing_model: asynchronous'));
+    });
+    expect(h.get().specText).not.toContain('encoding: binary');
+    expect(h.get().specText).toContain('timing_model: asynchronous');
+  });
+
+  it('two editSpec calls in one tick both survive', async () => {
+    const fake = new FakeGatepack({ specText: SPEC });
+    setApi(fake);
+    const h = harness();
+    render(
+      <ApiProvider>
+        <ProjectProvider>
+          <h.Probe />
+        </ProjectProvider>
+      </ApiProvider>,
+    );
+    await waitFor(() => expect(h.get().specText.length).toBeGreaterThan(0));
+
+    await act(async () => {
+      h.get().editSpec((t) => t.replace('encoding: one_hot', 'encoding: binary'));
+      h.get().editSpec((t) => t.replace('timing_model: synchronous', 'timing_model: asynchronous'));
+    });
+
+    expect(h.get().specText).toContain('encoding: binary');
+    expect(h.get().specText).toContain('timing_model: asynchronous');
+  });
+
+  it('a refusal (null) changes nothing and does not bump the revision', async () => {
+    const fake = new FakeGatepack({ specText: SPEC });
+    setApi(fake);
+    const h = harness();
+    render(
+      <ApiProvider>
+        <ProjectProvider>
+          <h.Probe />
+        </ProjectProvider>
+      </ApiProvider>,
+    );
+    await waitFor(() => expect(h.get().specText.length).toBeGreaterThan(0));
+    const before = h.get().specText;
+    const rev = h.get().revision;
+
+    await act(async () => {
+      h.get().editSpec(() => null);
+      h.get().editSpec((t) => t); // an unchanged string is a no-op too
+    });
+
+    // A revision bump flags every other view's result stale. An edit that did
+    // not happen must not do that.
+    expect(h.get().specText).toBe(before);
+    expect(h.get().revision).toBe(rev);
+  });
+});
