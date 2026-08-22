@@ -24,7 +24,7 @@
   `.venv/bin/python -m pytest -q` (**723 pass, 5 skip** at baseline,
   including 59 toolchain tests that need docker).
   From `app/`: `npx tsc --noEmit -p tsconfig.json`,
-  `npx tsc --noEmit -p tsconfig.main.json`, `npx vitest run` (**334 pass**),
+  `npx tsc --noEmit -p tsconfig.main.json`, `npx vitest run` (**388 pass**),
   and `DISPLAY=:1 npx playwright test --config playwright.config.cjs`
   (**24 pass**, after `npm run build:main && npx vite build`).
 - **A check that cannot fail is worth nothing.** For everything you add, build
