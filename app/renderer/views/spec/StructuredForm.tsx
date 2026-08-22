@@ -16,7 +16,7 @@ import type { YValue } from '../../design/yaml';
  * maintains a second model.
  */
 export function StructuredForm() {
-  const { specText, model, setSpecText } = useProject();
+  const { specText, model, editSpec } = useProject();
 
   if (!model) {
     return <div className="pane__empty">The spec does not parse yet.</div>;
@@ -25,7 +25,7 @@ export function StructuredForm() {
   const edit = (key: string, transform: (cur: YValue) => YValue) => {
     try {
       const { text } = applyTopLevelEdit(specText, key, transform);
-      setSpecText(text);
+      editSpec(() => text);
     } catch {
       /* key not present — fall back to upsert below */
     }
@@ -33,7 +33,7 @@ export function StructuredForm() {
 
   const editField = (key: string, value: YValue) => {
     const { text } = setField(specText, key, value);
-    setSpecText(text);
+    editSpec(() => text);
   };
 
   const setInput = (inputs: InputPort[]) =>

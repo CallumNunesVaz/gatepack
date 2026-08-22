@@ -1840,3 +1840,26 @@ th.sortable[aria-sort='descending'] .sort-indicator svg {
     animation: none;
   }
 }
+
+/* --- schematic: spec edit affordances (§C12) ------------------------------
+ * With the "edit" toggle on, `schematicEdit.ts` stamps every editable element
+ * (wire / input port / gate) with `data-gp-edit` and a `title` naming the field
+ * and value a click will write. The crosshair cursor says the click *does*
+ * something, distinct from the read-only hover — a schematic that silently
+ * rewrites the spec because the user clicked to inspect a net is a defect. */
+.schematic__canvas[data-edit='on'] svg [data-gp-edit] {
+  cursor: crosshair;
+}
+
+.schematic__canvas[data-edit='on'] svg g[data-gp-edit] > * {
+  stroke-dasharray: 2 2;
+}
+
+/* The packed layer's package boundary is the drop target for a regroup drag. A
+ * boundary should read as an outline, never an opaque box over the gates it is
+ * naming — and it must be hit-testable while a drag is in flight. */
+.schematic__overlay-layer .packed-boundary {
+  fill: transparent;
+  stroke: var(--gp-info);
+  stroke-width: 1;
+}

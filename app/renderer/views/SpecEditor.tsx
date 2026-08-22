@@ -1,5 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useProject } from '../state/project';
+import { useSelection } from '../selection/bus';
+import { useLinkContext } from '../selection/useLinkContext';
+import { resolveSpecAnchor } from '../selection/specAnchor';
 import { Icon } from '../ui';
 import { MonacoEditor } from './spec/MonacoEditor';
 import { StructuredForm } from './spec/StructuredForm';
@@ -23,7 +26,33 @@ const TABS: Array<{ id: Tab; label: string; icon: 'spec' | 'settings' | 'schemat
  */
 export function SpecEditor() {
   const { specText, setSpecText, diagnostics, project } = useProject();
+  const { selection } = useSelection();
+  const ctx = useLinkContext();
   const [tab, setTab] = useState<Tab>('yaml');
+
+  // Reflect the shared §15.2 selection spine: when the selection names a spec
+  // construct, reveal its line in the YAML editor without stealing focus. The
+  // reveal is driven by the *selection* only — a ref keeps the latest spec
+  // text/link context, so typing in the editor (which changes `specText` and
+  // re-parses the model) never re-triggers a scroll while the user is typing.
+  const ctxRef = useRef(ctx);
+  ctxRef.current = ctx;
+  const specTextRef = useRef(specText);
+  specTextRef.current = specText;
+  const tokenRef = useRef(0);
+  const [reveal, setReveal] = useState<{ line: number; token: number } | null>(null);
+
+  useEffect(() => {
+    if (!selection) {
+      setReveal(null);
+      return;
+    }
+    const link = ctxRef.current;
+    const anchor = link
+      ? resolveSpecAnchor(selection, link.provenance, specTextRef.current)
+      : null;
+    setReveal(anchor ? { line: anchor.line, token: ++tokenRef.current } : null);
+  }, [selection]);
 
   return (
     <section className="pane spec-editor" data-testid="spec-editor">
@@ -68,7 +97,7 @@ export function SpecEditor() {
       <div className="spec-editor__body">
         {tab === 'yaml' ? (
           <div className="spec-editor__monaco">
-            <MonacoEditor value={specText} onChange={setSpecText} />
+            <MonacoEditor value={specText} onChange={setSpecText} reveal={reveal} />
           </div>
         ) : tab === 'form' ? (
           <StructuredForm />

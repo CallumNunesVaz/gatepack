@@ -753,4 +753,60 @@ button:disabled { opacity: 0.5; cursor: default; }
 }
 .inspector__pointers-list { margin: var(--gp-space-1) 0 0; padding: 0; list-style: none; }
 
+/* --- Spec anchor + in-place edit (Inspector.tsx) ----------------------- */
+.inspector__anchor {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--gp-space-2);
+  padding: var(--gp-space-2);
+  border: 1px solid var(--gp-border);
+  border-radius: var(--gp-radius);
+  background: var(--gp-surface-2);
+  color: var(--gp-text-muted);
+}
+.inspector__anchor-line { font-family: var(--gp-font-mono); font-size: var(--gp-text-xs); }
+.inspector__anchor-line strong { color: var(--gp-text); }
+.inspector__anchor-route {
+  font-size: var(--gp-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.inspector__anchor-route--provenance { color: var(--gp-info); }
+.inspector__anchor-route--structural { color: var(--gp-ok); }
+.inspector__anchor--none { color: var(--gp-text-faint); }
+.inspector__edit { display: flex; flex-direction: column; gap: var(--gp-space-2); }
+.inspector__edit-label {
+  font-size: var(--gp-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gp-text-faint);
+}
+.inspector__edit input:not([type='checkbox']) {
+  background: var(--gp-surface-2);
+  border: 1px solid var(--gp-border);
+  color: var(--gp-text);
+  padding: var(--gp-space-1) var(--gp-space-2);
+  border-radius: var(--gp-radius);
+  font: inherit;
+  font-size: var(--gp-text-sm);
+}
+.inspector__edit input:not([type='checkbox']):focus {
+  border-color: var(--gp-accent);
+  outline: none;
+}
+.inspector__edit-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gp-space-1);
+  color: var(--gp-text-muted);
+  font-size: var(--gp-text-xs);
+}
+
+/* The reveal highlight drawn over the anchored line in the spec editor
+ * (MonacoEditor.tsx). A selection tint, not a cursor move. */
+.spec-editor__reveal-line {
+  background: var(--gp-select-bg);
+}
+
 

@@ -660,6 +660,170 @@ export function setPackingForceGroups(text: string, forceGroups: string[][]): Ed
   return setField(text, 'packing', { force_groups: forceGroups.map((g) => [...g]) });
 }
 
+/**
+ * §C12: replace the persisted test points in the text.
+ *
+ * This is the same surgical splice as `setField` — only the `test_points`
+ * value block is rewritten, so comments and formatting elsewhere in the
+ * document survive untouched. The *caller* is responsible for the stable-name
+ * guard: a Yosys-generated net name must be refused before it reaches here.
+ */
+export function setTestPoints(text: string, nets: string[]): EditOutcome {
+  const { ranges } = parseToJs(text);
+  const block = ranges.get('test_points');
+
+  // No block yet: appending a fresh one cannot destroy anything.
+  if (block === undefined) {
+    return setField(text, 'test_points', nets.map((net) => ({ net })));
+  }
+
+  // A block that already exists is edited line by line, for the same reason
+  // `setInputSync` is: re-serialising it from the model drops every comment
+  // inside it. Measured — adding a second test point deleted
+  // `# probe pad next to U3, reachable with a scope hook` from the first.
+  const wanted = new Set(nets);
+  const before = text.slice(0, block.valueStart);
+  const body = text.slice(block.valueStart, block.valueEnd);
+  const after = text.slice(block.valueEnd);
+
+  const entry = /(^|[{,\s])net\s*:\s*["']?([^"',}\s]+)["']?/;
+  const lines = body.split('\n');
+  const kept: string[] = [];
+  const present = new Set<string>();
+  let lastEntry = -1;
+  let indent = '  - ';
+
+  for (const line of lines) {
+    const code = line.indexOf('#') === -1 ? line : line.slice(0, line.indexOf('#'));
+    const match = entry.exec(code);
+    if (match === null) {
+      kept.push(line);
+      continue;
+    }
+    const net = match[2];
+    indent = /^\s*-\s*/.exec(line)?.[0] ?? indent;
+    if (!wanted.has(net)) continue; // removed: drop this entry's line
+    present.add(net);
+    lastEntry = kept.length;
+    kept.push(line);
+  }
+
+  const added = nets.filter((net) => !present.has(net)).map((net) => `${indent}{net: ${net}}`);
+  if (added.length > 0) {
+    const at = lastEntry === -1 ? kept.length : lastEntry + 1;
+    kept.splice(at, 0, ...added);
+  }
+
+  const next = before + kept.join('\n') + after;
+  const reparsed = parseDesignText(next);
+  if (reparsed.model === null) {
+    return { text, diagnostics: reparsed.diagnostics };
+  }
+  return { text: next, diagnostics: reparsed.diagnostics };
+}
+
+/**
+ * §C12: set one input's `sync` flag in the text, leaving every other input's
+ * value (and the rest of the document) untouched.
+ *
+ * An unknown input is not a silent no-op: it returns the text unchanged plus a
+ * diagnostic, so the caller can surface the refusal instead of writing nothing
+ * and letting the user believe the synchroniser changed.
+ */
+export function setInputSync(text: string, name: string, sync: boolean): EditOutcome {
+  const outcome = parseDesignText(text);
+  if (outcome.model === null) {
+    return { text, diagnostics: outcome.diagnostics };
+  }
+  if (!outcome.model.inputs.some((i) => i.name === name)) {
+    return {
+      text,
+      diagnostics: [
+        ...outcome.diagnostics,
+        diag('error', 'ED1024', `no input named ${JSON.stringify(name)} to set sync on`),
+      ],
+    };
+  }
+
+  // Rewrite ONE input's `sync` token in place rather than re-serialising the
+  // `inputs:` block from the model.
+  //
+  // Re-serialising is what `setField` does, and it is right for a scalar like
+  // `encoding`. For a list it destroys everything inside the block that the
+  // model does not carry — which is every comment in it. Measured: toggling
+  // input `b` deleted `# MUST stay synchronised — metastability` from input
+  // `a`. That is a safety note about metastability, removed by editing an
+  // unrelated field, and the user is never told.
+  const { ranges } = parseToJs(text);
+  const block = ranges.get('inputs');
+  if (block === undefined) {
+    return { text, diagnostics: outcome.diagnostics };
+  }
+
+  const before = text.slice(0, block.valueStart);
+  const body = text.slice(block.valueStart, block.valueEnd);
+  const after = text.slice(block.valueEnd);
+  const lines = body.split('\n');
+
+  // The line that declares this input. `name:` may be flow (`- {name: a, …}`)
+  // or block (`- name: a`); both put it on the item's first line.
+  const declares = new RegExp(`(^|[{,\\s])name\\s*:\\s*["']?${escapeRegExp(name)}["']?(\\s*[,}]|\\s*$)`);
+  const index = lines.findIndex((line) => declares.test(stripComment(line)));
+  if (index === -1) {
+    return { text, diagnostics: outcome.diagnostics };
+  }
+
+  const value = sync ? 'true' : 'false';
+  const line = lines[index];
+  const code = stripComment(line);
+
+  if (/\bsync\s*:/.test(code)) {
+    // Replace the existing token, leaving any trailing comment untouched.
+    lines[index] = replaceOutsideComment(line, /(\bsync\s*:\s*)(true|false)/, `$1${value}`);
+  } else if (code.includes('{')) {
+    lines[index] = replaceOutsideComment(line, /\}/, `, sync: ${value}}`);
+  } else {
+    // Block style: `sync` may be on a later line of the same item, else insert
+    // one after the name with the item's own indent.
+    let target = -1;
+    for (let i = index + 1; i < lines.length; i += 1) {
+      if (/^\s*-/.test(lines[i])) break; // next item
+      if (/\bsync\s*:/.test(stripComment(lines[i]))) {
+        target = i;
+        break;
+      }
+    }
+    if (target !== -1) {
+      lines[target] = replaceOutsideComment(lines[target], /(\bsync\s*:\s*)(true|false)/, `$1${value}`);
+    } else {
+      const indent = (/^\s*-\s*/.exec(lines[index])?.[0] ?? '  - ').replace(/-/, ' ');
+      lines.splice(index + 1, 0, `${indent}sync: ${value}`);
+    }
+  }
+
+  const next = before + lines.join('\n') + after;
+  const reparsed = parseDesignText(next);
+  // A splice that produced something unparseable must not be handed back as an
+  // edit; the caller would write it to disk.
+  if (reparsed.model === null) {
+    return { text, diagnostics: reparsed.diagnostics };
+  }
+  return { text: next, diagnostics: reparsed.diagnostics };
+}
+
+/** The part of a YAML line before any `#` comment. */
+function stripComment(line: string): string {
+  const hash = line.indexOf('#');
+  return hash === -1 ? line : line.slice(0, hash);
+}
+
+/** Apply a replacement to the code part of a line, preserving its comment. */
+function replaceOutsideComment(line: string, pattern: RegExp, replacement: string): string {
+  const hash = line.indexOf('#');
+  if (hash === -1) return line.replace(pattern, replacement);
+  return line.slice(0, hash).replace(pattern, replacement) + line.slice(hash);
+}
+
 function constraintsToYaml(c: Constraints): Record<string, YValue> {
   const out: Record<string, YValue> = { vcc: c.vcc };
   if (c.maxFlops !== undefined) out.max_flops = c.maxFlops;

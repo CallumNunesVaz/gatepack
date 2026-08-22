@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fireEvent, render, waitFor, screen } from '@testing-library/react';
+import { act, fireEvent, render, waitFor, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ApiProvider } from '../bridge/context';
 import { ProjectProvider } from '../state/project';
@@ -594,6 +594,172 @@ describe('Schematic — clocked probe on a sequential design', () => {
   });
 });
 
+describe('Schematic — spec editing (§C12)', () => {
+  const COMMENTED_SPEC = `# the sequence detector
+name: xor2
+timing_model: synchronous
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+# the reset chain (§9.3)
+reset: {signal: rst_n, active: low, source: SUPERVISOR}
+encoding: one_hot
+inputs:
+  - {name: a, sync: false}
+  - {name: b, sync: false}
+outputs:
+  - {name: y}
+states: [S0]
+initial: S0
+transitions:
+  - {from: S0, to: S0, when: "1"}
+output_logic:
+  y: "a ^ b"
+`;
+
+  const GENERATED_NETLIST = {
+    modules: {
+      top: {
+        ports: {
+          a: { direction: 'input', bits: [0] },
+          b: { direction: 'input', bits: [1] },
+          y: { direction: 'output', bits: [4] },
+        },
+        netnames: {
+          a: { bits: [0] },
+          b: { bits: [1] },
+          $abc$133$new_n12_: { bits: [2] },
+          y: { bits: [4] },
+        },
+        cells: {
+          $g1: {
+            hide_name: 1,
+            type: 'NAND2',
+            port_directions: { A: 'input', B: 'input', Y: 'output' },
+            connections: { A: [0], B: [1], Y: [2] },
+          },
+          $g2: {
+            hide_name: 1,
+            type: 'NAND2',
+            port_directions: { A: 'input', B: 'input', Y: 'output' },
+            connections: { A: [2], B: [1], Y: [4] },
+          },
+        },
+      },
+    },
+  };
+
+  async function editView(fake: FakeGatepack) {
+    const view = await renderWithNetlist(fake);
+    await waitFor(() => expect(containerOf(view).querySelector('[data-gp-net]')).toBeTruthy());
+    await userEvent.click(screen.getByTestId('schematic-edit-toggle'));
+    return view;
+  }
+
+  function containerOf(view: ReturnType<typeof renderSchematic>) {
+    return view.container;
+  }
+
+  it('toggles a test point and preserves the user comments and unrelated formatting', async () => {
+    const fake = new FakeGatepack({ specText: COMMENTED_SPEC });
+    fake.setOk('mappedNetlist', TWO_GATE_NETLIST);
+    fake.setOk('packedNetlist', { packages: [] });
+    fake.setOk('analyse', analysis([]));
+    const { container } = await editView(fake);
+
+    fireEvent.click(container.querySelector('[data-gp-net="a"]') as Element);
+
+    await waitFor(() => {
+      expect(fake.specText).toContain('test_points:');
+    });
+    expect(fake.specText).toContain('net: a');
+    // Round-tripping through the model would have reformatted the file away —
+    // the comments and unrelated lines survive because the edit is a splice.
+    expect(fake.specText).toContain('# the sequence detector');
+    expect(fake.specText).toContain('# the reset chain (§9.3)');
+    expect(fake.specText.indexOf('name: xor2')).toBeLessThan(fake.specText.indexOf('test_points:'));
+  });
+
+  it('refuses a generated net name and leaves design.yaml untouched', async () => {
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setOk('mappedNetlist', GENERATED_NETLIST);
+    fake.setOk('packedNetlist', { packages: [] });
+    fake.setOk('analyse', analysis([]));
+    const { container } = await editView(fake);
+
+    const before = fake.specText;
+    fireEvent.click(container.querySelector('[data-gp-net="$abc$133$new_n12_"]') as Element);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('schematic-edit-refusal').textContent).toContain(
+        'cannot be recorded',
+      );
+    });
+    expect(fake.specText).toBe(before);
+    expect(fake.specText).not.toContain('test_points');
+  });
+
+  it('does nothing when the edit toggle is off — clicking a net inspects, never rewrites', async () => {
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setOk('mappedNetlist', TWO_GATE_NETLIST);
+    fake.setOk('packedNetlist', { packages: [] });
+    fake.setOk('analyse', analysis([]));
+    const { container } = await renderWithNetlist(fake);
+    await waitFor(() => expect(container.querySelector('[data-gp-net]')).toBeTruthy());
+
+    const before = fake.specText;
+    fireEvent.click(container.querySelector('[data-gp-net="a"]') as Element);
+
+    // Wait past the 400ms write debounce before concluding nothing happened.
+    // Asserting synchronously proves nothing: the write path is debounced, so
+    // an assertion taken immediately passes whether or not the click was
+    // treated as an edit. Verified by forcing edit mode on — the synchronous
+    // form still passed; this form fails.
+    await new Promise((r) => setTimeout(r, 700));
+    expect(fake.specText).toBe(before);
+    expect(fake.writes).toHaveLength(0);
+  });
+
+  it('toggles an input synchroniser from its port symbol', async () => {
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setOk('mappedNetlist', TWO_GATE_NETLIST);
+    fake.setOk('packedNetlist', { packages: [] });
+    fake.setOk('analyse', analysis([]));
+    const { container } = await editView(fake);
+
+    fireEvent.click(container.querySelector('[id="cell_a"]') as Element);
+
+    await waitFor(() => {
+      expect(fake.specText).toContain('name: a, sync: true');
+    });
+    expect(fake.specText).toContain('name: b, sync: false');
+  });
+
+  it('regroups a gate into a package and writes stable names, not instance names', async () => {
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setOk('mappedNetlist', TWO_GATE_NETLIST);
+    fake.setOk('packedNetlist', PACKED);
+    fake.setOk('analyse', analysis([]));
+    const { container } = await editView(fake);
+
+    await userEvent.click(screen.getByLabelText('packed netlist'));
+    await waitFor(() => {
+      expect(container.querySelector('[data-refdes="U2"]')).toBeTruthy();
+    });
+
+    fireEvent.mouseDown(container.querySelector('[id="cell_$g1"]') as Element);
+    fireEvent.mouseUp(container.querySelector('[data-refdes="U2"]') as Element);
+
+    await waitFor(() => {
+      expect(fake.specText).toContain('force_groups');
+    });
+    expect(fake.specText).toContain('NAND2__aaaa');
+    expect(fake.specText).toContain('NAND2__bbbb');
+    // The rendered SVG is keyed by ABC instance names; persisting one is the
+    // defect this path exists to prevent.
+    expect(fake.specText).not.toMatch(/force_groups[\s\S]*\$g1/);
+    expect(fake.specText).not.toContain('position');
+  });
+});
+
 describe('Schematic — flow and hover (Falstad cues)', () => {
   it('runs travelling dots on the high wires and stops when the layer is off', async () => {
     const fake = new FakeGatepack({ specText: XOR2_SPEC });
@@ -644,5 +810,62 @@ describe('Schematic — flow and hover (Falstad cues)', () => {
     // a=0, b=0 -> n1=1, y=1: two high nets, two low inputs, nothing unknown.
     expect(screen.getByTestId('schematic-readout').textContent).toContain('2 high');
     expect(screen.getByTestId('schematic-readout').textContent).toContain('0 unknown');
+  });
+});
+
+describe('Schematic — the sheet says when it no longer matches the spec', () => {
+  it('flags stale after an edit, stops drawing values, and offers a rebuild', async () => {
+    // The defect this pins: the view fetched `mappedNetlist()` once at mount and
+    // never again, with no staleness signal. Measured before the fix —
+    // mappedNetlist calls before=2 after=2 — so it kept drawing live 0/1 values
+    // for a design that no longer existed.
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setOk('mappedNetlist', TWO_GATE_NETLIST);
+    fake.setOk('packedNetlist', { packages: [] });
+    fake.setOk('analyse', analysis([]));
+    const { container } = await renderWithNetlist(fake);
+    await waitFor(() => expect(stamps(container, 'net_0').length).toBeGreaterThan(0));
+    expect(screen.queryByTestId('schematic-stale')).toBeNull();
+
+    // Any edit, from any view: toggling an input's sync is enough.
+    await act(async () => {
+      await userEvent.click(screen.getByTestId('schematic-edit-toggle'));
+    });
+    fireEvent.click(container.querySelector('[id="cell_a"]') as Element);
+
+    await waitFor(() => expect(screen.getByTestId('schematic-stale')).toBeTruthy());
+    // Values are withdrawn rather than recoloured: the netlist they were
+    // computed from no longer corresponds to the spec.
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-gp-value]')).toHaveLength(0);
+    });
+    expect(screen.getByTestId('schematic-rebuild')).toBeTruthy();
+  });
+
+  it('a rebuild refetches the netlist and clears the flag', async () => {
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setOk('mappedNetlist', TWO_GATE_NETLIST);
+    fake.setOk('packedNetlist', { packages: [] });
+    fake.setOk('analyse', analysis([]));
+    const { container } = await renderWithNetlist(fake);
+    await waitFor(() => expect(stamps(container, 'net_0').length).toBeGreaterThan(0));
+
+    await act(async () => {
+      await userEvent.click(screen.getByTestId('schematic-edit-toggle'));
+    });
+    fireEvent.click(container.querySelector('[id="cell_a"]') as Element);
+    await waitFor(() => expect(screen.getByTestId('schematic-stale')).toBeTruthy());
+
+    const before = fake.calls.filter((c) => c.command === 'mappedNetlist').length;
+    await act(async () => {
+      await userEvent.click(screen.getByTestId('schematic-rebuild'));
+    });
+
+    // The netlist is re-read only after the build, not instead of it: reading
+    // the same stale file again would only look fresher.
+    await waitFor(() => {
+      expect(fake.calls.filter((c) => c.command === 'mappedNetlist').length).toBeGreaterThan(before);
+    });
+    await waitFor(() => expect(screen.queryByTestId('schematic-stale')).toBeNull());
   });
 });

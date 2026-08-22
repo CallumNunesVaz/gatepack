@@ -34,7 +34,7 @@ import './views.css';
  * recomputes a value.
  */
 export function BomView() {
-  const { model, specText, setSpecText, revision } = useProject();
+  const { model, specText, editSpec, revision } = useProject();
   const api = useApi();
   const build = useRevisionedTask<BuildResult>(revision, (t) => api.build(t));
   const ctx = useLinkContext();
@@ -108,13 +108,30 @@ export function BomView() {
         return;
       }
 
-      const next = groupsToForceGroups(result.groups).map((group) =>
-        group.map((name) => stable[name] ?? name),
-      );
-      const { text } = setPackingForceGroups(specText, next);
-      setSpecText(text);
+      // The same rule, applied per cell rather than to the map as a whole. An
+      // empty map was already refused above; a *partial* one fell through here
+      // and `?? name` wrote the instance name for whichever cell was missing —
+      // the exact outcome the comment above says is not an option. Proven
+      // reachable with a map covering one of two gates.
+      const next: string[][] = [];
+      for (const group of groupsToForceGroups(result.groups)) {
+        const mapped: string[] = [];
+        for (const name of group) {
+          const stableName = stable[name];
+          if (stableName === undefined) {
+            setRefusal(
+              `${name} is not in this build's cell map, so it has no stable ` +
+                'name to record — rebuild before regrouping.',
+            );
+            return;
+          }
+          mapped.push(stableName);
+        }
+        next.push(mapped);
+      }
+      editSpec((current) => setPackingForceGroups(current, next).text);
     },
-    [groups, specText, setSpecText, build.state],
+    [groups, specText, editSpec, build.state],
   );
 
   const data = build.state.status === 'success' ? build.state.data : null;

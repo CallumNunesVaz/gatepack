@@ -1,10 +1,19 @@
-import { useCallback, useEffect, useState } from 'react';
-import Editor, { useMonaco, type Monaco } from '@monaco-editor/react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import Editor, { useMonaco, type Monaco, type OnMount } from '@monaco-editor/react';
 
 export interface MonacoEditorProps {
   value: string;
   onChange: (text: string) => void;
+  /**
+   * When set, reveal (scroll to + highlight) this 1-based line, without moving
+   * the cursor or stealing keyboard focus. `token` disambiguates two reveals of
+   * the same line (e.g. after an edit leaves the anchor on the same line).
+   */
+  reveal?: { line: number; token: number } | null;
 }
+
+type StandaloneEditor = Parameters<OnMount>[0];
+type MonacoApi = Parameters<OnMount>[1];
 
 const THEME_NAME = 'gatepack';
 
@@ -106,12 +115,50 @@ function defineTheme(monaco: Monaco): void {
  * The authoritative text editor. Text is the single source of truth for the
  * spec; every other view edits *through* it.
  */
-export function MonacoEditor({ value, onChange }: MonacoEditorProps) {
+export function MonacoEditor({ value, onChange, reveal }: MonacoEditorProps) {
   const monaco = useMonaco();
   // Bumped whenever the effective theme changes, to re-resolve the tokens.
   const [themeTick, setThemeTick] = useState(0);
+  const editorRef = useRef<StandaloneEditor | null>(null);
+  const monacoRef = useRef<MonacoApi | null>(null);
+  const revealDecorations = useRef<ReturnType<StandaloneEditor['createDecorationsCollection']> | null>(null);
+  const [editorReady, setEditorReady] = useState(false);
 
   const beforeMount = useCallback((instance: Monaco) => defineTheme(instance), []);
+
+  const onMount = useCallback<OnMount>((editor, instance) => {
+    editorRef.current = editor;
+    monacoRef.current = instance;
+    setEditorReady(true);
+  }, []);
+
+  // Reveal a line without stealing focus: `revealLineInCenter` scrolls and a
+  // whole-line decoration highlights, neither of which touches the cursor or
+  // the keyboard focus. `editorReady` is in the deps because `onMount` fires
+  // after the first render — a reveal requested on mount must apply once the
+  // editor actually exists.
+  useEffect(() => {
+    if (!editorReady || !editorRef.current || !monacoRef.current) return;
+    const editor = editorRef.current;
+    const instance = monacoRef.current;
+    if (!reveal) {
+      revealDecorations.current?.clear();
+      return;
+    }
+    const model = editor.getModel();
+    const maxLine = model ? model.getLineCount() : 1;
+    const line = Math.min(Math.max(1, reveal.line), maxLine);
+    editor.revealLineInCenter(line);
+    const decoration = {
+      range: new instance.Range(line, 1, line, 1),
+      options: { isWholeLine: true, className: 'spec-editor__reveal-line' },
+    };
+    if (!revealDecorations.current) {
+      revealDecorations.current = editor.createDecorationsCollection([decoration]);
+    } else {
+      revealDecorations.current.set([decoration]);
+    }
+  }, [editorReady, reveal?.line, reveal?.token]);
 
   // Follow both ways the theme can change: an explicit toggle (which sets
   // `data-theme` on <html>) and, when the user has made no explicit choice, the
@@ -144,6 +191,7 @@ export function MonacoEditor({ value, onChange }: MonacoEditorProps) {
       value={value}
       theme={THEME_NAME}
       beforeMount={beforeMount}
+      onMount={onMount}
       onChange={(next) => onChange(next ?? '')}
       options={{
         minimap: { enabled: false },

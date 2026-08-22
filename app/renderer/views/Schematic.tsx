@@ -35,6 +35,13 @@ import {
 } from './schematicDecorate';
 import { useLinkContext } from '../selection/useLinkContext';
 import { useHighlights, useSelection } from '../selection/bus';
+import { setInputSync, setTestPoints } from '../design/model';
+import {
+  applyEditAffordances,
+  regroupToPackage,
+  stableNamesFromPacked,
+  toggleTestPoint,
+} from './schematicEdit';
 import { Icon, Tooltip } from '../ui';
 import { IconButton, Spinner } from './kit';
 import { selectionSvgTargets } from './schematicSelection';
@@ -80,7 +87,7 @@ function clamp(value: number, min: number, max: number): number {
  * view-local colour.
  */
 export function Schematic() {
-  const { model } = useProject();
+  const { model, specText, editSpec, revision } = useProject();
   const api = useApi();
   const ctx = useLinkContext();
   const highlights = useHighlights(ctx);
@@ -111,11 +118,34 @@ export function Schematic() {
 
   const [zoom, setZoom] = useState(1);
 
+  /* --- spec editing (§C12 input surface) -------------------------------- */
+  const [editMode, setEditMode] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const [dragSource, setDragSource] = useState<string | null>(null);
+
   /* --- signal probe (§24.2) ------------------------------------------- */
   const [probe, setProbe] = useState<Record<string, Bit>>({});
   const [flops, setFlops] = useState<FlopState>({});
   const [running, setRunning] = useState(false);
   const [hover, setHover] = useState<{ net: string; value: string } | null>(null);
+
+  /* --- staleness (§16.1) ------------------------------------------------
+   * The sheet is built from `build/mapped.json`, an artefact on disk. Editing
+   * the spec — from this view or any other — does not rebuild it, so what is
+   * drawn can stop matching the design. Every other expensive view is
+   * revisioned for exactly this reason; this one was not, and it now draws
+   * live 0/1 values, so a stale sheet showed confidently coloured values for a
+   * design that no longer existed.
+   *
+   * Refetching alone would not fix it: `mappedNetlist()` re-reads the same
+   * stale file and only looks fresher. So the honest move is to say the sheet
+   * is out of date, stop claiming measured values, and offer the rebuild —
+   * which stays the user's call, as it is in every other view.
+   */
+  const [builtAt, setBuiltAt] = useState<number | null>(null);
+  const [netlistVersion, setNetlistVersion] = useState(0);
+  const [rebuilding, setRebuilding] = useState(false);
+  const stale = builtAt !== null && builtAt !== revision;
 
   /* --- artefact loading ------------------------------------------------ */
 
@@ -124,6 +154,7 @@ export function Schematic() {
     setError(null);
     api.mappedNetlist().then((env) => {
       if (cancelled) return;
+      setBuiltAt(revision);
       if (!env.ok) {
         // A failed netlist fetch must be reported, never shown as a perpetual
         // "laying out the netlist…" spinner (§15: report the state you have).
@@ -135,7 +166,8 @@ export function Schematic() {
     return () => {
       cancelled = true;
     };
-  }, [api]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api, netlistVersion]);
 
   useEffect(() => {
     let cancelled = false;
@@ -148,7 +180,7 @@ export function Schematic() {
     return () => {
       cancelled = true;
     };
-  }, [api]);
+  }, [api, netlistVersion]);
 
   useEffect(() => {
     let cancelled = false;
@@ -161,7 +193,7 @@ export function Schematic() {
     return () => {
       cancelled = true;
     };
-  }, [api]);
+  }, [api, netlistVersion]);
 
   /**
    * The netlist netlistsvg is actually given: the core's `mapped.json` plus the
@@ -201,6 +233,11 @@ export function Schematic() {
   const parsed: ParsedNetlist | null = useMemo(
     () => (prepared ? parseWriteJson(prepared.netlist) : null),
     [prepared],
+  );
+
+  const cellNames = useMemo(
+    () => new Set(parsed ? parsed.cells.map((c) => c.name) : []),
+    [parsed],
   );
 
   const clockSignal = model?.clock?.signal ?? null;
@@ -302,14 +339,17 @@ export function Schematic() {
   useLayoutEffect(() => {
     const container = canvasRef.current;
     if (!container || !svg) return;
-    if (!showValues || decoration === null) {
+    // A value drawn on a stale sheet is a measurement of a netlist that no
+    // longer corresponds to the spec. Stop stamping rather than colour it
+    // confidently; the banner says why.
+    if (!showValues || stale || decoration === null) {
       clearNetValues(container);
       return;
     }
     applyNetValues(container, decoration);
     if (showFlow) applyFlowDots(container);
     else clearFlowDots(container);
-  }, [svg, showValues, showFlow, decoration]);
+  }, [svg, showValues, showFlow, decoration, stale]);
 
   // §15.2 cross-highlight: mark the rendered cells/nets the current selection
   // implicates, using the selection tokens (`--gp-select-*`).
@@ -325,6 +365,37 @@ export function Schematic() {
       container.querySelectorAll(`[class~="${cls}"]`).forEach((el) => el.classList.add('gp-sel'));
     }
   }, [svg, netlist, highlights]);
+
+  // §C12 edit affordances: when editing, stamp each wire and input port with a
+  // `title` naming the field and the value a click will write, and mark them so
+  // the CSS can show an edit cursor. Off, every stamp is removed.
+  useLayoutEffect(() => {
+    const container = canvasRef.current;
+    if (!container || !svg) return;
+    applyEditAffordances(container, {
+      active: editMode,
+      testPoints: model ? model.testPoints.map((t) => t.net) : [],
+      inputs: model ? model.inputs.map((i) => ({ name: i.name, sync: i.sync })) : [],
+      gates: cellNames,
+      showPacked,
+    });
+  }, [svg, editMode, model, cellNames, showPacked]);
+
+  const rebuild = useCallback(() => {
+    setRebuilding(true);
+    setError(null);
+    api
+      .build()
+      .then((env) => {
+        if (!env.ok) {
+          setError(env.error.message);
+          return;
+        }
+        // Only now is the artefact on disk newer than the edit, so refetch.
+        setNetlistVersion((v) => v + 1);
+      })
+      .finally(() => setRebuilding(false));
+  }, [api]);
 
   /* --- probe controls --------------------------------------------------- */
 
@@ -402,8 +473,99 @@ export function Schematic() {
     if (canvasRef.current) highlightNet(canvasRef.current, null);
   };
 
+  /* --- spec edits (§C12): test points, input sync, regroup -------------- */
+
+  const packingCells = useMemo(
+    () => (parsed ? parsed.cells.map((c) => ({ name: c.name, func: c.type })) : []),
+    [parsed],
+  );
+
+  const forceGroups = model?.packing.forceGroups ?? [];
+
+  const stableNames = useMemo(
+    () => (packed ? stableNamesFromPacked(packed.packages) : {}),
+    [packed],
+  );
+
+  const toggleTestPointAt = useCallback(
+    (net: string) => {
+      if (!model) return;
+      const result = toggleTestPoint(model.testPoints.map((t) => t.net), net);
+      if (result.refusal !== null || result.nets === null) {
+        setRefusal(result.refusal);
+        return;
+      }
+      setRefusal(null);
+      // Recompute from the live text, not the one this render closed over: the
+      // inspector sits beside this view and edits the same document, and two
+      // edits from one snapshot lose the earlier one.
+      const nets = result.nets;
+      editSpec((current) => setTestPoints(current, nets).text);
+    },
+    [model, specText, editSpec],
+  );
+
+  const toggleInputSyncAt = useCallback(
+    (name: string) => {
+      if (!model) return;
+      const input = model.inputs.find((i) => i.name === name);
+      if (!input) return;
+      setRefusal(null);
+      const next = !input.sync;
+      editSpec((current) => setInputSync(current, name, next).text);
+    },
+    [model, editSpec],
+  );
+
+  const regroupInto = useCallback(
+    (sourceInstance: string, targetInstanceCells: string[]) => {
+      const result = regroupToPackage(
+        specText,
+        packingCells,
+        forceGroups,
+        stableNames,
+        sourceInstance,
+        targetInstanceCells,
+      );
+      if (result.text === null || result.refusal !== null) {
+        setRefusal(result.refusal);
+        return;
+      }
+      setRefusal(null);
+      // The regroup decision is computed from `specText` above; re-run it
+      // against the live text so a concurrent edit is not discarded.
+      editSpec((current) => {
+        const fresh = regroupToPackage(
+          current, packingCells, forceGroups, stableNames, sourceInstance, targetInstanceCells,
+        );
+        return fresh.text;
+      });
+    },
+    [specText, packingCells, forceGroups, stableNames, editSpec],
+  );
+
   const onCanvasClick = (event: React.MouseEvent<HTMLDivElement>) => {
     const target = event.target as Element | null;
+    if (editMode) {
+      // In edit mode a click on a wire is a test-point edit and a click on an
+      // input port is a synchroniser edit; nothing else happens, so a click
+      // meant to *inspect* can never rewrite the spec.
+      const net = target?.getAttribute?.('data-gp-net') ?? null;
+      if (net !== null) {
+        toggleTestPointAt(net);
+        return;
+      }
+      const group = target?.closest?.('g[id^="cell_"]') ?? null;
+      const id = group?.getAttribute('id') ?? null;
+      if (id !== null) {
+        const name = id.slice('cell_'.length);
+        if (model && model.inputs.some((i) => i.name === name)) {
+          toggleInputSyncAt(name);
+          return;
+        }
+      }
+      return;
+    }
     const net = target?.getAttribute?.('data-gp-net') ?? null;
     if (net !== null) {
       setSelection({ kind: 'net', name: net });
@@ -412,6 +574,32 @@ export function Schematic() {
     const group = target?.closest?.('g[id^="cell_"]') ?? null;
     const id = group?.getAttribute('id') ?? null;
     if (id !== null) setSelection({ kind: 'cell', name: id.slice('cell_'.length) });
+  };
+
+  const onCanvasMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!editMode || !showPacked) return;
+    const target = event.target as Element | null;
+    const group = target?.closest?.('g[id^="cell_"]') ?? null;
+    const id = group?.getAttribute('id') ?? null;
+    if (id === null) return;
+    const name = id.slice('cell_'.length);
+    if (cellNames.has(name)) {
+      setDragSource(name);
+      setRefusal(null);
+    }
+  };
+
+  const onCanvasMouseUp = (event: React.MouseEvent<HTMLDivElement>) => {
+    const source = dragSource;
+    setDragSource(null);
+    if (!source) return;
+    const target = event.target as Element | null;
+    const pkgEl = target?.closest?.('[data-refdes]') ?? null;
+    const refdes = pkgEl?.getAttribute('data-refdes') ?? null;
+    if (refdes === null) return;
+    const pkg = packed?.packages.find((p) => p.refdes === refdes);
+    if (!pkg) return;
+    regroupInto(source, pkg.instanceCells);
   };
 
   /* --- derived overlays ------------------------------------------------- */
@@ -491,6 +679,28 @@ export function Schematic() {
             onClick={() => setZoom(1)}
             tooltip="Reset zoom to 100%"
           />
+          <Tooltip
+            content={
+              editMode
+                ? 'stop editing the spec through the schematic'
+                : 'edit the spec (test points, input synchronisers, packing) by clicking the schematic'
+            }
+          >
+            <button
+              type="button"
+              className="view-btn"
+              aria-pressed={editMode}
+              data-testid="schematic-edit-toggle"
+              onClick={() => {
+                setEditMode((e) => !e);
+                setRefusal(null);
+                setDragSource(null);
+              }}
+            >
+              <Icon name="provenance" decorative />
+              edit
+            </button>
+          </Tooltip>
         </div>
       </header>
 
@@ -638,6 +848,26 @@ export function Schematic() {
         </div>
       ) : null}
 
+      {stale ? (
+        <div className="stale-note" role="status" data-testid="schematic-stale">
+          <Icon name="warning" decorative />
+          <span>
+            the spec changed since this sheet was built — it shows the previous
+            design{showValues ? ', so signal values are not drawn' : ''}
+          </span>
+          <button
+            type="button"
+            className="view-btn"
+            onClick={rebuild}
+            disabled={rebuilding}
+            data-testid="schematic-rebuild"
+          >
+            <Icon name="build" decorative />
+            {rebuilding ? 'Rebuilding…' : 'Rebuild'}
+          </button>
+        </div>
+      ) : null}
+
       {unresolvedTypes.length ? (
         <div className="stale-note" data-testid="schematic-unresolved">
           drawn without pins — no pin table for {unresolvedTypes.join(', ')}
@@ -650,6 +880,24 @@ export function Schematic() {
           <span>
             selection: nets {highlights.nets.join(', ') || '(none)'} · cells {highlights.cells.join(', ') || '(none)'}
           </span>
+        </div>
+      ) : null}
+
+      {editMode ? (
+        <div className="info-note" data-testid="schematic-edit-hint">
+          <Icon name="provenance" decorative />
+          <span>
+            {dragSource
+              ? `moving ${dragSource} — click the package to regroup it into`
+              : 'edit: click a wire to toggle its test point; click an input port to toggle its synchroniser; drag a gate into a package to regroup'}
+          </span>
+        </div>
+      ) : null}
+
+      {refusal ? (
+        <div className="error-note" role="alert" data-testid="schematic-edit-refusal">
+          <Icon name="error" decorative />
+          <span>{refusal}</span>
         </div>
       ) : null}
 
@@ -678,7 +926,9 @@ export function Schematic() {
         className="schematic__canvas schematic__canvas--checker"
         data-testid="schematic-svg"
         data-flow={showValues && showFlow ? 'on' : 'off'}
+        data-edit={editMode ? 'on' : 'off'}
         ref={scrollRef}
+        onMouseUp={onCanvasMouseUp}
       >
         {svg ? (
           <div
@@ -691,6 +941,7 @@ export function Schematic() {
               style={showMapped ? undefined : { display: 'none' }}
               onMouseOver={onCanvasHover}
               onMouseLeave={onCanvasLeave}
+              onMouseDown={onCanvasMouseDown}
               onClick={onCanvasClick}
               dangerouslySetInnerHTML={{ __html: svg }}
             />
@@ -701,7 +952,12 @@ export function Schematic() {
                 width={svgSize.width}
                 height={svgSize.height}
                 viewBox={`0 0 ${svgSize.width} ${svgSize.height}`}
-                style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  pointerEvents: dragSource ? 'auto' : 'none',
+                }}
               >
                 {showPacked && packageLayouts
                   ? packageLayouts.map((pkg) => {

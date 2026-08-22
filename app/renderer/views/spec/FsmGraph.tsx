@@ -152,7 +152,7 @@ export function nearestSides(
  * highlighting nothing.
  */
 export function FsmGraph() {
-  const { specText, model, setSpecText, project } = useProject();
+  const { specText, model, editSpec, project } = useProject();
   const { selection, setSelection } = useSelection();
   const ctx = useLinkContext();
   const highlights = useHighlights(ctx);
@@ -293,7 +293,7 @@ export function FsmGraph() {
     const { text } = applyTopLevelEdit(specText, 'transitions', () =>
       transitions.map((t) => ({ from: t.from, to: t.to, when: t.when })),
     );
-    setSpecText(text);
+    editSpec(() => text);
   };
 
   const updateEdge = (index: number, patch: Partial<Transition>) => {
@@ -303,7 +303,7 @@ export function FsmGraph() {
   const addState = () => {
     const name = `S${model.states.length}`;
     const { text } = applyTopLevelEdit(specText, 'states', () => [...model!.states, name]);
-    setSpecText(text);
+    editSpec(() => text);
   };
 
   const addTransition = () => {
@@ -388,7 +388,7 @@ export function FsmGraph() {
               const newName = e.target.value.trim();
               if (newName && newName !== selectedState) {
                 const { text } = renameState(specText, selectedState, newName);
-                setSpecText(text);
+                editSpec(() => text);
               }
             }}
           />

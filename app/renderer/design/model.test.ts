@@ -3,6 +3,8 @@ import {
   applyTopLevelEdit,
   parseDesignText,
   renameState,
+  setInputSync,
+  setTestPoints,
   type DesignModel,
   type Transition,
 } from './model';
@@ -144,5 +146,135 @@ describe('renameState', () => {
 describe('model round-trip helpers', () => {
   it('applyTopLevelEdit with an unknown key throws', () => {
     expect(() => applyTopLevelEdit(XOR2, 'nope', (v: YValue) => v)).toThrow();
+  });
+});
+
+describe('setTestPoints — a surgical splice, not a round-trip', () => {
+  const COMMENTED = `# the sequence detector
+name: seq
+timing_model: synchronous
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+# the reset chain (§9.3)
+reset: {signal: rst_n, active: low, source: SUPERVISOR}
+encoding: one_hot
+inputs:
+  - {name: a, sync: false}
+  - {name: b, sync: false}
+outputs:
+  - {name: y}
+states: [S0]
+initial: S0
+transitions:
+  - {from: S0, to: S0, when: "1"}
+output_logic:
+  y: "a ^ b"
+`;
+
+  it('appends test_points when absent and leaves every comment and unrelated line alone', () => {
+    const { text } = setTestPoints(COMMENTED, ['match']);
+    expect(text).toContain('test_points:');
+    expect(text).toContain('net: match');
+    // The user's comments and unrelated formatting survive: only the one block
+    // was added, so a round-trip through `modelToYaml` (which drops comments and
+    // re-sorts keys) would have failed this.
+    expect(text).toContain('# the sequence detector');
+    expect(text).toContain('# the reset chain (§9.3)');
+    expect(text.indexOf('name: seq')).toBeLessThan(text.indexOf('test_points:'));
+    expect(parseDesignText(text).diagnostics).toEqual([]);
+  });
+
+  it('replaces the existing test_points block in place', () => {
+    const withTp = `${COMMENTED}test_points:\n  - {net: old}\n`;
+    const { text } = setTestPoints(withTp, ['a', 'b']);
+    expect(text).toContain('net: a');
+    expect(text).toContain('net: b');
+    expect(text).not.toContain('net: old');
+    expect(text).toContain('# the reset chain (§9.3)');
+  });
+});
+
+describe('setInputSync — toggle one synchroniser', () => {
+  it('flips one input and leaves the other untouched', () => {
+    const { text } = setInputSync(XOR2, 'a', true);
+    const { model } = parseDesignText(text);
+    expect(model).not.toBeNull();
+    const inputs = (model as DesignModel).inputs;
+    expect(inputs.find((i) => i.name === 'a')?.sync).toBe(true);
+    expect(inputs.find((i) => i.name === 'b')?.sync).toBe(false);
+    expect(text).toContain('name: a, sync: true');
+    expect(text).toContain('name: b, sync: false');
+  });
+
+  it('refuses an unknown input with a diagnostic and unchanged text', () => {
+    const { text, diagnostics } = setInputSync(XOR2, 'nope', true);
+    expect(text).toBe(XOR2);
+    expect(diagnostics.some((d) => d.code === 'ED1024')).toBe(true);
+  });
+});
+
+/**
+ * These three pin data loss, not formatting taste. Each was reachable and each
+ * silently deleted something the user wrote, with no diagnostic.
+ */
+describe('surgical edits do not destroy the block they edit', () => {
+  const ANNOTATED = [
+    '# Traffic controller — hand-tuned, do not reformat.',
+    'name: probe',
+    'timing_model: synchronous',
+    'clock: {signal: clk, freq_hz: 1000, source: OSC}',
+    'reset: {signal: rst_n, active: low, source: SUPERVISOR}',
+    'encoding: one_hot',
+    '',
+    'inputs:',
+    "  # the operator's push-button, debounced in hardware",
+    '  - {name: a, sync: true}    # MUST stay synchronised — metastability',
+    '  - {name: b, sync: false}',
+    '',
+    'outputs:',
+    '  - {name: y}',
+    'states: [S0]',
+    'initial: S0',
+    'transitions:',
+    '  - {from: S0, to: S0, when: "1"}',
+    'output_logic:',
+    '  y: "a"',
+    'test_points:',
+    '  # probe pad next to U3, reachable with a scope hook',
+    '  - {net: y}',
+    '',
+  ].join('\n');
+
+  it('setInputSync keeps the comment on a DIFFERENT input', () => {
+    // The failure this replaces: toggling `b` re-serialised the whole `inputs:`
+    // block from the model and deleted a metastability note attached to `a`.
+    const out = setInputSync(ANNOTATED, 'b', true);
+    expect(out.text).toContain('# MUST stay synchronised');
+    expect(out.text).toContain("# the operator's push-button");
+    expect(out.text).toContain('- {name: b, sync: true}');
+    // and `a` is untouched
+    expect(out.text).toContain('- {name: a, sync: true}');
+  });
+
+  it('setInputSync changes exactly one line', () => {
+    const out = setInputSync(ANNOTATED, 'b', true);
+    const before = ANNOTATED.split('\n');
+    const after = out.text.split('\n');
+    expect(after).toHaveLength(before.length);
+    const changed = before.filter((l, i) => l !== after[i]);
+    expect(changed).toEqual(['  - {name: b, sync: false}']);
+  });
+
+  it('setTestPoints keeps comments in an EXISTING block', () => {
+    const out = setTestPoints(ANNOTATED, ['y', 'a']);
+    expect(out.text).toContain('# probe pad next to U3');
+    expect(out.text).toContain('{net: a}');
+    expect(out.text).toContain('{net: y}');
+  });
+
+  it('setTestPoints removes an entry without touching the rest', () => {
+    const out = setTestPoints(ANNOTATED, []);
+    expect(out.text).not.toContain('{net: y}');
+    expect(out.text).toContain('# probe pad next to U3');
+    expect(out.text).toContain('# MUST stay synchronised');
   });
 });
