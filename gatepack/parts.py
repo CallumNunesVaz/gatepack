@@ -20,7 +20,7 @@ import io
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic import ValidationError
@@ -125,6 +125,12 @@ class Part(BaseModel):
     #: :data:`verification`: ``gates_per_pkg`` decides which gates share a die
     #: and how many packages the board needs, so it is gated on its own.
     packaging_verification: Verification = Verification.PLACEHOLDER
+    #: The part's footprint pin map (``gatepack.pinmap.PartPinMap``), attached
+    #: by :func:`gatepack.refs.load_parts_cited` when a ``<name>.pins.csv`` sits
+    #: beside the library.  ``None`` means "no pin map" — the emitters fall back
+    #: to positional numbering.  Typed loosely here to avoid a parts<->pinmap
+    #: import cycle; the concrete type is ``gatepack.pinmap.PartPinMap``.
+    pinmap: Any = None
 
     @field_validator("tier")
     @classmethod

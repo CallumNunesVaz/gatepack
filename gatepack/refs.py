@@ -32,6 +32,7 @@ from gatepack.parts import (
     mark_verification,
     load_parts,
 )
+from gatepack.pinmap import load_pinmaps_cited
 
 
 def find_refs_file(csv_path: str | Path) -> Path:
@@ -108,7 +109,23 @@ def load_parts_cited(csv_path: str | Path) -> list[Part]:
     refs_path = find_refs_file(csv_path)
     mark_verification(parts, parse_refs(refs_path))
     mark_packaging_verification(parts, parse_refs_packaging(refs_path))
+    _attach_pinmaps(parts, csv_path)
     return parts
+
+
+def _attach_pinmaps(parts: list[Part], csv_path: str | Path) -> None:
+    """Attach each part's pin map (in place), when a ``<name>.pins.csv`` exists.
+
+    The pin map is optional: a library with no pin map keeps ``part.pinmap is
+    None``, so every emitter falls back to positional numbering exactly as
+    before.  The pin map is keyed on ``(part_suffix, package)``; a part whose
+    suffix has no pin-map entry keeps ``None``.
+    """
+    pinmaps = load_pinmaps_cited(csv_path)
+    if not pinmaps:
+        return
+    for part in parts:
+        part.pinmap = pinmaps.get((part.part_suffix, part.package))
 
 
 def placeholder_summary(csv_path: str | Path) -> dict:
