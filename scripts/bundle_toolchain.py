@@ -87,17 +87,44 @@ GCLIBC_CORE = frozenset(
 )
 
 
-def host_is_linux() -> bool:
-    """True when this script is running on Linux.
+def refusal_reason(platform: str | None = None) -> str | None:
+    """The refusal for a platform that cannot run the Linux ELF bundle, or None.
 
-    This script bundles **Linux x86-64 ELF** binaries (yosys, iverilog, vvp,
-    z3, berkeley-abc) extracted from the Linux ``gatepack-toolchain:m6`` image,
-    plus their non-glibc shared libraries.  None of that is runnable on Windows:
-    a Windows app must instead use OSS CAD Suite or WSL2, which ``gatepack
-    doctor`` describes.  The bundle is refused on a non-Linux host so nobody
-    ships inert ELF binaries in a Windows installer.
+    Pure and injectable so a test can pin the darwin/win32 refusal on a Linux
+    host without ever running on those platforms (the same pattern
+    ``scripts/bundle_core.py`` uses for cross-compile refusal).  ``platform``
+    defaults to ``sys.platform``; Linux returns ``None`` (the bundle is
+    permitted), everything else returns an actionable message naming what that
+    platform must do instead — never a silent Linux-only assumption.
     """
-    return sys.platform.startswith("linux")
+    current = platform if platform is not None else sys.platform
+    if current.startswith("linux"):
+        return None
+
+    base = (
+        "bundle_toolchain.py bundles Linux x86-64 ELF binaries (yosys, iverilog, "
+        "vvp, z3, berkeley-abc) and their non-glibc shared libraries, extracted "
+        "from the Linux gatepack-toolchain:m6 image. None of them is runnable "
+        "on this platform, so refusing rather than shipping inert binaries. "
+    )
+    if current == "darwin":
+        return base + (
+            "A macOS package ships no bundled toolchain: install yosys, iverilog "
+            "and z3 via Homebrew, and SymbiYosys via OSS CAD Suite "
+            "(YosysHQ/oss-cad-suite-build). `gatepack doctor` will then find them "
+            "on PATH and report any still missing honestly. See docs/MACOS.md."
+        )
+    if current == "win32":
+        return base + (
+            "On Windows, install OSS CAD Suite (YosysHQ/oss-cad-suite-build) or "
+            "run gatepack under WSL2 instead — `gatepack doctor` reports a missing "
+            "tool honestly and names where a Windows user gets each one. A Windows "
+            "package ships no bundled toolchain. See docs/WINDOWS.md."
+        )
+    return base + (
+        f"unsupported platform {current!r}: build the toolchain bundle on Linux "
+        "(or run the bundle in the pinned gatepack-toolchain:m6 image)."
+    )
 
 
 @dataclass(frozen=True)
@@ -657,17 +684,10 @@ def smoke_test(bin_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def bundle(verbose: bool = False) -> Path:
-    if not host_is_linux():
-        raise RuntimeError(
-            "bundle_toolchain.py bundles Linux x86-64 ELF binaries (yosys, "
-            "iverilog, vvp, z3, berkeley-abc) from the Linux gatepack-toolchain:m6 "
-            "image; it cannot run on a non-Linux host. On Windows, install OSS "
-            "CAD Suite (YosysHQ/oss-cad-suite-build) or run gatepack under WSL2 "
-            "instead — `gatepack doctor` reports a missing tool honestly and "
-            "names where a Windows user gets each one. A Windows package ships "
-            "no bundled toolchain."
-        )
+def bundle(verbose: bool = False, platform: str | None = None) -> Path:
+    reason = refusal_reason(platform)
+    if reason is not None:
+        raise RuntimeError(reason)
     if not image_available():
         raise RuntimeError(
             f"toolchain image {IMAGE} is not available; build it with "
@@ -734,10 +754,16 @@ def main(argv: list[str] | None = None) -> int:
         "--output", default=str(OUTPUT), help="output directory (default: %(default)s)"
     )
     parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument(
+        "--platform",
+        default=None,
+        help="target platform (default: this host). The bundle is Linux ELF only, "
+        "so any non-Linux value is refused with a clear, actionable error.",
+    )
     args = parser.parse_args(argv)
 
     try:
-        manifest = bundle(verbose=args.verbose)
+        manifest = bundle(verbose=args.verbose, platform=args.platform)
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

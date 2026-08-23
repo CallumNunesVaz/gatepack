@@ -8,7 +8,7 @@ sby, espresso via the not-yet-built async backend).
 
 from __future__ import annotations
 
-from gatepack.doctor import TOOLS, ToolSpec, is_windows, run_doctor
+from gatepack.doctor import TOOLS, ToolSpec, is_darwin, is_windows, run_doctor
 
 
 def test_tool_table_is_the_pinned_order():
@@ -129,3 +129,42 @@ def test_windows_guidance_names_a_real_distribution(monkeypatch):
     # a tool that is still "missing" on Windows says so, and says where to get it
     assert by_name["yosys"]["found"] is False
     assert by_name["yosys"]["purpose"].startswith("logic synthesis")
+
+
+def test_is_darwin_is_injectable():
+    assert is_darwin("darwin") is True
+    assert is_darwin("linux") is False
+    assert is_darwin("win32") is False
+    import sys
+
+    assert is_darwin() is (sys.platform == "darwin")
+
+
+def test_darwin_guidance_names_a_real_route(monkeypatch):
+    # The macOS code path, exercised by injection the way the Windows tests are.
+    monkeypatch.setattr("gatepack.doctor._probe_version", lambda name, args: None)
+    payload = run_doctor(platform="darwin")
+    # the JSON envelope shape is byte-identical to the Linux/Windows report.
+    assert set(payload) == {"version", "tools", "resources", "allToolsPresent"}
+    by_name = {t["name"]: t for t in payload["tools"]}
+    for tool in payload["tools"]:
+        assert set(tool) == {"name", "found", "purpose", "direct", "path", "version", "source"}
+    # every EDA tool points a macOS user at a real route, and the base purpose
+    # is preserved, never replaced.
+    assert "Homebrew" in by_name["yosys"]["purpose"]
+    assert "OSS CAD Suite" in by_name["sby"]["purpose"]
+    assert "Homebrew" in by_name["iverilog"]["purpose"]
+    assert "Icarus Verilog" in by_name["vvp"]["purpose"]
+    assert "Homebrew" in by_name["z3"]["purpose"]
+    assert "macOS ships bash" in by_name["bash"]["purpose"]
+    assert by_name["yosys"]["purpose"].startswith("logic synthesis")
+    assert "On macOS" in by_name["yosys"]["purpose"]
+
+
+def test_darwin_guidance_absent_on_linux(monkeypatch):
+    # The host is not macOS, so the default report carries no macOS wording.
+    monkeypatch.setattr("gatepack.doctor._probe_version", lambda name, args: None)
+    payload = run_doctor()
+    by_name = {t["name"]: t for t in payload["tools"]}
+    assert "On macOS" not in by_name["yosys"]["purpose"]
+    assert "Homebrew" not in by_name["yosys"]["purpose"]

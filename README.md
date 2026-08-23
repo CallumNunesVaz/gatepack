@@ -164,6 +164,16 @@ start.ps1 cli ARGS...  # the command-line core
 start.ps1              # the desktop app (after `cd app` + `npm ci`)
 ```
 
+## macOS
+
+The core is pure Python and runs on macOS; the desktop installer and the native
+toolchain are the parts that differ. See **`docs/MACOS.md`** for
+install/run instructions — yosys, iverilog and z3 come from Homebrew, SymbiYosys
+comes from OSS CAD Suite — and for what has never been run on a Mac. `gatepack
+doctor` reports each tool's purpose plus its macOS install route, and
+`scripts/bundle_toolchain.py` refuses on macOS rather than shipping inert Linux
+binaries.
+
 ## Commands
 
 | | |
