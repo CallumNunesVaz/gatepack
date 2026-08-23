@@ -283,6 +283,15 @@ def _set_value_flips(lib: str, sim: str) -> tuple[str, str]:
     encoding, observable through the reset phase.  The mirror of
     ``reset_value_flips``, whose ``clear`` -> ``preset`` swap is reversed here
     as ``preset`` -> ``clear`` on the set pin; the reset path is untouched.
+
+    The Liberty side folds both pins into the **one** ``clear`` expression
+    rather than emitting a second ``clear`` line.  Two ``clear`` lines in one
+    ``ff`` group is not valid Liberty; measured 2026-08-23, Yosys 0.23 imports
+    it without complaint, which is worse than rejecting it — the mutation would
+    then rest on whichever line the parser happened to keep, and if it kept the
+    second one the mutation would be corrupting the *reset* path while claiming
+    to corrupt the set path.  ``clear_preset_var*`` go with the ``preset`` they
+    describe.
     """
     return (
         lib.replace(
@@ -290,10 +299,7 @@ def _set_value_flips(lib: str, sim: str) -> tuple[str, str]:
             '    ff (IQ, IQN) {\n'
             '      next_state : "D";\n'
             '      clocked_on : "CK";\n'
-            '      clear : "!RST_N";\n'
-            '      clear : "!SET_N";\n'
-            '      clear_preset_var1 : "L";\n'
-            '      clear_preset_var2 : "H";\n'
+            '      clear : "(!RST_N) | (!SET_N)";\n'
             '    }',
         ),
         sim.replace(

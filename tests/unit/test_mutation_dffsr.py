@@ -73,10 +73,11 @@ def test_set_becomes_synchronous_mutation() -> None:
 def test_set_value_flips_mutation() -> None:
     lib, sim = _artefacts()
     lib2, sim2 = _mutation("set_value_flips").mutate(lib, sim)
-    # DFF_SR's preset becomes a clear (set now drives 0); reset stays a clear.
+    # DFF_SR's preset becomes a clear (set now drives 0), folded into the one
+    # `clear` expression the ff group is allowed — see the note below on why a
+    # second `clear` line is not an option.
     assert 'preset : "!SET_N";' not in lib2
-    assert 'clear : "!SET_N";' in lib2
-    assert 'clear : "!RST_N";' in lib2
+    assert 'clear : "(!RST_N) | (!SET_N)";' in lib2
     # the set writes 0 instead of 1; the async sensitivity list is unchanged.
     assert "else if (!SET_N) Q <= 1'b0;" in sim2
     assert "always @(posedge CK or negedge RST_N or negedge SET_N) begin" in sim2
@@ -140,3 +141,41 @@ def test_set_family_mutations_applicable_with_dff_sr() -> None:
     for name in _SET_FAMILY:
         m = _mutation(name)
         assert mutation.is_applicable(m, dff_sr), name
+
+
+# ---------------------------------------------------------------------------
+# Reviewed addition.  The first form of `set_value_flips` emitted a second
+# `clear` line into the DFF_SR ff group, which is not valid Liberty.  Measured
+# 2026-08-23: Yosys 0.23 imports it *without complaint* ("Imported 11 cell
+# types", exit 0), which is worse than rejecting it — the mutation would then
+# rest on whichever of the two lines the parser happened to keep, and if it kept
+# the second the mutation would be corrupting the RESET path while its name,
+# description and verdict all said it was corrupting the SET path.
+#
+# A mutation whose meaning depends on undefined parser behaviour is a check that
+# does not know what it is checking.
+# ---------------------------------------------------------------------------
+
+
+def _dff_sr_ff_group(lib: str) -> str:
+    start = lib.index("cell (DFF_SR)")
+    ff = lib.index("ff (IQ, IQN)", start)
+    return lib[ff : lib.index("}", ff) + 1]
+
+
+def test_set_value_flips_emits_valid_liberty_with_one_clear():
+    lib, sim = _artefacts()
+    mutated, _ = _mutation("set_value_flips").mutate(lib, sim)
+    group = _dff_sr_ff_group(mutated)
+    assert group.count("clear :") == 1, f"a Liberty ff group has one clear, got:\n{group}"
+    assert "(!RST_N) | (!SET_N)" in group
+    # `preset` is gone: that is the fault — the set pin now clears.
+    assert "preset :" not in group
+
+
+def test_set_value_flips_still_changes_the_set_path_only():
+    lib, sim = _artefacts()
+    mutated, _ = _mutation("set_value_flips").mutate(lib, sim)
+    dff_r_before = lib[lib.index("cell (DFF_R)") : lib.index("cell (DFF_SR)")]
+    dff_r_after = mutated[mutated.index("cell (DFF_R)") : mutated.index("cell (DFF_SR)")]
+    assert dff_r_before == dff_r_after
