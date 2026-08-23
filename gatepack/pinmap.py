@@ -155,15 +155,30 @@ def pinmap_refs_path(pins_csv_path: str | Path) -> Path:
     return Path(pins_csv_path).with_suffix(".refs.md")
 
 
+#: Placeholders a refs table uses where a real citation field has not been
+#: filled in.  A row carrying any of these has not been transcribed from a
+#: document, whatever its status column says.
+_UNFILLED_CITATION = frozenset({"", "tbd", "-", "—", "--", "n/a", "na", "?"})
+
+
 def parse_pin_refs(path: str | Path) -> dict[str, str]:
     """Return ``{part_suffix: pin_status_text}`` from a ``.pins.refs.md`` table.
 
     The table is keyed by ``part_suffix`` and its last column is the *pin*
     status.  A missing file yields an empty dict (fail-closed at the caller).
     """
+    return {name: row[-1] if row else "" for name, row in parse_pin_refs_rows(path).items()}
+
+
+def parse_pin_refs_rows(path: str | Path) -> dict[str, list[str]]:
+    """Return ``{part_suffix: [datasheet, revision, table/page, ..., status]}``.
+
+    The whole row, not just the status column, because a pin map is promoted to
+    *verified* only by a real citation — see :func:`pin_verification`.
+    """
     if not Path(path).exists():
         return {}
-    citations: dict[str, str] = {}
+    rows: dict[str, list[str]] = {}
     active = False
     for line in Path(path).read_text().splitlines():
         stripped = line.strip()
@@ -181,8 +196,31 @@ def parse_pin_refs(path: str | Path) -> dict[str, str]:
             continue
         if all(set(c) <= {"-", ":", " "} for c in name):
             continue
-        citations[name] = cells[-1] if len(cells) > 1 else ""
-    return citations
+        rows[name] = cells[1:]
+    return rows
+
+
+def pin_verification(row: Sequence[str] | None) -> Verification:
+    """Whether a refs row promotes its pin map to verified.
+
+    Stricter than :func:`gatepack.parts.verification_from_citation`, which reads
+    only the status word.  For *electrical* data that is enough — a wrong tPD is
+    caught at review.  A wrong **pin number** is not: it survives review, reaches
+    a fabricator, and shorts a rail to an output.  So a pin map is verified only
+    when the row actually carries a document: editing the status column alone,
+    while ``datasheet``/``revision``/``table`` still read ``TBD``, must not
+    soften the "do not fabricate a board from these numbers" notice.
+
+    ``None`` (no row at all) is a placeholder, fail-closed.
+    """
+    if row is None:
+        return Verification.PLACEHOLDER
+    status = verification_from_citation(row[-1] if row else None)
+    if status is not Verification.PLACEHOLDER and any(
+        cell.strip().lower() in _UNFILLED_CITATION for cell in row[:-1]
+    ):
+        return Verification.PLACEHOLDER
+    return status
 
 
 def load_pinmaps(path: str | Path) -> dict[tuple[str, str], PartPinMap]:
@@ -239,11 +277,9 @@ def load_pinmaps_cited(csv_path: str | Path) -> dict[tuple[str, str], PartPinMap
     if not path.exists():
         return {}
     pinmaps = load_pinmaps(path)
-    citations = parse_pin_refs(pinmap_refs_path(path))
+    rows = parse_pin_refs_rows(pinmap_refs_path(path))
     for pinmap in pinmaps.values():
-        pinmap.verification = verification_from_citation(
-            citations.get(pinmap.part_suffix)
-        )
+        pinmap.verification = pin_verification(rows.get(pinmap.part_suffix))
     return pinmaps
 
 
@@ -419,6 +455,8 @@ __all__ = [
     "load_pinmaps",
     "load_pinmaps_cited",
     "parse_pin_refs",
+    "parse_pin_refs_rows",
+    "pin_verification",
     "pin_map_summary",
     "pinmap_path",
     "pinmap_refs_path",

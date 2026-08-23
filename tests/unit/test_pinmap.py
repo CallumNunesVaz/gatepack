@@ -318,3 +318,59 @@ def test_package_pin_counts_mirror_the_refs_pin_count_table():
         table[cells[0]] = int(cells[1])
     for package, count in table.items():
         assert PACKAGE_PIN_COUNTS.get(package) == count, package
+
+
+# ---------------------------------------------------------------------------
+# A pin map is promoted to *verified* only by a real citation, never by the
+# status word alone.  Reviewed addition: `verification_from_citation` reads only
+# the status column, which is enough for electrical data (a wrong tPD is caught
+# at review) but not for a pin number (it survives review and reaches a
+# fabricator).  Editing "placeholder — unverified" to "verified" while the
+# datasheet/revision/table columns still read TBD must not soften the notice.
+# ---------------------------------------------------------------------------
+
+
+def _refs_table(rows: str) -> str:
+    return (
+        "| part_suffix | datasheet | revision | table/page | pin status |\n"
+        "|---|---|---|---|---|\n" + rows
+    )
+
+
+def test_status_word_alone_does_not_promote_a_pin_map(tmp_path):
+    from gatepack.pinmap import parse_pin_refs_rows, pin_verification
+
+    refs = tmp_path / "x.pins.refs.md"
+    refs.write_text(_refs_table("| 1G00 | TBD | TBD | TBD | verified |\n"))
+    rows = parse_pin_refs_rows(refs)
+    assert pin_verification(rows["1G00"]) is Verification.PLACEHOLDER
+
+
+def test_a_real_citation_does_promote_a_pin_map(tmp_path):
+    from gatepack.pinmap import parse_pin_refs_rows, pin_verification
+
+    refs = tmp_path / "x.pins.refs.md"
+    refs.write_text(
+        _refs_table("| 1G00 | SCES500N | Rev N (2016-08) | Table 6-1, p.12 | verified |\n")
+    )
+    rows = parse_pin_refs_rows(refs)
+    assert pin_verification(rows["1G00"]) is Verification.VERIFIED
+
+
+def test_a_placeholder_status_stays_placeholder_even_when_cited(tmp_path):
+    from gatepack.pinmap import parse_pin_refs_rows, pin_verification
+
+    refs = tmp_path / "x.pins.refs.md"
+    refs.write_text(
+        _refs_table(
+            "| 1G00 | SCES500N | Rev N (2016-08) | Table 6-1, p.12 | placeholder — unverified |\n"
+        )
+    )
+    rows = parse_pin_refs_rows(refs)
+    assert pin_verification(rows["1G00"]) is Verification.PLACEHOLDER
+
+
+def test_no_refs_row_is_placeholder():
+    from gatepack.pinmap import pin_verification
+
+    assert pin_verification(None) is Verification.PLACEHOLDER
