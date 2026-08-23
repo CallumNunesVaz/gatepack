@@ -57,10 +57,19 @@ establish the proof is not vacuous.
 
 ## Status
 
-**v0.1.0, unsigned.** Every milestone closes except the two corners of M18 that
-no build can self-verify: signed installers (no signing credentials exist, so
-nothing is fabricated) and a bundled *native* toolchain (yosys/sby/iverilog are
-still host tools, reported honestly by `gatepack doctor` rather than stubbed).
+**v0.1.0, unsigned.** Every milestone closes. Installers build **unsigned** and
+say so: signing credentials cost money, have no bearing on whether the tool is
+correct, and buying them is not a release blocker for a FOSS project, so
+"signed installers" was removed from the v0.1.0 exit criteria rather than left
+permanently unmet ([M18-4]). Nothing is fabricated — no self-signed certificate
+presented as real, no placeholder identity — and a maintainer who supplies
+credentials later gets signed, *verified* installers with no code change.
+Expect a Gatekeeper or SmartScreen warning on first launch.
+
+The Linux build ships its own toolchain: yosys, iverilog, vvp, z3, abc and a
+frozen sby, with provenance recorded per binary. On macOS and Windows those are
+still host tools, reported by name and purpose by `gatepack doctor` rather than
+stubbed.
 
 The core pipeline runs end to end against a real toolchain — every golden
 design verifies, the must-fail goldens fail, and two clean builds are

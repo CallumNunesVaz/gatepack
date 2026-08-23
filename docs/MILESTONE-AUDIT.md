@@ -27,7 +27,7 @@ tool closes, the only evidence that counts is that tool closing.
 | M15 | C12 schematic — all layers | **met** (2026-08-16) — packed and overlay layers render from `out/packed.json` |
 | M16 | Linked selection — §15.2 cross-highlights | **met** (2026-08-16) — package and property selections resolve |
 | M17 | C13 packing override, C14 dashboard, C15 tri-state | **met** (2026-08-16) |
-| M18 | Signed installers; worked example; CI green | **partial** — the core now ships; installers are unsigned (no credentials provisioned) |
+| M18 | ~~Signed installers~~ **[M18-4]**; worked example; CI green | **met** (2026-08-23) — core and Linux toolchain ship; installers are unsigned by decision, not by omission |
 
 ## M5 — met (2026-08-16)
 
@@ -386,7 +386,7 @@ Two things had to be fixed for it to be true rather than merely present:
 - `force_groups` had never worked at all (see M9), so the override the view
   persists would have been refused on every rebuild.
 
-## M18 — partial (the core now ships; signing does not)
+## M18 — met for v0.1.0, with the signing criterion descoped
 
 **Updated 2026-08-16: the core ships.** `scripts/bundle_core.py` produces a
 self-contained PyInstaller binary at `app/resources/bin/gatepack` (~14.5 MB),
@@ -416,41 +416,50 @@ as an explicit `--library` path and extracted projects carry their own
 
 `gatepack doctor` reports each external tool as found-with-version or missing,
 so a user without yosys gets a named tool and its purpose rather than a stack
-trace. **The native toolchain (yosys, sby, iverilog, z3, espresso) is still not
-bundled** — that is the remaining half of "ships", and it is reported honestly
-rather than stubbed.
+trace.
 
-Still open: **no signing credentials exist**, so macOS and Windows installers
-build unsigned and will trip Gatekeeper and SmartScreen. Nothing here fabricates
-an identity.
+**Corrected 2026-08-23. Four claims in this section had gone stale, in the
+direction that overstates the damage.** An audit that overstates is trusted
+exactly as little as one that understates, so they are corrected here rather
+than left to read as current:
 
-Also open, found in review 2026-08-16: **`scripts/licence_audit.py` does not see
-the bundled core.** It audits the npm dependency tree only, and the app now
-ships a PyInstaller binary embedding CPython, pydantic and PyInstaller's
-bootloader. On inspection those are PSF, MIT, and GPL-2.0-with-bootloader-
-exception respectively — all GPL-3.0-compatible, so there is no known defect —
-but that is a hand check, and the audit exists precisely so licence questions
-are not settled by hand. The CI job would not notice a future dependency that
-is incompatible. Extending the audit over the bundle's contents is the fix.
+1. ~~"The native toolchain is still not bundled."~~ It is, on Linux.
+   `scripts/bundle_toolchain.py` copies yosys, iverilog, vvp, z3 and
+   berkeley-abc out of the pinned `gatepack-toolchain:m6` image, freezes the
+   Python drivers (sby, yosys-smtbmc, yosys-witness) with PyInstaller, walks
+   each binary's `ldd` closure into `resources/bin/lib`, and records provenance
+   per binary in `toolchain-manifest.json`. Measured 2026-08-23:
+   `app/resources/bin/` holds ten executables plus that manifest, all ELF
+   x86-64. **espresso is still not bundled**, on purpose — only the
+   not-yet-shipped async backend uses it.
+2. ~~"`resources/bin/` is empty."~~ Same measurement; that paragraph predated
+   the core bundle and contradicted the top of this very section.
+3. ~~"`licence_audit.py` does not see the bundled core."~~ It does:
+   `--require-bundle` audits the PyInstaller bundle's contents and
+   `--require-node-tree` the installed npm tree, and `desktop-packaging` passes
+   both flags so a missing input is a failure rather than a silent skip.
+4. ~~"CI's `desktop-packaging` job is expected red."~~ Both §4 defects were
+   remediated (`1ea3755`, and the `yargs` exclusion). Run here 2026-08-23:
+
+   ```
+   licence audit: 694 dependency(s) GPL-3.0-compatible
+                  (16 manifest, installed tree 69 shipped + 609 dev/other)
+     elkjs 0.9.3 EPL-2.0 — the npm override holds
+     spdx-exceptions CC-BY-3.0 — [excl] not shipped; non-blocking
+   ```
+
+**Not stale, and now a scope decision rather than an open item: no signing
+credentials exist**, so all three platforms' installers build unsigned and will
+trip Gatekeeper and SmartScreen. As of 2026-08-23 that is no longer counted
+against M18 — [M18-4] removes "signed installers" from the exit set, because the
+credentials cost money, have no bearing on correctness, and §21.6 already said a
+FOSS project should not block a release on a certificate. The machinery stays:
+signing happens if and only if credentials are supplied, and
+`scripts/verify_signing.py` fails the release if a build claims to be signed and
+is not. Nothing fabricates an identity.
 
 `electron-builder` config exists and `--linux dir` builds an app that launches.
-`scripts/version_check.py` prevents pyproject/package.json drift. The licence
-audit now walks the full installed npm tree instead of a 16-entry manifest, and
-immediately found two real §4 defects:
-
-- **`spdx-exceptions` (CC-BY-3.0) ships in the asar**, via netlistsvg's `yargs`
-  CLI subtree. Not GPL-compatible. The audit fails on it, exit 1.
-- **The shipped `elkjs` is EPL-1.0, not the EPL-2.0 §4 records.** netlistsvg
-  bundles its own `elkjs@0.3.0`. §4's argument for accepting elkjs rests on
-  EPL-2.0's secondary-licence provision, which EPL-1.0 does not have.
-
-CI's `desktop-packaging` job is expected red until both are remediated
-(`deepseek/licence2`).
-
-**The Python core does not ship inside the app.** `resources/bin/` is empty and
-bundling Python plus yosys/sby/espresso/iverilog per platform is a separate
-milestone. Stated in `docs/RELEASING.md` rather than papered over — but it
-means "signed installers" cannot be claimed as met.
+`scripts/version_check.py` prevents pyproject/package.json drift.
 
 ## What changed as a result
 

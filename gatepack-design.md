@@ -185,6 +185,24 @@ dependency list someone writes down is a statement of intent, and only the
 tree on disk says what ships. `scripts/licence_audit.py --require-node-tree`
 is now the check that matters, and CI fails on it.
 
+**[M18-4] Code signing leaves the v0.1.0 exit set (decision 2026-08-23).** M18's
+exit criterion said "signed installers". Signing requires credentials this
+project does not have and will not buy — an Apple Developer membership plus a
+notarisation loop for macOS, an Authenticode certificate for Windows — and
+neither has any bearing on whether the tool is correct. §21.6 already said a
+personal FOSS project should not block a release on a certificate; the exit
+criterion contradicted it. The criterion is therefore removed rather than left
+permanently unmet.
+
+What this does **not** mean. The signing *machinery* stays exactly as it is:
+`app/electron-builder.yml` signs if and only if `CSC_LINK`/`WIN_CSC_LINK` are
+present, the release workflow runs `scripts/verify_signing.py` on the signed
+path and fails if the artefact is not actually signed, and nothing anywhere
+fabricates an identity, a Team ID or a certificate. A maintainer who later
+supplies credentials gets signed, verified installers with no code change. The
+release ships **unsigned and says so** — macOS Gatekeeper and Windows SmartScreen
+will warn, and `docs/RELEASING.md` documents the warning rather than hiding it.
+
 ---
 
 ## 5. Architecture
@@ -244,8 +262,9 @@ Secondary: designs open in place in a git working tree rather than being
 uploaded; air-gapped by construction with no server and no network permission;
 native Yosys is roughly twice the speed of the WASM build.
 
-Costs, accepted: ~150–250 MB installer, per-platform code signing, an update
-mechanism, and a larger security surface (§5.2).
+Costs, accepted: ~150–250 MB installer, an update mechanism, and a larger
+security surface (§5.2). Per-platform code signing was a fourth cost and is
+**not** paid — see [M18-4]; installers ship unsigned and documented as such.
 
 A WASM fallback (`@yowasp/yosys`, ISC) is retained as an optional degraded mode
 for a possible browser build — synthesis and rendering only, verification
@@ -1667,7 +1686,7 @@ being genuinely intractable (§7.3), so the honest comparison is 64 d against
 | M15 | C12 schematic view | netlistsvg rendering all layers | 3 d |
 | M16 | **Linked selection (§15)** | All cross-highlights in the §15.2 table work | 5 d |
 | M17 | C13–C15 | Packing override, dashboard, verification tri-state | 6 d |
-| M18 | Packaging, docs, v0.1.0 | Signed installers; worked example; CI green | 5 d |
+| M18 | Packaging, docs, v0.1.0 | ~~Signed installers~~ **[M18-4]** — installers build for all three platforms and their signing state is stated; worked example; CI green | 5 d |
 
 Sequencing notes:
 
@@ -1734,11 +1753,17 @@ C15 shows a **fourth state — "bounded pass"** — and the report prints the bo
 Folding a bounded result into a green check would recreate exactly the vacuous
 pass R2 and R18 exist to prevent.
 
-**21.6 Linux and Windows for v0.1.0; macOS deferred.** AppImage or .deb, plus an
-unsigned NSIS installer or zip. macOS notarisation costs money and time and has
-no bearing on whether the tool is correct; a personal FOSS project should not
-block a release on a signing certificate. Unsigned binaries are documented as
-such. Signing is added when there are users who need it.
+**21.6 All three platforms build for v0.1.0; none of them are signed.**
+AppImage and .deb on Linux, an NSIS installer on Windows, dmg on macOS x64 and
+arm64 — a build matrix, not a cross-compile, because PyInstaller does not cross
+-compile. **Updated 2026-08-23:** Draft 4 deferred macOS entirely; the release
+matrix now covers it, so the deferral was the stale half of this decision. The
+*signing* half stands and is now the stronger statement: signing leaves the exit
+criteria altogether ([M18-4]). Notarisation costs money and time and has no
+bearing on whether the tool is correct; a personal FOSS project should not block
+a release on a certificate. Unsigned binaries are documented as such, and the
+signing path is wired, credential-free and verified-or-refused for whoever
+supplies credentials later.
 
 **21.7 Async primitives must be instantiated — they do not fall out.** A Muller
 C-element is a state-holding majority gate with no two-level Boolean equivalent,
