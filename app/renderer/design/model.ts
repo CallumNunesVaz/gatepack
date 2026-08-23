@@ -692,6 +692,19 @@ export function renameState(text: string, oldName: string, newName: string): Edi
     if (edit) edits.push(edit);
   }
 
+  // Property expressions reference states the same way output_logic does
+  // (`state == NAME`). Nothing diagnoses a stranded reference here — measured:
+  // `parseDesignText` reports unknown states in transitions and output_logic
+  // but says nothing about `properties[].expr` — so a rename that skipped this
+  // block would leave a property asserting something about a state that no
+  // longer exists, with no error anywhere. Silent, and the user believes the
+  // rename was complete.
+  const propertiesRange = ranges.get('properties');
+  if (propertiesRange) {
+    const edit = spliceBlockLines(text, propertiesRange, renameStateExpr);
+    if (edit) edits.push(edit);
+  }
+
   if (edits.length === 0) {
     return { text, diagnostics: parseDesignText(text).diagnostics };
   }
@@ -784,6 +797,17 @@ export function renameInput(text: string, oldName: string, newName: string): Edi
   if (fmRange) {
     const edit = spliceBlockLines(text, fmRange, (code) =>
       replaceIdentifier(code, oldName, newName),
+    );
+    if (edit) edits.push(edit);
+  }
+
+  // A macro's `enable` is an expression over inputs, so it is renamed too.
+  // Same reason as `properties[].expr` above: nothing diagnoses the stranded
+  // reference, so skipping it strands `enable` silently.
+  const macrosRange = ranges.get('macros');
+  if (macrosRange) {
+    const edit = spliceBlockLines(text, macrosRange, (code) =>
+      renameInField(code, 'enable', oldName, newName),
     );
     if (edit) edits.push(edit);
   }

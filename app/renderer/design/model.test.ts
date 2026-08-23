@@ -434,3 +434,60 @@ describe('surgical edits do not destroy the block they edit', () => {
     expect(out.text).toContain('# MUST stay synchronised');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Reviewed addition: the two references a rename used to strand *silently*.
+//
+// `parseDesignText` diagnoses unknown states in transitions and output_logic
+// (ED1014/ED1015/ED1022) and unknown signals in guards (ED1018), but measured
+// 2026-08-23 it says nothing at all about `properties[].expr` or
+// `macros[].enable`. So a rename that skips those blocks lands with no error,
+// no diagnostic and no refusal — the user believes the rename was complete and
+// the spec now asserts something about a name that does not exist. That is the
+// silent-no-op failure the whole editing spine is built to avoid.
+// ---------------------------------------------------------------------------
+
+const RENAME_REFS_SPEC = `name: refs
+timing_model: synchronous
+clock: {net: clk, freq_hz: 1000}
+reset: {net: rst_n, polarity: active_low}
+inputs:
+  - {name: go, sync: true}
+outputs:
+  - {name: busy}
+states: [IDLE, RUN]
+initial: IDLE
+transitions:
+  - {from: IDLE, to: RUN, when: "go"}
+  - {from: RUN, to: IDLE, when: "!go"}
+output_logic:
+  busy: "state == RUN"
+properties:
+  - {name: p1, kind: invariant, expr: "state == RUN -> busy"}
+  - {name: p2, kind: invariant, expr: "go -> busy"}
+macros:
+  - {instance: m1, cell: CNT4, clock: clk, enable: "go"}
+`;
+
+describe('renames leave no stranded reference', () => {
+  it('renameState rewrites property expressions', () => {
+    const out = renameState(RENAME_REFS_SPEC, 'RUN', 'ACTIVE');
+    expect(out.diagnostics.filter((d) => d.severity === 'error')).toHaveLength(0);
+    expect(out.text).toContain('expr: "state == ACTIVE -> busy"');
+    expect(out.text).not.toContain('state == RUN');
+  });
+
+  it('renameInput rewrites a macro enable', () => {
+    const out = renameInput(RENAME_REFS_SPEC, 'go', 'start');
+    expect(out.diagnostics.filter((d) => d.severity === 'error')).toHaveLength(0);
+    expect(out.text).toContain('enable: "start"');
+    expect(out.text).toContain('expr: "start -> busy"');
+    expect(out.text).not.toMatch(/\bgo\b/);
+  });
+
+  it('a state rename does not touch an input guard that reads like a state', () => {
+    const out = renameState(RENAME_REFS_SPEC, 'RUN', 'ACTIVE');
+    expect(out.text).toContain('when: "go"');
+    expect(out.text).toContain('expr: "go -> busy"');
+  });
+});
