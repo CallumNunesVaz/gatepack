@@ -1,39 +1,17 @@
-"""Fault-injection probe: what the asynchronous verify path does NOT check.
+"""Fault-injection probe: the asynchronous functional check, exercised for real.
 
-Run by hand inside ``gatepack-toolchain:m6``; kept because it is the evidence
-behind a recorded gap, not because it asserts anything.
+Run inside ``gatepack-toolchain:m6``; now driven by
+``tests/toolchain/test_async_injection.py`` (the real test) and kept as the
+evidence behind the acceptance criterion: a wrong-but-hazard-free cover must
+*now* fail the verification, where before Package L it shipped green.
 
-The intent was to make a genuinely hazardous netlist reach stage 5 through the
-real pipeline, since stage 4 builds the cover under the required-cube condition
-and so never produces one — meaning the refusal path had never actually fired.
 The fault is injected where a real defect would sit: one product term is dropped
 from the cover *after* z3 selected it, exactly what a bug in the covering
-constraints would do.
-
-What it measured instead, 2026-08-24, is more useful:
-
-    cover cubes, clean run   [1, 2]
-    cover cubes, faulty run  [1, 1]      <- the injection fired
-    hazard (ternary)         passed
-    hazard (glitch sim)      passed
-    netlist accessor         RETURNED A NETLIST
-
-Dropping a cube changes the *function*; it does not necessarily make the
-circuit hazardous. So the netlist no longer implements the specified machine,
-and the asynchronous verify path reports:
-
-    verification: passed
-      equivalence:        not applicable
-      hazard (ternary):   passed
-      hazard (glitch sim): passed
-
-There is no functional check on the asynchronous path — no equivalence (there
-is no synchronous golden) and no exhaustive simulation against the flow table.
-A stage-4 bug that yields a wrong but hazard-free cover therefore ships green.
-See docs/handoff/prompt-asyncfunc.md.
-
-This probe does not demonstrate a defect in the hazard checker: hazards are all
-it claims to check, and it checks them.
+constraints would do.  The resulting netlist is still hazard-free (both hazard
+checks pass), but it no longer implements the specified machine — and the new
+exhaustive fundamental-mode check is what catches that.  This probe does not
+demonstrate a defect in the hazard checker: hazards are all it claims to check,
+and it checks them.
 """
 
 from __future__ import annotations
@@ -71,7 +49,7 @@ def _drop_a_cube(original):
     return wrapper
 
 
-def main() -> int:
+def run_probe() -> dict:
     design = Path("examples/async_latch/design.yaml")
     workdir = Path(".gpout/async_inject")
     workdir.mkdir(parents=True, exist_ok=True)
@@ -106,10 +84,6 @@ def main() -> int:
     out["injection_calls"] = injected.calls
     out["cover_cubes_clean"] = [len(c.cubes) for c in clean.covers.covers]
     out["cover_cubes_faulty"] = [len(c.cubes) for c in faulty.covers.covers]
-    out["verilog_differs"] = (
-        (workdir / "clean" / "async_mapped.v").read_text()
-        != (workdir / "faulty" / "async_mapped.v").read_text()
-    ) if (workdir / "clean" / "async_mapped.v").exists() else "no async_mapped.v"
     out["faulty_hazard_passed"] = faulty.hazard_passed
     out["faulty_checks"] = [(c.name, c.status.value) for c in faulty.hazard_checks]
 
@@ -120,11 +94,22 @@ def main() -> int:
         out["netlist_accessor"] = type(exc).__name__
         out["netlist_reason"] = str(exc)[:300]
 
-    out["deliverables_in_faulty_dir"] = sorted(
-        p.name for p in (workdir / "faulty").iterdir() if p.suffix in {".net", ".csv"}
-    )
+    return out
+
+
+def main() -> int:
+    out = run_probe()
     print(json.dumps(out, indent=2))
-    return 0
+    # The acceptance criterion: the injection must now FAIL the functional check
+    # and the netlist must not be obtainable.  A probe run that no longer shows
+    # this is itself a failure.
+    checks = dict(out["faulty_checks"])
+    ok = (
+        dict(out["control_checks"]).get("functional (fundamental mode)") == "passed"
+        and checks.get("functional (fundamental mode)") == "failed"
+        and out["netlist_accessor"] == "HazardFailed"
+    )
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

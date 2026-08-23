@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from typing import Mapping, Sequence
 
 from gatepack.liberty import boolean
-from gatepack.netlist import MappedNetlist
+from gatepack.netlist import MappedCell, MappedNetlist
 
 #: Three-valued logic: 0, 1, and 2 for X.
 _ZERO = 0
@@ -153,6 +153,45 @@ def _pin_value(cell, pin: str, values: Mapping[str, int]) -> int:
     if net in ("x", "z"):
         return _X
     return values.get(net, _X) if net is not None else _X
+
+
+def driven_values(
+    netlist: MappedNetlist,
+    cell_functions: Mapping[str, str],
+    settled: Mapping[str, int],
+    nets: Sequence[str],
+) -> dict[str, int]:
+    """The value each net in ``nets`` is *driven to*, given settled ``settled`` values.
+
+    :func:`evaluate_fixed_point` holds every key of its ``input_values``: a gate
+    that drives such a net does not overwrite it.  That is what cuts the state
+    feedback loop for the hazard check, but it also hides the *next-state* value
+    the feedback SOP is trying to drive.  This reads that driven value directly:
+    for each net in ``nets`` it finds the (single) driving cell and evaluates its
+    output against ``settled`` (the result of :func:`evaluate_fixed_point` with the
+    feedback nets held at their source values).  A net with no driver keeps its
+    settled value (so this is also safe to call over primary inputs/outputs).
+    """
+    funcs = _compile_functions(cell_functions)
+    driver: dict[str, MappedCell] = {}
+    for cell in netlist.cells:
+        for pin in cell.output_pins:
+            net = cell.connections.get(pin)
+            if net:
+                driver.setdefault(net, cell)
+    result: dict[str, int] = {}
+    for net in nets:
+        cell = driver.get(net)
+        if cell is None:
+            result[net] = settled.get(net, _X)
+            continue
+        fn = funcs.get(cell.cell)
+        if fn is None:
+            result[net] = settled.get(net, _X)
+            continue
+        args = [_pin_value(cell, pin, settled) for pin in cell.input_pins]
+        result[net] = fn._eval_binary(args)
+    return result
 
 
 def check_static_hazards(

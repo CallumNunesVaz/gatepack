@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Mapping, Sequence
 
 from gatepack.frontend.model import CompiledDesign
 from gatepack.netlist import MappedNetlist, parse_mapped_json
@@ -52,6 +53,148 @@ def cell_functions_from_liberty(lib_text: str) -> dict[str, str]:
         for cell, func in pattern.findall(lib_text)
         if func not in ("IQ", "IQN")
     }
+
+
+#: Upper bound on the number of total-state/input-change pairs the functional
+#: check will enumerate.  Above it the check reports ``not applicable`` (§21.4):
+#: an asynchronous design that needs more than this many pairs to check has
+#: outgrown exhaustive simulation, and a coverage figure on random stimulus is
+#: never allowed to stand in for it.  Mirrors the synchronous ``exhaustive_cap``.
+ASYNC_FUNC_ENUM_CAP = 1 << 24
+
+#: The functional check's name in the report and manifest.
+FUNCTIONAL_CHECK_NAME = "functional (fundamental mode)"
+
+
+def enumerate_functional_pairs(table: FlowTable) -> list[tuple[int, int, int]]:
+    """Every ``(state_index, source_combo_index, changing_input_index)`` pair.
+
+    The functional check's domain: every **stable total state** (a state/input
+    combination the flow table marks stable) combined with every **single-input
+    change**.  Under fundamental mode and the declared mutual exclusion only a
+    single input may change at a time, so every single-input change from a stable
+    total state is admissible; the enumeration is exhaustive over that domain —
+    never a random sample (§C4.3, §21.4).
+    """
+    pairs: list[tuple[int, int, int]] = []
+    for si, state in enumerate(table.states):
+        for ci in range(len(table.combos)):
+            if table.next_state[si][ci] != state:
+                continue
+            for d in range(len(table.input_names)):
+                pairs.append((si, ci, d))
+    return pairs
+
+
+def run_functional_check(
+    netlist: MappedNetlist,
+    cell_functions: dict[str, str],
+    table: FlowTable,
+    assignment: Assignment,
+    max_pairs: int = ASYNC_FUNC_ENUM_CAP,
+) -> CheckResult:
+    """Exhaustively simulate the mapped netlist against the flow table.
+
+    For every stable total state ``(state, combo)`` and every single-input change
+    ``d`` the netlist is evaluated to a fixed point with the state feedback held at
+    the source state's code and the inputs at the post-change combination, then the
+    settled next-state code and the outputs are compared against what the flow
+    table says they must be.  A mismatch is a **failed** check naming the total
+    state, the changing input, and the expected/actual values — never a warning.
+
+    The function under test is the *cover* (stage 4) and its emission, not the
+    assignment: the flow table is re-derived from the spec (its own semantics) and
+    the single-variable-change assignment is re-derived deterministically (z3 runs
+    with a fixed seed), exactly as the hazard probes already do.  A wrong cover is
+    therefore caught; a hypothetical bug in the assignment would not be, but the
+    assignment is not what this check exists to validate.
+    """
+    pairs = enumerate_functional_pairs(table)
+    total = len(pairs)
+    if total > max_pairs:
+        return CheckResult(
+            FUNCTIONAL_CHECK_NAME,
+            CheckStatus.NOT_APPLICABLE,
+            f"{total} total-state/input-change pairs exceed the enumeration cap "
+            f"{max_pairs}; the netlist is not exhaustively simulated against the "
+            "flow table, so 'the netlist implements the design' is not claimed "
+            "(§7.3, §21.4)",
+            kind="simulation",
+        )
+
+    combo_index = {combo: i for i, combo in enumerate(table.combos)}
+    code_to_state = {code: state for state, code in assignment.codes.items()}
+    state_nets = [f"s_{j}" for j in range(assignment.width)]
+
+    mismatches: list[str] = []
+    for si, ci, d in pairs:
+        state = table.states[si]
+        src_combo = table.combos[ci]
+        dst_combo = _flip_combo(src_combo, d)
+        dst_ci = combo_index[dst_combo]
+        expected_next = table.next_state[si][dst_ci]
+        expected_outputs = {name: (1 if b else 0) for name, b in table.outputs[si][dst_ci]}
+
+        held = {net: assignment.bit(state, j) for j, net in enumerate(state_nets)}
+        held.update(
+            {name: (1 if b else 0) for name, b in zip(table.input_names, dst_combo)}
+        )
+
+        settled = hazard.evaluate_fixed_point(netlist, cell_functions, held, ternary=False)
+        driven = hazard.driven_values(netlist, cell_functions, settled, state_nets)
+        actual_next_code = [driven[net] for net in state_nets]
+        expected_next_code = [
+            assignment.bit(expected_next, j) for j in range(assignment.width)
+        ]
+        actual_outputs = {
+            name: settled.get(name, hazard._X) for name in table.output_names
+        }
+
+        if actual_next_code == expected_next_code and actual_outputs == expected_outputs:
+            continue
+
+        actual_next = code_to_state.get(_bits_to_code(actual_next_code), "<no valid state>")
+        mismatches.append(
+            f"stable total state ({state}, {_render_combo(table.input_names, src_combo)}) "
+            f"changing {table.input_names[d]}: expected next {expected_next} "
+            f"outputs {_render_outputs(expected_outputs)}, got next {actual_next} "
+            f"outputs {_render_outputs(actual_outputs)}"
+        )
+
+    if mismatches:
+        shown = mismatches[:10]
+        tail = f" (+{len(mismatches) - len(shown)} more)" if len(mismatches) > len(shown) else ""
+        return CheckResult(
+            FUNCTIONAL_CHECK_NAME,
+            CheckStatus.FAILED,
+            "netlist does not implement the flow table: " + "; ".join(shown) + tail,
+            kind="simulation",
+        )
+    return CheckResult(
+        FUNCTIONAL_CHECK_NAME,
+        CheckStatus.PASSED,
+        f"{total} total-state/input-change pairs checked; netlist matches the "
+        "flow table",
+        kind="simulation",
+    )
+
+
+def _flip_combo(combo: tuple[bool, ...], index: int) -> tuple[bool, ...]:
+    out = list(combo)
+    out[index] = not out[index]
+    return tuple(out)
+
+
+def _bits_to_code(bits: Sequence[int]) -> int:
+    return sum(bit << j for j, bit in enumerate(bits))
+
+
+def _render_combo(input_names: Sequence[str], combo: tuple[bool, ...]) -> str:
+    return ", ".join(f"{n}={1 if b else 0}" for n, b in zip(input_names, combo))
+
+
+def _render_outputs(outputs: Mapping[str, int]) -> str:
+    return ", ".join(f"{n}={v}" for n, v in sorted(outputs.items()))
 
 
 def build_transition_probes(
@@ -136,6 +279,7 @@ class AsynchronousVerify(VerificationStrategy):
             self._glitch_check(
                 netlist, cell_functions, probes, runner, config
             ),
+            run_functional_check(netlist, cell_functions, table, assignment),
         ]
         return VerificationReport(checks=checks)
 

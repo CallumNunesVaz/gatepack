@@ -409,6 +409,16 @@ def emit_async_report(inp: AsyncReportInputs) -> str:
         "mapped netlist._"
     )
     lines.append("")
+    lines.append(
+        "_The `functional (fundamental mode)` check is the counterpart to the "
+        "hazard checks: it exhaustively simulates the mapped netlist against the "
+        "flow table over every stable total state and every single-input change, "
+        "so a netlist that is hazard-free but does not implement the machine is "
+        "a failed check, not a shipped design. Its scope is exactly fundamental "
+        "mode — it cannot reach concurrent input changes, for the same reason "
+        "the hazard checks cannot._"
+    )
+    lines.append("")
 
     lines.append("## Packing (§9.7)")
     lines.append("")
