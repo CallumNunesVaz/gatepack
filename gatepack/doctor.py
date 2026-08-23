@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from gatepack import __version__
 from gatepack.toolchain import (
@@ -39,11 +39,13 @@ class ToolSpec:
     # True when gatepack invokes this tool directly (not just indirectly via a
     # wrapper such as sby -> smtbmc -> z3).
     direct: bool = True
-    # Where a Windows user gets this tool, appended to ``purpose`` when
-    # :func:`run_doctor` runs on Windows.  The native Windows build bundles no
-    # toolchain, so "missing" alone would strand a user; this names the real
-    # distribution instead.  Empty means "no Windows-specific guidance".
-    windows_note: str = ""
+    # Where a user on each platform gets this tool, appended to ``purpose`` when
+    # :func:`run_doctor` reports for that platform.  The native Windows and
+    # macOS builds bundle no toolchain, so "missing" alone would strand a user;
+    # these notes name the real distribution instead.  An absent key means "no
+    # platform-specific guidance".  Keyed by ``sys.platform`` (``win32``,
+    # ``darwin``).
+    platform_notes: dict[str, str] = field(default_factory=dict)
 
 
 # The tools gatepack shells out to today, plus the two that the design reserves
@@ -54,10 +56,13 @@ TOOLS: tuple[ToolSpec, ...] = (
         "yosys",
         "logic synthesis (C3): behavioural Verilog -> mapped netlist",
         ("--version",),
-        windows_note=(
-            "install OSS CAD Suite (YosysHQ/oss-cad-suite-build) and put yosys "
-            "on PATH, or run gatepack under WSL2"
-        ),
+        platform_notes={
+            "win32": (
+                "install OSS CAD Suite (YosysHQ/oss-cad-suite-build) and put "
+                "yosys on PATH, or run gatepack under WSL2"
+            ),
+            "darwin": "install Yosys via Homebrew (brew install yosys)",
+        },
     ),
     ToolSpec(
         "sby",
@@ -66,32 +71,47 @@ TOOLS: tuple[ToolSpec, ...] = (
         # and comes from the toolchain manifest when bundled (see
         # :func:`gatepack.toolchain.bundled_tool_versions`).
         (),
-        windows_note=(
-            "SymbiYosys ships with OSS CAD Suite (YosysHQ/oss-cad-suite-build); "
-            "otherwise run gatepack under WSL2"
-        ),
+        platform_notes={
+            "win32": (
+                "SymbiYosys ships with OSS CAD Suite (YosysHQ/oss-cad-suite-build); "
+                "otherwise run gatepack under WSL2"
+            ),
+            "darwin": (
+                "install OSS CAD Suite (YosysHQ/oss-cad-suite-build), which "
+                "ships SymbiYosys"
+            ),
+        },
     ),
     ToolSpec(
         "iverilog",
         "compiles the exhaustive-simulation testbench (Icarus, §12 C4)",
         ("-V",),
-        windows_note=(
-            "Icarus Verilog for Windows (MSYS2 or an official build) on PATH, "
-            "or run gatepack under WSL2"
-        ),
+        platform_notes={
+            "win32": (
+                "Icarus Verilog for Windows (MSYS2 or an official build) on PATH, "
+                "or run gatepack under WSL2"
+            ),
+            "darwin": "install Icarus Verilog via Homebrew",
+        },
     ),
     ToolSpec(
         "vvp",
         "Icarus runtime: runs the compiled simulation testbench",
         ("-V",),
-        windows_note="ships with Icarus Verilog (the same distribution as iverilog)",
+        platform_notes={
+            "win32": "ships with Icarus Verilog (the same distribution as iverilog)",
+            "darwin": "ships with Icarus Verilog (the same distribution as iverilog)",
+        },
     ),
     ToolSpec(
         "z3",
         "SMT solver used by sby's smtbmc engine (reached indirectly)",
         ("--version",),
         direct=False,
-        windows_note="ships with OSS CAD Suite; reached indirectly through sby",
+        platform_notes={
+            "win32": "ships with OSS CAD Suite; reached indirectly through sby",
+            "darwin": "install Z3 via Homebrew (brew install z3); reached indirectly through sby",
+        },
     ),
     ToolSpec(
         "bash",
@@ -99,17 +119,26 @@ TOOLS: tuple[ToolSpec, ...] = (
         "host requirement, never bundled",
         ("--version",),
         direct=False,
-        windows_note=(
-            "on native Windows there is no bash, so sby cannot run its engine "
-            "steps; use WSL2 (bash is a POSIX host requirement, never bundled)"
-        ),
+        platform_notes={
+            "win32": (
+                "on native Windows there is no bash, so sby cannot run its engine "
+                "steps; use WSL2 (bash is a POSIX host requirement, never bundled)"
+            ),
+            "darwin": (
+                "macOS ships bash at /bin/bash; sby runs its engine steps through "
+                "/usr/bin/env bash (a POSIX host requirement, never bundled)"
+            ),
+        },
     ),
     ToolSpec(
         "espresso",
         "two-level logic minimiser (async backend, v0.2; not in the sync path)",
         (),
         direct=False,
-        windows_note="not in the sync path; build from source if the async backend needs it",
+        platform_notes={
+            "win32": "not in the sync path; build from source if the async backend needs it",
+            "darwin": "not in the sync path; build from source if the async backend needs it",
+        },
     ),
 )
 
@@ -124,15 +153,33 @@ def is_windows(platform: str | None = None) -> bool:
     return (platform if platform is not None else sys.platform) == "win32"
 
 
+def is_darwin(platform: str | None = None) -> bool:
+    """True when running on (or asked to report for) macOS.
+
+    The same injectable-platform pattern as :func:`is_windows`: a test passes
+    ``"darwin"`` to exercise the macOS guidance on a POSIX host.
+    """
+    return (platform if platform is not None else sys.platform) == "darwin"
+
+
+#: The human platform name used in the ``purpose`` extension, so the report
+#: reads "On Windows:" / "On macOS:" rather than "On win32:".
+_PLATFORM_LABELS = {"win32": "Windows", "darwin": "macOS"}
+
+
 def _purpose(spec: ToolSpec, platform: str | None) -> str:
-    """``spec.purpose``, extended with Windows guidance only on Windows.
+    """``spec.purpose``, extended with platform guidance only where it exists.
 
     The base purpose is unchanged on every platform; the extension is appended,
     never a replacement, so the contract's "name the binary *and* what it is for"
-    is preserved and the Windows user additionally gets "… and here is where".
+    is preserved and a user additionally gets "… and here is where" when their
+    platform has a note for the tool.
     """
-    if is_windows(platform) and spec.windows_note:
-        return f"{spec.purpose}. On Windows: {spec.windows_note}"
+    current = platform if platform is not None else sys.platform
+    note = spec.platform_notes.get(current)
+    if note:
+        label = _PLATFORM_LABELS.get(current, current)
+        return f"{spec.purpose}. On {label}: {note}"
     return spec.purpose
 
 
@@ -216,10 +263,10 @@ def run_doctor(platform: str | None = None) -> dict:
     """Return the ``data`` payload for ``gatepack doctor --json``.
 
     ``platform`` selects whose guidance the report carries (``"win32"`` for the
-    Windows wording); ``None`` means the host platform.  The envelope shape is
-    identical either way — only the ``purpose`` text differs, so the JSON
-    contract is stable and the human reading it gets the right "where to get
-    this" for their OS.
+    Windows wording, ``"darwin"`` for the macOS wording); ``None`` means the host
+    platform.  The envelope shape is identical either way — only the ``purpose``
+    text differs, so the JSON contract is stable and the human reading it gets
+    the right "where to get this" for their OS.
     """
     tools = [_probe_tool(spec, platform) for spec in TOOLS]
     direct = [t for t in tools if t["direct"]]
@@ -233,4 +280,4 @@ def run_doctor(platform: str | None = None) -> dict:
     }
 
 
-__all__ = ["TOOLS", "ToolSpec", "is_windows", "run_doctor"]
+__all__ = ["TOOLS", "ToolSpec", "is_darwin", "is_windows", "run_doctor"]

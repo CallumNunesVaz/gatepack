@@ -115,7 +115,7 @@ build_stale() {
   [ -f "$out" ] || return 0
   [ -f "$APP/dist/renderer/index.html" ] || return 0
   [ -n "$(find "$APP/main" "$APP/preload" "$APP/renderer" "$APP/shared" \
-            -newer "$out" -type f -print -quit 2>/dev/null)" ]
+            -newer "$out" -type f -print 2>/dev/null | head -n 1)" ]
 }
 
 start_app() {
@@ -149,8 +149,8 @@ start_dev() {
   trap "kill $vite_pid 2>/dev/null || true" EXIT
 
   local url=""
-  for _ in $(seq 1 60); do
-    url="$(grep -om1 'http://localhost:[0-9]*' "$ROOT/.gpout/vite.log" 2>/dev/null || true)"
+  for ((i = 0; i < 60; i++)); do
+    url="$(grep -o 'http://localhost:[0-9]*' "$ROOT/.gpout/vite.log" 2>/dev/null | head -n 1 || true)"
     [ -n "$url" ] && break
     sleep 0.5
   done
@@ -174,7 +174,7 @@ report() {
 doctor() {
   bold "Core"
   if core_importable; then
-    report gatepack "$(core --version 2>&1 | head -1)"
+    report gatepack "$(core --version 2>&1 | head -n 1)"
     report venv "$VENV"
   else
     report gatepack "" "not importable from $VENV"
