@@ -166,6 +166,31 @@ export function FsmGraph() {
     [project?.path],
   );
 
+  // Drag must move the node under the cursor, not on release.
+  //
+  // `nodes` is recomputed from `positions` every render, so with no
+  // `onNodesChange` React Flow's own in-flight drag position was overwritten by
+  // the stale one on the very next render: the node stayed put until
+  // `onNodeDragStop` finally wrote the new coordinates. Feeding position
+  // changes straight back into `positions` makes the drag live — and, because
+  // edges route off the same map, the transitions follow the node as it moves.
+  // Only drag stop persists, so a drag in progress never hits the sidecar.
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
+    const moves = changes.filter(
+      (c): c is NodeChange & { type: 'position'; id: string; position: { x: number; y: number } } =>
+        c.type === 'position' && c.position !== undefined,
+    );
+    if (moves.length === 0) return;
+    setPositions((prev) => {
+      const next = { ...prev };
+      for (const move of moves) next[move.id] = { x: move.position.x, y: move.position.y };
+      return next;
+    });
+  }, []);
+
+  // Every hook must run before this early return: a spec that parses after this
+  // component first mounted (model null -> non-null) would otherwise re-render
+  // with more hooks than the previous render and React throws.
   if (!model) {
     return <div className="gp-empty">The spec does not parse yet.</div>;
   }
@@ -259,28 +284,8 @@ export function FsmGraph() {
     };
   });
 
-  // Drag must move the node under the cursor, not on release.
-  //
-  // `nodes` is recomputed from `positions` every render, so with no
-  // `onNodesChange` React Flow's own in-flight drag position was overwritten by
-  // the stale one on the very next render: the node stayed put until
-  // `onNodeDragStop` finally wrote the new coordinates. Feeding position
-  // changes straight back into `positions` makes the drag live — and, because
-  // edges route off the same map, the transitions follow the node as it moves.
-  // Only drag stop persists, so a drag in progress never hits the sidecar.
-  const onNodesChange = useCallback((changes: NodeChange[]) => {
-    const moves = changes.filter(
-      (c): c is NodeChange & { type: 'position'; id: string; position: { x: number; y: number } } =>
-        c.type === 'position' && c.position !== undefined,
-    );
-    if (moves.length === 0) return;
-    setPositions((prev) => {
-      const next = { ...prev };
-      for (const move of moves) next[move.id] = { x: move.position.x, y: move.position.y };
-      return next;
-    });
-  }, []);
-
+  // Drag must move the node under the cursor, not on release — see `onNodesChange`
+  // above. Only drag stop persists, so a drag in progress never hits the sidecar.
   const onNodeDragStop = (_event: unknown, node: Node) => {
     // `positions` is already current here — the live drag wrote every
     // intermediate frame into it — so this is the final frame plus the save.

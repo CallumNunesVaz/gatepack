@@ -129,6 +129,19 @@ describe('Inspector — spec anchor (§15.2 -> line)', () => {
     expect(screen.getByTestId('inspector-no-link')).toBeTruthy();
     expect(screen.queryByTestId('inspector-anchor')).toBeNull();
   });
+
+  it('labels a name-matched net anchor as inferred, never exact', async () => {
+    // `out` is a declared output; a net of the same name has no provenance
+    // entry, so the anchor is the inferred (structural name-match) fallback.
+    const fake = new FakeGatepack({ specText: FSM_SPEC });
+    await selectAndWait(fake, { kind: 'net', name: 'out' });
+    await waitFor(() => expect(screen.getByTestId('inspector-anchor')).toBeTruthy());
+
+    const anchor = screen.getByTestId('inspector-anchor');
+    expect(anchor.textContent).toContain('line 11');
+    expect(anchor.querySelector('[data-confidence="inferred"]')?.textContent).toBe('inferred');
+    expect(anchor.querySelector('[data-confidence="exact"]')).toBeNull();
+  });
 });
 
 describe('Inspector — in-place edits', () => {
@@ -153,29 +166,23 @@ describe('Inspector — in-place edits', () => {
     await waitFor(() => expect(screen.getByTestId('spec-text').textContent).toContain('initial: B'));
   });
 
-  it('refuses an input rename that would strand its references', async () => {
-    // `go` is referenced by `when: "go"` and `when: "!go"`. There is no
-    // `renameInput` that fixes up references the way `renameState` does, so the
-    // rename alone leaves the guards pointing at an input that no longer
-    // exists. Refusing is the correct answer; applying it and letting the
-    // design go invalid is not.
-    //
-    // The delivered test asserted the rename *succeeded*, which the
-    // implementation rightly would not do — the code was right and its own test
-    // was wrong.
+  it('renames an input and rewrites its guards instead of stranding them', async () => {
+    // `go` is referenced by `when: "go"` and `when: "!go"`. `renameInput` fixes
+    // those references up, so the rename lands and the design stays valid — the
+    // opposite of the old refusal, which was correct only while no
+    // reference-fixing rename existed.
     const fake = new FakeGatepack({ specText: FSM_SPEC });
     await selectAndWait(fake, { kind: 'input', name: 'go' });
     await waitFor(() => expect(screen.getByTestId('inspector-edit-input')).toBeTruthy());
-    const before = screen.getByTestId('spec-text').textContent;
 
     fireEvent.change(screen.getByLabelText('input name'), { target: { value: 'start' } });
 
-    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
-    // The reason is shown, the document is untouched, and the selection still
-    // names the input that actually exists.
-    expect(screen.getByTestId('spec-text').textContent).toBe(before);
-    expect(screen.getByTestId('spec-text').textContent).not.toContain('{name: start');
-    expect(screen.getByTestId('selection')).toHaveTextContent('"name":"go"');
+    await waitFor(() => expect(screen.getByTestId('selection')).toHaveTextContent('"name":"start"'));
+    const text = screen.getByTestId('spec-text').textContent ?? '';
+    expect(text).toContain('{name: start');
+    expect(text).toContain('when: "start"');
+    expect(text).toContain('when: "!start"');
+    expect(text).not.toContain('{name: go');
   });
 
   it('renames an input whose name nothing references', async () => {
@@ -236,6 +243,19 @@ describe('Inspector — refusal and honesty', () => {
 
     await waitFor(() => expect(screen.getByTestId('inspector-refusal')).toBeTruthy());
     expect(screen.getByTestId('spec-text').textContent).toBe(PROPERTY_SPEC);
+  });
+
+  it('refuses an invalid input rename with a reason, leaving the text byte-identical', async () => {
+    const fake = new FakeGatepack({ specText: FSM_SPEC });
+    await selectAndWait(fake, { kind: 'input', name: 'go' });
+    await waitFor(() => expect(screen.getByTestId('inspector-edit-input')).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText('input name'), { target: { value: '1bad' } });
+
+    await waitFor(() => expect(screen.getByTestId('inspector-refusal')).toBeTruthy());
+    expect(screen.getByTestId('inspector-refusal').textContent).toContain('not a valid Verilog identifier');
+    expect(screen.getByTestId('spec-text').textContent).toBe(FSM_SPEC);
+    expect(screen.getByTestId('selection')).toHaveTextContent('"name":"go"');
   });
 
   it('offers no fabricated editable field for a cell selection', async () => {

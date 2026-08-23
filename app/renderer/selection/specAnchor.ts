@@ -12,7 +12,15 @@
  *    flattened.
  *  - **structural** — a `state`/`transition`/`input`/`property` selection is
  *    located directly in the YAML by parsing it (the `YamlNode` tree records a
- *    line per node). This route is exact by construction.
+ *    line per node). This route is exact by construction, and it is widened to
+ *    any construct (`resolveStructuralLine`) so an inferred fallback can also
+ *    locate outputs/inputs.
+ *
+ * When a `cell`/`net` has no provenance entry, an explicitly `inferred`
+ * fallback is attempted: a *net* whose name exactly matches a declared output
+ * or input resolves to that construct, labelled `inferred` — never `exact`. A
+ * `cell` gets no fallback; its `$abc$…` instance name never matches a spec
+ * construct, and a cone/nearest-construct guess would be fabricated provenance.
  *
  * `null` is a real answer ("no link"), never line 1.
  */
@@ -74,7 +82,7 @@ function provenanceAnchor(selection: Selection, provenance: ProvenanceMap): Spec
 }
 
 /* ------------------------------------------------------------------ */
-/* Structural route (state / transition / input / property)            */
+/* Structural route                                                    */
 /* ------------------------------------------------------------------ */
 
 function topLevelValue(root: YamlNode, key: string): YamlNode | null {
@@ -98,36 +106,111 @@ function itemLine(root: YamlNode, key: string, predicate: (value: YValue) => boo
   return null;
 }
 
-function structuralAnchor(selection: Selection, specText: string): SpecAnchor | null {
+/** The line of a named entry of the top-level mapping `key` (e.g. the
+ * `expressions`/`output_logic`/`constraints`/`packing` entry named `entryKey`),
+ * or null. */
+function mappingEntryLine(root: YamlNode, key: string, entryKey: string): number | null {
+  const value = topLevelValue(root, key);
+  if (value === null || value.kind !== 'mapping') return null;
+  const item = value.items.find((i) => i.key === entryKey);
+  return item ? item.value.line : null;
+}
+
+/** A construct the structural route can locate, keyed by its identity rather
+ * than by a `Selection` kind — the selection vocabulary only covers
+ * state/transition/input/property, so the rest are addressed here directly. */
+export type StructuralRef =
+  | { kind: 'state'; name: string }
+  | { kind: 'input'; name: string }
+  | { kind: 'output'; name: string }
+  | { kind: 'property'; name: string }
+  | { kind: 'transition'; from: string; to: string }
+  | { kind: 'expression'; name: string }
+  | { kind: 'testPoint'; net: string }
+  | { kind: 'macro'; instance: string }
+  | { kind: 'constraint'; field: string }
+  | { kind: 'packing'; field: string };
+
+/**
+ * The 1-based line of a construct in `specText`, located by parsing the YAML
+ * (the `YamlNode` tree records a line per node), or null. Every match is keyed
+ * on the construct's own identity — a name, a from/to pair, a net, an instance,
+ * a field — never on "the first item" or "line 1".
+ */
+export function resolveStructuralLine(specText: string, ref: StructuralRef): number | null {
   let root: YamlNode;
   try {
     root = parse(specText).root;
   } catch {
-    // Unparseable spec: no construct can be located. The editor's own
-    // diagnostics report *why* it does not parse; here the honest answer is
-    // "no link".
     return null;
   }
 
-  let line: number | null = null;
-  if (selection.kind === 'state') {
-    line = itemLine(root, 'states', (v) => v === selection.id);
-  } else if (selection.kind === 'input') {
-    line = itemLine(root, 'inputs', (v) => isDict(v) && v.name === selection.name);
-  } else if (selection.kind === 'property') {
-    line = itemLine(root, 'properties', (v) => isDict(v) && v.name === selection.name);
-  } else if (selection.kind === 'transition') {
-    // Match on the from/to pair, NOT on the `when` guard text: two transitions
-    // can carry identical guards, and locating the first line that contains the
-    // guard string would point at the wrong transition.
-    line = itemLine(
-      root,
-      'transitions',
-      (v) => isDict(v) && v.from === selection.from && v.to === selection.to,
-    );
+  switch (ref.kind) {
+    case 'state':
+      return itemLine(root, 'states', (v) => v === ref.name);
+    case 'input':
+      return itemLine(root, 'inputs', (v) => isDict(v) && v.name === ref.name);
+    case 'output':
+      return itemLine(root, 'outputs', (v) => isDict(v) && v.name === ref.name);
+    case 'property':
+      return itemLine(root, 'properties', (v) => isDict(v) && v.name === ref.name);
+    case 'transition':
+      // Match on the from/to pair, NOT on the `when` guard text: two transitions
+      // can carry identical guards, and locating the first line that contains
+      // the guard string would point at the wrong transition.
+      return itemLine(root, 'transitions', (v) => isDict(v) && v.from === ref.from && v.to === ref.to);
+    case 'expression':
+      return mappingEntryLine(root, 'expressions', ref.name);
+    case 'testPoint':
+      return itemLine(root, 'test_points', (v) => isDict(v) && v.net === ref.net);
+    case 'macro':
+      return itemLine(root, 'macros', (v) => isDict(v) && v.instance === ref.instance);
+    case 'constraint':
+      return mappingEntryLine(root, 'constraints', ref.field);
+    case 'packing':
+      return mappingEntryLine(root, 'packing', ref.field);
   }
+}
 
+/** Map the selections the structural route can answer to a `StructuralRef`. */
+function selectionToRef(selection: Selection): StructuralRef | null {
+  switch (selection.kind) {
+    case 'state':
+      return { kind: 'state', name: selection.id };
+    case 'input':
+      return { kind: 'input', name: selection.name };
+    case 'property':
+      return { kind: 'property', name: selection.name };
+    case 'transition':
+      return { kind: 'transition', from: selection.from, to: selection.to };
+    default:
+      return null;
+  }
+}
+
+function structuralAnchor(selection: Selection, specText: string): SpecAnchor | null {
+  const ref = selectionToRef(selection);
+  if (ref === null) return null;
+  const line = resolveStructuralLine(specText, ref);
   return line === null ? null : { line, route: 'structural', confidence: 'exact' };
+}
+
+/**
+ * An explicitly `inferred` fallback for a `cell`/`net` whose provenance has no
+ * surviving entry. It is limited to a *net* whose name is exactly a declared
+ * output or input — that name is the net's identity in the mapped netlist, so
+ * the link is a structural fact, not a guess — and it is always labelled
+ * `inferred` (never `exact`). A `cell` gets no such fallback: its `$abc$…`
+ * instance name never matches a spec construct, and inventing a cone or a
+ * nearest-construct link would be fabricating provenance.
+ */
+function inferredAnchor(selection: Selection, specText: string): SpecAnchor | null {
+  if (selection.kind !== 'net') return null;
+  const output = resolveStructuralLine(specText, { kind: 'output', name: selection.name });
+  if (output !== null) return { line: output, route: 'structural', confidence: 'inferred' };
+  const input = resolveStructuralLine(specText, { kind: 'input', name: selection.name });
+  if (input !== null) return { line: input, route: 'structural', confidence: 'inferred' };
+  return null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -140,7 +223,7 @@ export function resolveSpecAnchor(
   specText: string,
 ): SpecAnchor | null {
   if (selection.kind === 'cell' || selection.kind === 'net') {
-    return provenanceAnchor(selection, provenance);
+    return provenanceAnchor(selection, provenance) ?? inferredAnchor(selection, specText);
   }
   return structuralAnchor(selection, specText);
 }

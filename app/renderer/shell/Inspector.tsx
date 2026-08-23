@@ -16,11 +16,12 @@
 import { useEffect, useState } from 'react';
 import {
   applyTopLevelEdit,
+  renameInput,
   renameState,
   setField,
+  setInputSync,
   type DesignModel,
   type EditOutcome,
-  type InputPort,
   type PropertySpec,
   type Transition,
 } from '../design/model';
@@ -81,17 +82,6 @@ function decide(outcome: EditOutcome, original: string): EditDecision {
     .map((d) => d.message);
   if (reasons.length > 0) return { refused: true, text: original, reasons };
   return { refused: false, text: outcome.text, reasons: [] };
-}
-
-function editInputs(specText: string, inputs: InputPort[]): EditDecision {
-  try {
-    const outcome = applyTopLevelEdit(specText, 'inputs', () =>
-      inputs.map((p) => ({ name: p.name, sync: p.sync })),
-    );
-    return decide(outcome, specText);
-  } catch (e) {
-    return { refused: true, text: specText, reasons: [messageOf(e)] };
-  }
 }
 
 function editTransitionWhen(
@@ -295,12 +285,7 @@ export function Inspector() {
                 aria-label="input name"
                 onChange={(e) =>
                   apply(
-                    editInputs(
-                      specText,
-                      model.inputs.map((p) =>
-                        p.name === input.name ? { ...p, name: e.target.value } : p,
-                      ),
-                    ),
+                    decide(renameInput(specText, input.name, e.target.value), specText),
                     () => setSelection({ kind: 'input', name: e.target.value }),
                   )
                 }
@@ -312,12 +297,7 @@ export function Inspector() {
                   aria-label="input sync"
                   onChange={(e) =>
                     apply(
-                      editInputs(
-                        specText,
-                        model.inputs.map((p) =>
-                          p.name === input.name ? { ...p, sync: e.target.checked } : p,
-                        ),
-                      ),
+                      decide(setInputSync(specText, input.name, e.target.checked), specText),
                     )
                   }
                 />
