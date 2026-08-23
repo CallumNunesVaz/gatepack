@@ -374,3 +374,51 @@ def test_no_refs_row_is_placeholder():
     from gatepack.pinmap import pin_verification
 
     assert pin_verification(None) is Verification.PLACEHOLDER
+
+
+# ---------------------------------------------------------------------------
+# Tripwire, added in review 2026-08-24.
+#
+# Every example ships its own `parts.csv` (so a project can be opened without
+# the repository), and the pin map is a *companion file* — `<stem>.pins.csv` —
+# which the examples do not carry. The KiCad emitter therefore uses the pin map
+# when building against `libraries/74aup.csv` and the positional fallback when
+# building against `examples/<name>/parts.csv`.
+#
+# Measured today, those two produce identical pin numbers, because the shipped
+# map IS the positional numbering. So there is no divergence to fix yet, and
+# nothing to warn a user about.
+#
+# The day someone transcribes a real datasheet pinout into `74aup.pins.csv`,
+# that stops being true and the same design silently emits different pin numbers
+# depending on which `--library` path was passed — one of them wrong. This test
+# fails on that day, which is the day the examples need the map copied beside
+# them. It is a tripwire, not an assertion that positional numbering is correct.
+# ---------------------------------------------------------------------------
+
+
+def test_shipped_pin_map_still_agrees_with_the_positional_fallback():
+    from gatepack.emit.kicad import _package_pin_entries, _positional_pins
+
+    parts = load_parts(str(LIBRARY))
+    pinmaps = load_pinmaps_cited(str(LIBRARY))
+    checked = 0
+    for part in parts:
+        pm = pinmaps.get((part.part_suffix, part.package))
+        if pm is None:
+            continue
+        mapped = _package_pin_entries(part, pm)
+        fallback = [
+            (name, direction, str(i + 1))
+            for i, (name, direction) in enumerate(_positional_pins(part))
+        ]
+        # The map may declare extra package leads (an NC the fallback never
+        # emitted); every pin the fallback *does* number must match.
+        assert mapped[: len(fallback)] == fallback, (
+            f"{part.part_suffix}/{part.package}: the pin map has diverged from the "
+            "positional fallback. Examples ship parts.csv without a .pins.csv, so "
+            "they now emit different pin numbers from a build against the full "
+            "library. Copy the pin-map subset beside each example's parts.csv."
+        )
+        checked += 1
+    assert checked >= 20, f"expected the shipped map to cover >=20 parts, checked {checked}"
