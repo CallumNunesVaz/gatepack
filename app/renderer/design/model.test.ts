@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyTopLevelEdit,
   parseDesignText,
+  renameInput,
   renameState,
   setInputSync,
   setTestPoints,
@@ -140,6 +141,161 @@ describe('renameState', () => {
     expect(m.transitions.map((t) => t.to)).toEqual(['RUNNING', 'IDLE']);
     expect(m.transitions.map((t) => t.from)).toEqual(['IDLE', 'RUNNING']);
     expect(m.outputLogic['y']).toBe('state == RUNNING');
+  });
+
+  it('does not match a state name that is a prefix of another identifier', () => {
+    const doc = XOR2
+      .replace('states: [S0]', 'states: [RUN, RUNNING]')
+      .replace('initial: S0', 'initial: RUN');
+    const { text } = renameState(doc, 'RUN', 'ACTIVE');
+    expect(text).toContain('states: [ACTIVE, RUNNING]');
+    expect(text).toContain('initial: ACTIVE');
+    // `RUNNING` is a different state, untouched.
+    expect(text).toContain('RUNNING');
+  });
+});
+
+describe('renameState — a line-level splice, not a round-trip', () => {
+  // The exact defect from the brief: renaming RUN->ACTIVE used to re-serialise
+  // four blocks, deleting three comments and reflowing three collections into
+  // flow style.
+  const ANNOTATED = [
+    'name: guard',
+    'timing_model: synchronous',
+    'clock: {signal: clk, freq_hz: 1000, source: OSC}',
+    'reset: {signal: rst_n, active: low, source: SUPERVISOR}',
+    'encoding: one_hot',
+    'inputs:',
+    '  - {name: go, sync: false}',
+    'outputs:',
+    '  - {name: busy}',
+    'states:',
+    '  # IDLE is the power-on state; do not reorder, the encoder is stable on order',
+    '  - IDLE',
+    '  - RUN',
+    'initial: IDLE',
+    'transitions:',
+    "  # the operator's start button, debounced in hardware",
+    '  - {from: IDLE, to: RUN, when: "go"}',
+    'output_logic:',
+    '  # asserted only in RUN — safety-relevant, see review 2026-03',
+    '  busy: "state == RUN"',
+    '',
+  ].join('\n');
+
+  it('preserves every comment and every block/flow style it does not change', () => {
+    const { text } = renameState(ANNOTATED, 'RUN', 'ACTIVE');
+
+    // None of the three comments survive a round-trip; all three survive here.
+    expect(text).toContain('# IDLE is the power-on state; do not reorder, the encoder is stable on order');
+    expect(text).toContain("# the operator's start button, debounced in hardware");
+    expect(text).toContain('# asserted only in RUN — safety-relevant, see review 2026-03');
+
+    // The renamed identifiers land where they must.
+    expect(text).toContain('  - ACTIVE');
+    expect(text).toContain('- {from: IDLE, to: ACTIVE, when: "go"}');
+    expect(text).toContain('busy: "state == ACTIVE"');
+
+    // The styles of the collections are not reflowed: `states` stays a block
+    // list, `transitions` stays flow, `output_logic` stays a block mapping.
+    expect(text).toContain('states:\n  # IDLE is the power-on state');
+    expect(text).toContain('  - {from: IDLE, to: ACTIVE, when: "go"}');
+    expect(text).toContain('output_logic:\n  # asserted only in RUN');
+
+    expect(parseDesignText(text).model).not.toBeNull();
+  });
+
+  it('changes exactly the lines that carry the name, and no others', () => {
+    const before = ANNOTATED.split('\n');
+    const after = renameState(ANNOTATED, 'RUN', 'ACTIVE').text.split('\n');
+    expect(after).toHaveLength(before.length);
+    const changed = before.filter((line, i) => line !== after[i]);
+    expect(changed).toEqual([
+      '  - RUN',
+      '  - {from: IDLE, to: RUN, when: "go"}',
+      '  busy: "state == RUN"',
+    ]);
+  });
+});
+
+describe('renameInput', () => {
+  const DOC = [
+    'name: renamer',
+    'timing_model: synchronous',
+    'clock: {signal: clk, freq_hz: 1000, source: OSC}',
+    'reset: {signal: rst_n, active: low, source: "go button"}',
+    'encoding: one_hot',
+    'inputs:',
+    '  # the start button, debounced in hardware',
+    '  - {name: go, sync: false}',
+    '  - {name: going, sync: false}',
+    '  - {name: go_n, sync: false}',
+    'outputs:',
+    '  - {name: busy}',
+    'expressions:',
+    '  cond: "go & !going"',
+    'states: [IDLE, RUN]',
+    'initial: IDLE',
+    'transitions:',
+    '  - {from: IDLE, to: RUN, when: "go"}',
+    '  - {from: RUN, to: IDLE, when: "!going"}',
+    'output_logic:',
+    '  busy: "go | state == RUN"',
+    'properties:',
+    '  - {name: p1, kind: invariant, expr: "go ^ going"}',
+    'fundamental_mode:',
+    '  mutually_exclusive:',
+    '    - [go, going]',
+    '',
+  ].join('\n');
+
+  it('rewrites a guard, an output expression, a property expression and a fundamental_mode group in one edit', () => {
+    const { text, diagnostics } = renameInput(DOC, 'go', 'start');
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+
+    expect(text).toContain('{name: start');
+    expect(text).toContain('when: "start"');
+    expect(text).toContain('busy: "start | state == RUN"');
+    expect(text).toContain('expr: "start ^ going"');
+    expect(text).toContain('cond: "start & !going"');
+    expect(text).toContain('- [start, going]');
+    // `state == RUN` is a state reference, not the input being renamed.
+    expect(text).toContain('state == RUN');
+  });
+
+  it('is identifier-aware: going, go_n and a quoted non-expression string are left alone', () => {
+    const { text } = renameInput(DOC, 'go', 'start');
+    expect(text).toContain('{name: going');
+    expect(text).toContain('{name: go_n');
+    expect(text).toContain('when: "!going"');
+    // `reset.source` is a quoted string that is not an expression; a textual
+    // rename would have rewritten it.
+    expect(text).toContain('source: "go button"');
+    // The comment is preserved, and it still reads "start button" only inside
+    // the comment (not the input name, which moved).
+    expect(text).toContain('# the start button, debounced in hardware');
+  });
+
+  it('refuses an invalid identifier and leaves the text byte-identical', () => {
+    const { text, diagnostics } = renameInput(DOC, 'go', '1bad');
+    expect(text).toBe(DOC);
+    expect(diagnostics.some((d) => d.severity === 'error' && d.message.includes('not a valid Verilog identifier'))).toBe(true);
+  });
+
+  it('refuses a collision with an existing input, output, state or expression', () => {
+    const collision = renameInput(DOC, 'go', 'going');
+    expect(collision.text).toBe(DOC);
+    expect(collision.diagnostics.some((d) => d.severity === 'error' && d.message.includes('already used'))).toBe(true);
+
+    const outputCollision = renameInput(DOC, 'go', 'busy');
+    expect(outputCollision.text).toBe(DOC);
+    expect(outputCollision.diagnostics.some((d) => d.severity === 'error' && d.message.includes('already used'))).toBe(true);
+  });
+
+  it('refuses an unknown input, byte-identical', () => {
+    const { text, diagnostics } = renameInput(DOC, 'nope', 'start');
+    expect(text).toBe(DOC);
+    expect(diagnostics.some((d) => d.severity === 'error' && d.message.includes('no input named'))).toBe(true);
   });
 });
 

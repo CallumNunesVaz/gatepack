@@ -38,6 +38,7 @@ import { useHighlights, useSelection } from '../selection/bus';
 import { setInputSync, setTestPoints } from '../design/model';
 import {
   applyEditAffordances,
+  NO_BUILD_REFUSAL,
   regroupToPackage,
   stableNamesFromPacked,
   toggleTestPoint,
@@ -594,6 +595,15 @@ export function Schematic() {
     setDragSource(null);
     if (!source) return;
     const target = event.target as Element | null;
+    // An empty packed view offers no package to drop onto, so it has no
+    // `[data-refdes]` boundary. The empty drop target stands in so the regroup
+    // refusal (no build -> no stable names) is reachable and the user is *told
+    // why* rather than having the drag silently swallowed.
+    const dropZone = target?.closest?.('[data-gp-drop-zone]') ?? null;
+    if (dropZone !== null) {
+      setRefusal(NO_BUILD_REFUSAL);
+      return;
+    }
     const pkgEl = target?.closest?.('[data-refdes]') ?? null;
     const refdes = pkgEl?.getAttribute('data-refdes') ?? null;
     if (refdes === null) return;
@@ -617,6 +627,8 @@ export function Schematic() {
     () => (packed && positions ? computePackageLayouts(packed.packages, positions) : null),
     [packed, positions],
   );
+
+  const packagesEmpty = packed === null || packed.packages.length === 0;
 
   const overlayActive = showPacked || showOverlay;
 
@@ -988,6 +1000,19 @@ export function Schematic() {
                       );
                     })
                   : null}
+
+                {showPacked && editMode && packagesEmpty ? (
+                  <g
+                    data-gp-drop-zone="empty"
+                    data-testid="schematic-drop-zone"
+                    transform="translate(20, 20)"
+                  >
+                    <rect className="packed-drop-zone" width={240} height={36} rx={4} />
+                    <text className="packed-drop-zone-label" x={12} y={23}>
+                      drop a gate here to regroup
+                    </text>
+                  </g>
+                ) : null}
 
                 {showOverlay
                   ? unobservable.map((net, i) => {

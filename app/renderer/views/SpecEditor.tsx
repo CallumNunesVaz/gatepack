@@ -39,6 +39,8 @@ export function SpecEditor() {
   ctxRef.current = ctx;
   const specTextRef = useRef(specText);
   specTextRef.current = specText;
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
   const tokenRef = useRef(0);
   const [reveal, setReveal] = useState<{ line: number; token: number } | null>(null);
 
@@ -51,7 +53,22 @@ export function SpecEditor() {
     const anchor = link
       ? resolveSpecAnchor(selection, link.provenance, specTextRef.current)
       : null;
-    setReveal(anchor ? { line: anchor.line, token: ++tokenRef.current } : null);
+    if (anchor) {
+      // A reveal is only ever shown as a Monaco line, so the YAML tab can
+      // always satisfy it; the graph tab can also satisfy a state/transition
+      // reveal (it already selects the node/edge). The form tab never can. So
+      // the tab moves only when the current tab cannot show what was revealed —
+      // a `null` anchor must not move anything, and selecting a node inside the
+      // graph must not yank the user away from it.
+      const shownByCurrentTab =
+        tabRef.current === 'yaml' ||
+        (tabRef.current === 'graph' &&
+          (selection.kind === 'state' || selection.kind === 'transition'));
+      if (!shownByCurrentTab) setTab('yaml');
+      setReveal({ line: anchor.line, token: ++tokenRef.current });
+    } else {
+      setReveal(null);
+    }
   }, [selection]);
 
   return (

@@ -1863,3 +1863,18 @@ th.sortable[aria-sort='descending'] .sort-indicator svg {
   stroke: var(--gp-info);
   stroke-width: 1;
 }
+
+/* The regroup drop target drawn when the packed view is empty: a real, clickable
+ * target so the "run a build before regrouping" refusal is reachable rather than
+ * a dead drag. Dashed so it reads as "no package yet", never as a package. */
+.schematic__overlay-layer .packed-drop-zone {
+  fill: var(--gp-surface-2);
+  stroke: var(--gp-accent);
+  stroke-dasharray: 6 4;
+  stroke-width: 1;
+}
+
+.schematic__overlay-layer .packed-drop-zone-label {
+  fill: var(--gp-text-muted);
+  font-size: 12px;
+}

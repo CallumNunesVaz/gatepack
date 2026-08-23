@@ -16,6 +16,7 @@ import {
   serializeDocument,
   serializeTopLevelValue,
   spliceText,
+  type Range,
   type YValue,
 } from './yaml';
 
@@ -528,7 +529,104 @@ export function setField(text: string, key: string, value: YValue): EditOutcome 
   }
 }
 
-/** Rename a state everywhere it appears (states, initial, transitions, output_logic, macros). */
+/* ------------------------------------------------------------------ */
+/* Identifier-aware, comment-preserving splices                        */
+/* ------------------------------------------------------------------ */
+
+/** The characters that continue an identifier: a rename matches a name only as
+ * a whole identifier, so `RUN` matches `- RUN` and `state == RUN` but never
+ * `RUNNING` or `go_RUN`. */
+const IDENTIFIER_CHARS = 'A-Za-z0-9_';
+
+function identifierPattern(name: string): string {
+  return `(?<![${IDENTIFIER_CHARS}])${escapeRegExp(name)}(?![${IDENTIFIER_CHARS}])`;
+}
+
+/** Replace every whole-identifier occurrence of `name` in a string. */
+function replaceIdentifier(text: string, name: string, replacement: string): string {
+  return text.replace(new RegExp(identifierPattern(name), 'g'), replacement);
+}
+
+/** Apply `transform` to the code part of every line inside a block's value,
+ * preserving each line's trailing comment and every line that does not change.
+ * Returns null when no line changed, so an absent block (or a rename that
+ * matches nothing) leaves the document byte-identical. */
+function spliceBlockLines(
+  text: string,
+  range: Range,
+  transform: (code: string) => string,
+): { start: number; end: number; value: string } | null {
+  const body = text.slice(range.valueStart, range.valueEnd);
+  let changed = false;
+  const lines = body.split('\n').map((line) => {
+    const hash = line.indexOf('#');
+    const code = hash === -1 ? line : line.slice(0, hash);
+    const next = transform(code);
+    if (next === code) return line;
+    changed = true;
+    return hash === -1 ? next : next + line.slice(hash);
+  });
+  if (!changed) return null;
+  return { start: range.valueStart, end: range.valueEnd, value: lines.join('\n') };
+}
+
+/** Apply disjoint character-range edits, newest-first so earlier offsets stay
+ * valid. */
+function applyRangeEdits(
+  text: string,
+  edits: Array<{ start: number; end: number; value: string }>,
+): string {
+  const sorted = [...edits].sort((a, b) => b.start - a.start);
+  let out = text;
+  for (const edit of sorted) out = spliceText(out, edit.start, edit.end, edit.value);
+  return out;
+}
+
+/** Rename the *input* identifier `oldName` in an expression, leaving
+ * `state == oldName` (a state reference) untouched. */
+function renameInputInExpr(expr: string, oldName: string, newName: string): string {
+  const stateEq = `\\bstate\\s*==\\s*${identifierPattern(oldName)}`;
+  const bare = identifierPattern(oldName);
+  return expr.replace(new RegExp(`${stateEq}|${bare}`, 'g'), (match) =>
+    match === oldName ? newName : match,
+  );
+}
+
+/** Rename the input identifier inside a quoted or plain scalar expression. */
+function renameInputInScalar(raw: string, oldName: string, newName: string): string {
+  const first = raw[0];
+  if ((first === '"' || first === "'") && raw.length >= 2 && raw[raw.length - 1] === first) {
+    return first + renameInputInExpr(raw.slice(1, -1), oldName, newName) + first;
+  }
+  return renameInputInExpr(raw, oldName, newName);
+}
+
+/** Rename `oldName` in the value of one named field (quoted or plain). */
+function renameInField(code: string, field: string, oldName: string, newName: string): string {
+  const fieldRe = new RegExp(`(\\b${field}\\s*:\\s*)("([^"]*)"|'([^']*)'|([^,}]+))`, 'g');
+  return code.replace(fieldRe, (_match, prefix, _whole, dq, sq, bare) => {
+    if (dq !== undefined) return `${prefix}"${renameInputInExpr(dq, oldName, newName)}"`;
+    if (sq !== undefined) return `${prefix}'${renameInputInExpr(sq, oldName, newName)}'`;
+    return `${prefix}${renameInputInExpr(bare, oldName, newName)}`;
+  });
+}
+
+/** Rename `oldName` in the *values* of a mapping block (keys are left alone). */
+function renameInMappingValues(code: string, oldName: string, newName: string): string {
+  const kvRe = /([A-Za-z_][A-Za-z0-9_]*\s*:\s*)("(?:\\.|[^"])*"|'(?:\\.|[^'])*'|[^,}]+)/g;
+  return code.replace(kvRe, (_match, keyPart, valuePart) =>
+    keyPart + renameInputInScalar(valuePart, oldName, newName),
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Renames                                                             */
+/* ------------------------------------------------------------------ */
+
+/** Rename a state everywhere it appears (states, initial, transitions,
+ * output_logic, macros). A line-level splice: only the lines that actually
+ * carry the name change, so every comment and the block/flow style of every
+ * collection the rename does not touch survive byte-identical. */
 export function renameState(text: string, oldName: string, newName: string): EditOutcome {
   if (!isIdentifier(newName)) {
     const outcome = parseDesignText(text);
@@ -537,66 +635,171 @@ export function renameState(text: string, oldName: string, newName: string): Edi
       diagnostics: [...outcome.diagnostics, diag('error', 'ED1023', `state name ${JSON.stringify(newName)} is not a valid Verilog identifier`)],
     };
   }
-  const { value } = parseToJs(text);
+
+  const { value, ranges } = parseToJs(text);
   const root = asDict(value) ?? {};
 
-  const renameExprState = (expr: string): string =>
-    expr.replace(new RegExp(`\\bstate\\s*==\\s*${escapeRegExp(oldName)}\\b`, 'g'), `state == ${newName}`);
+  // `state == NAME` in output_logic / macros `enable` (a state reference).
+  const stateEqRe = new RegExp(`\\bstate\\s*==\\s*${identifierPattern(oldName)}`, 'g');
+  const renameStateExpr = (code: string): string =>
+    code.replace(stateEqRe, `state == ${newName}`);
 
-  const edits = new Map<string, YValue>();
+  // `from:` / `to:` in transitions (state references); `when:` is an input guard
+  // and must never be touched by a state rename.
+  const fromToRe = new RegExp(
+    `(\\b(?:from|to)\\s*:\\s*)("?)${identifierPattern(oldName)}\\2`,
+    'g',
+  );
+  const renameFromTo = (code: string): string =>
+    code.replace(fromToRe, (_match, prefix, quote) => `${prefix}${quote}${newName}${quote}`);
 
-  const states = (asList(root['states']) ?? []).map((s) => (asString(s) === oldName ? newName : s));
-  edits.set('states', states);
+  const edits: Array<{ start: number; end: number; value: string }> = [];
 
-  if (asString(root['initial']) === oldName) edits.set('initial', newName);
-
-  const transitions = (asList(root['transitions']) ?? []).map((item) => {
-    const m = asDict(item);
-    if (!m) return item;
-    const out: Record<string, YValue> = { ...m };
-    if (asString(m['from']) === oldName) out['from'] = newName;
-    if (asString(m['to']) === oldName) out['to'] = newName;
-    return out;
-  });
-  edits.set('transitions', transitions);
-
-  const outputLogic = { ...(asDict(root['output_logic']) ?? {}) };
-  for (const [k, v] of Object.entries(outputLogic)) {
-    if (asString(v) !== null) outputLogic[k] = renameExprState(asString(v) as string);
+  const statesRange = ranges.get('states');
+  if (statesRange) {
+    const edit = spliceBlockLines(text, statesRange, (code) =>
+      replaceIdentifier(code, oldName, newName),
+    );
+    if (edit) edits.push(edit);
   }
-  edits.set('output_logic', outputLogic);
 
-  const macros = (asList(root['macros']) ?? []).map((item) => {
-    const m = asDict(item);
-    if (!m) return item;
-    const out: Record<string, YValue> = { ...m };
-    const enable = asString(m['enable']);
-    if (enable !== null) out['enable'] = renameExprState(enable);
-    return out;
-  });
-  edits.set('macros', macros);
+  if (asString(root['initial']) === oldName) {
+    const initialRange = ranges.get('initial');
+    if (initialRange) {
+      edits.push({
+        start: initialRange.valueStart,
+        end: initialRange.valueEnd,
+        value: ` ${newName}`,
+      });
+    }
+  }
 
-  return applyEdits(text, edits);
+  const transitionsRange = ranges.get('transitions');
+  if (transitionsRange) {
+    const edit = spliceBlockLines(text, transitionsRange, renameFromTo);
+    if (edit) edits.push(edit);
+  }
+
+  const outputLogicRange = ranges.get('output_logic');
+  if (outputLogicRange) {
+    const edit = spliceBlockLines(text, outputLogicRange, renameStateExpr);
+    if (edit) edits.push(edit);
+  }
+
+  const macrosRange = ranges.get('macros');
+  if (macrosRange) {
+    const edit = spliceBlockLines(text, macrosRange, renameStateExpr);
+    if (edit) edits.push(edit);
+  }
+
+  if (edits.length === 0) {
+    return { text, diagnostics: parseDesignText(text).diagnostics };
+  }
+  const newText = applyRangeEdits(text, edits);
+  return { text: newText, diagnostics: parseDesignText(newText).diagnostics };
 }
 
-function applyEdits(text: string, edits: Map<string, YValue>): EditOutcome {
+/** §C12: rename an input everywhere it is referenced — identifier-aware and
+ * line-spliced so the lines that do not name the input are untouched. Refuses
+ * (byte-identical) when the new name is not a valid identifier, collides with
+ * an input/output/state/expression name, or the result does not parse. */
+export function renameInput(text: string, oldName: string, newName: string): EditOutcome {
+  const refuse = (reason: string): EditOutcome => {
+    const outcome = parseDesignText(text);
+    return {
+      text,
+      diagnostics: [...outcome.diagnostics, diag('error', 'ED1025', reason)],
+    };
+  };
+
+  if (!isIdentifier(newName)) {
+    return refuse(`input name ${JSON.stringify(newName)} is not a valid Verilog identifier`);
+  }
+
+  const parsed = parseDesignText(text);
+  if (parsed.model === null) {
+    return { text, diagnostics: parsed.diagnostics };
+  }
+  const model = parsed.model;
+
+  if (!model.inputs.some((i) => i.name === oldName)) {
+    return refuse(`no input named ${JSON.stringify(oldName)} to rename`);
+  }
+
+  const reserved = new Set<string>();
+  for (const i of model.inputs) if (i.name !== oldName) reserved.add(i.name);
+  for (const o of model.outputs) reserved.add(o.name);
+  for (const s of model.states) reserved.add(s);
+  for (const k of Object.keys(model.expressions)) reserved.add(k);
+  if (reserved.has(newName)) {
+    return refuse(
+      `name ${JSON.stringify(newName)} is already used by an input, output, state or expression`,
+    );
+  }
+
   const { ranges } = parseToJs(text);
-  const replacements: Array<{ start: number; end: number; value: string }> = [];
-  for (const [key, value] of edits) {
-    const range = ranges.get(key);
-    if (!range) continue;
-    replacements.push({
-      start: range.valueStart,
-      end: range.valueEnd,
-      value: serializeTopLevelValue(value),
-    });
+  const edits: Array<{ start: number; end: number; value: string }> = [];
+
+  const inputsRange = ranges.get('inputs');
+  if (inputsRange) {
+    const edit = spliceBlockLines(text, inputsRange, (code) =>
+      renameInField(code, 'name', oldName, newName),
+    );
+    if (edit) edits.push(edit);
   }
-  replacements.sort((a, b) => b.start - a.start);
-  let newText = text;
-  for (const r of replacements) {
-    newText = spliceText(newText, r.start, r.end, r.value);
+
+  const transitionsRange = ranges.get('transitions');
+  if (transitionsRange) {
+    const edit = spliceBlockLines(text, transitionsRange, (code) =>
+      renameInField(code, 'when', oldName, newName),
+    );
+    if (edit) edits.push(edit);
   }
+
+  const outputLogicRange = ranges.get('output_logic');
+  if (outputLogicRange) {
+    const edit = spliceBlockLines(text, outputLogicRange, (code) =>
+      renameInMappingValues(code, oldName, newName),
+    );
+    if (edit) edits.push(edit);
+  }
+
+  const propertiesRange = ranges.get('properties');
+  if (propertiesRange) {
+    const edit = spliceBlockLines(text, propertiesRange, (code) =>
+      renameInField(code, 'expr', oldName, newName),
+    );
+    if (edit) edits.push(edit);
+  }
+
+  const expressionsRange = ranges.get('expressions');
+  if (expressionsRange) {
+    const edit = spliceBlockLines(text, expressionsRange, (code) =>
+      renameInMappingValues(code, oldName, newName),
+    );
+    if (edit) edits.push(edit);
+  }
+
+  const fmRange = ranges.get('fundamental_mode');
+  if (fmRange) {
+    const edit = spliceBlockLines(text, fmRange, (code) =>
+      replaceIdentifier(code, oldName, newName),
+    );
+    if (edit) edits.push(edit);
+  }
+
+  // `safe_state` keys are output names and its values are 0/1/any, so an input
+  // name can never legitimately appear there; it is deliberately left untouched
+  // (see BUILD-NOTES-spine.md).
+
+  if (edits.length === 0) {
+    return { text, diagnostics: parsed.diagnostics };
+  }
+  const newText = applyRangeEdits(text, edits);
   const outcome = parseDesignText(newText);
+  if (outcome.model === null) {
+    return { text, diagnostics: outcome.diagnostics };
+  }
   return { text: newText, diagnostics: outcome.diagnostics };
 }
 

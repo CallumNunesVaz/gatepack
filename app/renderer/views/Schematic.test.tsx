@@ -758,6 +758,34 @@ output_logic:
     expect(fake.specText).not.toMatch(/force_groups[\s\S]*\$g1/);
     expect(fake.specText).not.toContain('position');
   });
+
+  it('reaches the regroup refusal through a click when the packed view is empty', async () => {
+    // An empty packed view has no `[data-refdes]` boundary, so a regroup drag
+    // used to be silently swallowed and the "run a build" refusal was
+    // unreachable. The empty drop target makes it reachable: dropping a gate on
+    // it must show the refusal, not write anything.
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setOk('mappedNetlist', TWO_GATE_NETLIST);
+    fake.setOk('packedNetlist', { packages: [] });
+    fake.setOk('analyse', analysis([]));
+    const { container } = await editView(fake);
+
+    await userEvent.click(screen.getByLabelText('packed netlist'));
+    const dropZone = container.querySelector('[data-testid="schematic-drop-zone"]') as Element;
+    expect(dropZone).toBeTruthy();
+
+    const before = fake.specText;
+    fireEvent.mouseDown(container.querySelector('[id="cell_$g1"]') as Element);
+    fireEvent.mouseUp(dropZone);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('schematic-edit-refusal').textContent).toContain(
+        'Run a build before regrouping',
+      );
+    });
+    expect(fake.specText).toBe(before);
+    expect(fake.specText).not.toContain('force_groups');
+  });
 });
 
 describe('Schematic — flow and hover (Falstad cues)', () => {
