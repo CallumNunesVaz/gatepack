@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from gatepack.analysis.clock import timing_analysis
+from gatepack.analysis.clock import TimingReport, timing_analysis
 from gatepack.analysis.cpld import lint_cpld
 from gatepack.analysis.faults import FaultReport, analyze_faults
 from gatepack.analysis.power import (
@@ -35,6 +35,7 @@ from gatepack.emit.refdes import (
     refdes_delta,
     refdes_map,
 )
+from gatepack.frontend.errors import AsyncRefused
 from gatepack.frontend.model import CompiledDesign
 from gatepack.netlist import CellNames, MappedNetlist, resolve_parts, stable_cell_names
 from gatepack.pack.packer import (
@@ -44,7 +45,7 @@ from gatepack.pack.packer import (
     pack,
 )
 from gatepack.parts import Part
-from gatepack.report.report import ReportInputs, emit_report
+from gatepack.report.report import AsyncReportInputs, ReportInputs, emit_async_report, emit_report
 
 
 @dataclass(frozen=True)
@@ -292,6 +293,22 @@ def run_build(
     compiled = compiled_result.compiled
     design = compiled.design
 
+    if design.timing_model == "asynchronous":
+        if mapped_json is not None:
+            raise AsyncRefused(
+                f"asynchronous design {design.name!r} refused: --mapped injects a "
+                "raw mapped.json past the hazard check, which is the one thing the "
+                "asynchronous pipeline must not allow (§7.3). The netlist is "
+                "synthesised and hazard-verified in the pipeline, not supplied."
+            )
+        return _run_async_build(
+            compiled,
+            library_csv,
+            out,
+            spare_leakage_weight,
+            allow_unverified_gates_per_pkg,
+        )
+
     parts = load_parts_cited(library_csv)
     vcc = design.constraints.vcc
     vcc_errors = check_vcc_compatibility(compiled, parts, vcc)
@@ -338,6 +355,154 @@ def run_build(
     _gate_unverified_gates_per_pkg(result.assigned, allow_unverified_gates_per_pkg)
     paths = write_build(out, result, previous)
     return result, paths
+
+
+def _run_async_build(
+    compiled: CompiledDesign,
+    library_csv: str | Path,
+    out: Path,
+    spare_leakage_weight: float | None,
+    allow_unverified_gates_per_pkg: bool,
+) -> tuple[BuildResult, dict[str, Path]]:
+    """``gatepack build`` for an asynchronous design (§7.3).
+
+    Runs the full pipeline (stages 1–4 then stage 5).  The netlist is obtained
+    *only* through :func:`gatepack.async_pipeline.AsyncPipelineResult.netlist`,
+    which raises :class:`~gatepack.async_pipeline.HazardFailed` (an
+    :class:`~gatepack.frontend.errors.AsyncRefused`) unless stage 5 passed — so a
+    BOM, KiCad netlist or report can never be built from a netlist whose hazard
+    check failed, was skipped, or never ran.
+    """
+    from gatepack.async_pipeline import run_async_pipeline
+    from gatepack.estimate import VccIncompatibleError, check_vcc_compatibility
+    from gatepack.liberty.generator import generate as generate_liberty
+    from gatepack.refs import load_parts_cited
+    from gatepack.toolchain import ToolchainRunner
+    from gatepack.verify.asynchronous import cell_functions_from_liberty
+
+    parts = load_parts_cited(library_csv)
+    vcc = compiled.design.constraints.vcc
+    vcc_errors = check_vcc_compatibility(compiled, parts, vcc)
+    if vcc_errors:
+        raise VccIncompatibleError("; ".join(vcc_errors))
+    liberty = generate_liberty(parts, library_name="gatepack", project_vcc=vcc)
+    cell_functions = cell_functions_from_liberty(liberty.text)
+
+    pipeline = run_async_pipeline(
+        compiled,
+        ToolchainRunner(),
+        workdir=out,
+        cell_functions=cell_functions,
+    )
+
+    # The structural binding: this raises HazardFailed (-> AsyncRefused) unless
+    # stage 5 passed, so nothing below can run on an unverified netlist.
+    netlist = pipeline.netlist()
+    pipeline.write_artefacts(out)
+
+    weight = (
+        spare_leakage_weight
+        if spare_leakage_weight is not None
+        else DEFAULT_SPARE_LEAKAGE_WEIGHT
+    )
+    result = _assemble_async(netlist, parts, compiled, pipeline, weight, out)
+    _gate_unverified_gates_per_pkg(result.assigned, allow_unverified_gates_per_pkg)
+    paths = write_build(out, result, load_previous_refdes(out))
+    return result, paths
+
+
+def _assemble_async(
+    netlist: MappedNetlist,
+    parts: Sequence[Part],
+    compiled: CompiledDesign,
+    pipeline,
+    spare_leakage_weight: float,
+    out: Path,
+) -> BuildResult:
+    """Pack + emit BOM/KiCad/report for a *hazard-verified* asynchronous netlist.
+
+    Deliberately does **not** run the synchronous analyses (timing, SCOAP, stuck-at)
+    — each assumes a clocked combinational cut an asynchronous design has no
+    analogue of — and instead emits the §C8 asynchronous report that states the
+    §7.3 guarantee and its limits.  Packing, BOM and the KiCad netlist operate on
+    the resolved G-cell netlist and are timing-model agnostic.
+    """
+    design = compiled.design
+    netlist = resolve_parts(netlist, list(parts))
+    names = stable_cell_names(netlist)
+
+    packed = pack(
+        netlist.cells,
+        list(parts),
+        PackerConfig(
+            spare_leakage_weight=spare_leakage_weight,
+            force_groups=tuple(tuple(g) for g in design.packing.force_groups),
+        ),
+        stable_names=names,
+    )
+    assigned = assign_refdes(packed.packed)
+    previous = load_previous_refdes(out)
+    current = refdes_map(assigned)
+    delta = refdes_delta(dict(previous or {}), current)
+
+    static = static_current_by_tier(netlist.cells)
+    spare_ua = spare_leakage_ua(packed.packed)
+
+    report = emit_async_report(
+        AsyncReportInputs(
+            design=design.name,
+            mutually_exclusive=tuple(
+                tuple(g) for g in (design.fundamental_mode.mutually_exclusive if design.fundamental_mode else [])
+            ),
+            assignment_width=pipeline.assignment.width,
+            max_literals=pipeline.covers.max_literals,
+            packed_stats=packed.packed_stats,
+            packed_bom=collect_bom(assigned),
+            static_current=static,
+            spare_leakage_ua=spare_ua,
+            hazard_checks=list(pipeline.hazard_checks),
+            packages=[(ref, g.rationale) for ref, g in assigned],
+            refdes_delta=delta,
+            notes=[
+                "Packing is advisory (§12 C5): sharing a package forces physical "
+                "adjacency; overrides persist in design.yaml.",
+                "Pin numbers in the netlist are assigned deterministically; real "
+                "footprint pin numbers need footprint data (parts.csv has none).",
+            ],
+        )
+    )
+
+    result = BuildResult(
+        bom=emit_bom(assigned),
+        netlist_text=emit_netlist(netlist, assigned, names),
+        unpacked_netlist_text=emit_netlist(
+            netlist, assign_refdes(packed.unpacked), names
+        ),
+        report=report,
+        refdes=current,
+        refdes_delta=delta,
+        packed_stats=packed.packed_stats,
+        unpacked_stats=packed.unpacked_stats,
+        static_current=static,
+        dynamic_current=None,
+        timing=TimingReport(
+            0,
+            0.0,
+            (),
+            "not computed for an asynchronous netlist (combinational feedback "
+            "loop with no clock-to-Q cut; the synchronous depth model does not "
+            "apply, §13.3)",
+        ),
+        packages=list(packed.packed),
+        assigned=list(assigned),
+        netlist=netlist,
+        scoap=None,
+        faults=None,
+        cpld_blockers=[],
+        stable_names=names,
+    )
+    result.compiled = compiled
+    return result
 
 
 def _gate_unverified_gates_per_pkg(

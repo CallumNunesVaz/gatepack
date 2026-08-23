@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -25,6 +26,16 @@ from gatepack.examples import list_examples
 from tests.toolchain.docker_runner import IMAGE, run_repo
 
 LIBRARY = "libraries/74aup.csv"
+
+REPO = Path(__file__).resolve().parents[2]
+
+
+def _timing_model(name: str) -> str:
+    text = (REPO / "examples" / name / "design.yaml").read_text()
+    for line in text.splitlines():
+        if line.strip().startswith("timing_model:"):
+            return line.split("timing_model:")[1].strip()
+    return "synchronous"
 
 
 def _toolchain_available() -> bool:
@@ -112,7 +123,14 @@ def test_every_example_verifies(name: str) -> None:
     )
     combined = proc.stdout + proc.stderr
     assert proc.returncode == 0, f"verify failed for {name}:\n{combined}"
-    assert "equivalence:               passed" in combined, combined
     # A verification that leaves any check "not run" is not a pass (§14); the
     # built-in verify reports that status verbatim, so assert it is absent.
     assert "not run" not in combined, combined
+    if _timing_model(name) == "asynchronous":
+        # The asynchronous path verifies via the two hazard checks, each its own
+        # check; equivalence is not-applicable (no synchronous golden netlist).
+        assert "hazard (ternary)" in combined, combined
+        assert "hazard (glitch sim)" in combined, combined
+        assert "equivalence:" in combined, combined
+    else:
+        assert "equivalence:               passed" in combined, combined

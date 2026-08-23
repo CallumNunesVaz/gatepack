@@ -73,35 +73,22 @@ def compile_design(
         raise CompileError(_format_validation_error(exc)) from exc
 
     if design.timing_model == "asynchronous":
-        # The refusal is now conditional: admission (stage 1) declines a design
-        # that cannot even be attempted, naming the specific construct; an
-        # admitted design is still refused here because the asynchronous backend
-        # is not wired into the CLI pipeline (run_verify/estimate/build are out
-        # of scope for this change) and must not fall through to the
-        # synchronous, clocked Verilog emitter.
+        # Admission (stage 1) declines a design that cannot even be attempted,
+        # naming the specific construct at fault.  An *admitted* asynchronous
+        # design now compiles: the asynchronous backend synthesises in pure
+        # Python (§7.3), not through the synchronous, clocked Verilog emitter,
+        # so there is no behavioural Verilog or §11 property text for it and the
+        # CompileResult carries an empty ``verilog``/``properties``.
         from gatepack.synth.async_.admit import admit
 
         admit(design)
-        raise AsyncRefused(_async_refusal(design.name))
+        compiled = model_mod.compile_design(design, source_name, provenance or {})
+        return CompileResult(compiled=compiled, verilog="", properties="")
 
     compiled = model_mod.compile_design(design, source_name, provenance or {})
     verilog = verilog_mod.emit_verilog(compiled)
     properties = verilog_mod.emit_properties(compiled)
     return CompileResult(compiled=compiled, verilog=verilog, properties=properties)
-
-
-def _async_refusal(name: str) -> str:
-    return (
-        f"refusing to synthesise asynchronous design {name!r}: v0.1.0 does not "
-        f"ship asynchronous synthesis (§7.3). Three problems are unsolved in "
-        f"general, not merely deferred: (1) factoring a hazard-free two-level "
-        f"cover into fan-in-3 gates is not hazard-preserving; (2) "
-        f"single-variable-change state assignment needs a distinct STT method "
-        f"and race-freedom validation; (3) Espresso does not emit hazard-free "
-        f"covers by default. Emitting a netlist that is formally equivalent yet "
-        f"hazardous on the bench is the worst possible output (§7.3). Real async "
-        f"synthesis is a v0.2 research task (§23.3)."
-    )
 
 
 def _format_validation_error(exc: ValidationError) -> str:

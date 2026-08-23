@@ -1,0 +1,56 @@
+# ---------------------------------------------------------------------------
+# A two-state request/acknowledge handshake latch — the asynchronous case.
+#
+# This is the smallest design where "asynchronous synthesis" means something a
+# reader can watch happen: two inputs that may never change together (req and
+# ack, mutually exclusive by §7.2), two states (IDLE and BUSY), and one output
+# (q) that is high exactly while BUSY.  There is no clock; the machine moves on
+# single input changes alone (fundamental mode).
+#
+# What it demonstrates:
+#
+#   timing_model        asynchronous — no clock block, clockless synthesis
+#   fundamental_mode    the §7.2 declaration of which inputs cannot change
+#                       together, which the whole method rests on
+#   verification        both hazard checks (5a ternary + 5b Icarus glitch) run
+#                       per fundamental-mode transition, never equivalence
+#   build               the netlist/BOM/KiCad netlist are emitted only past a
+#                       passed hazard check (§7.3)
+#
+# The guarantee is fundamental mode only: it does not extend to concurrent
+# input changes, and the privileged-cube condition is not enforced, so dynamic
+# hazards are not covered by construction (§7.3).
+#
+# Synthetic, written for this project (§1.3). Nothing here is derived from any
+# real product or datasheet application note.
+# ---------------------------------------------------------------------------
+name: async_latch
+timing_model: asynchronous
+
+reset:
+  signal: rst_n
+  active: low
+
+inputs:
+  # A handshake is the canonical fundamental-mode pair: req and ack may never
+  # change together, which is exactly what fundamental_mode declares.
+  - {name: req, sync: false}
+  - {name: ack, sync: false}
+
+outputs:
+  - {name: q}
+
+states: [IDLE, BUSY]
+initial: IDLE
+
+transitions:
+  - {from: IDLE, to: BUSY, when: "req"}
+  - {from: IDLE, to: IDLE, when: "!req"}
+  - {from: BUSY, to: IDLE, when: "ack"}
+  - {from: BUSY, to: BUSY, when: "!ack"}
+
+output_logic:
+  q: "state == BUSY"
+
+fundamental_mode:
+  mutually_exclusive: [[req, ack]]

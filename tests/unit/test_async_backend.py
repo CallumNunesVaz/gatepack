@@ -79,7 +79,7 @@ def test_synthesize_refuses_at_admission_before_any_solver_call():
     compiled = _compile(NO_FUNDAMENTAL_MODE)
     backend = AsynchronousBackend()
     with pytest.raises(AsyncRefused, match="fundamental_mode"):
-        backend.synthesize(compiled, _NeverCalledRunner(), workdir=".gpout")
+        backend._synthesize(compiled, _NeverCalledRunner(), workdir=".gpout")
 
 
 def test_build_transition_probes_from_stable_states_only():

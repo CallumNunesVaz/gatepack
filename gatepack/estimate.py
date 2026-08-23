@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from gatepack import __version__
+from gatepack.frontend.errors import AsyncRefused
 from gatepack.frontend.frontend import CompileResult, compile_design_file
 from gatepack.frontend.model import CompiledDesign
 from gatepack.liberty.generator import generate as generate_liberty
@@ -217,6 +218,20 @@ def run_estimate(
 
     compiled_result: CompileResult = compile_design_file(design_path)
     compiled = compiled_result.compiled
+
+    if compiled.design.timing_model == "asynchronous":
+        # The §6 verdict classifies four synchronous metrics (flop count, clock
+        # fanout, package count, combinational depth).  An asynchronous design
+        # has no clock and no flops, so the verdict cannot be answered — refusing
+        # with the reason is the honest, useful answer ("it cannot, and here is
+        # why").  The asynchronous checks live in `gatepack verify`.
+        raise AsyncRefused(
+            f"asynchronous design {compiled.design.name!r} refused: `estimate` "
+            "produces the §6 viability verdict over synchronous metrics (flop "
+            "count, clock fanout, package count, combinational depth), which an "
+            "asynchronous design has no analogue of (no clock, no flops). Run "
+            "`gatepack verify` for the asynchronous hazard checks instead."
+        )
 
     parts = load_parts(library_csv)
     vcc = compiled.design.constraints.vcc

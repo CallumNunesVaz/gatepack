@@ -85,7 +85,9 @@ def test_no_attribute_immediately_precedes_assign():
         ("overlapping_guards.yaml", CompileError, "overlapping guards"),
         ("unreachable_state.yaml", CompileError, "unreachable"),
         ("non_exhaustive.yaml", CompileError, "non-exhaustive"),
-        ("async_handshake.yaml", AsyncRefused, "asynchronous"),
+        # async_handshake is *admitted* now (the async path is wired); it fails
+        # C1 on the same ground as any FSM: its transition set is non-exhaustive.
+        ("async_handshake.yaml", CompileError, "non-exhaustive"),
         ("duplicate_key.yaml", CompileError, "duplicate mapping key"),
     ],
 )

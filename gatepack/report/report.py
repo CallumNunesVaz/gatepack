@@ -21,6 +21,7 @@ from gatepack.emit.bom import BomRow
 from gatepack.emit.refdes import RefdesDelta
 from gatepack.pack.packer import PackingStats
 from gatepack.provenance.coverage import CoverageReport
+from gatepack.verify.base import CheckResult
 
 
 @dataclass
@@ -328,3 +329,175 @@ def _provenance_unlinked(p: CoverageReport) -> list[str]:
     for kind in _provenance_kinds(p):
         unlinked.extend(p.by_kind[kind].unlinked)
     return unlinked
+
+
+# ---------------------------------------------------------------------------
+# Asynchronous report (§C8, §7.3)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class AsyncReportInputs:
+    """The inputs the asynchronous build report states every time (§C8).
+
+    The §7.3 guarantee is narrow and conditional, so the report must say so on
+    every emit: fundamental mode assumed, which inputs are mutually exclusive,
+    the assignment width and whether spares were added, the maximum product-term
+    literal count, and both hazard checks per transition.  It must also say the
+    guarantee does **not** extend to concurrent input changes and that the
+    privileged-cube condition is not enforced, so dynamic hazards are not
+    covered by construction.
+    """
+
+    design: str
+    mutually_exclusive: Sequence[Sequence[str]]
+    assignment_width: int
+    max_literals: int
+    packed_stats: PackingStats
+    packed_bom: Sequence[BomRow]
+    static_current: StaticCurrent | None = None
+    spare_leakage_ua: float = 0.0
+    hazard_checks: Sequence[CheckResult] = field(default_factory=list)
+    packages: Sequence[tuple[str, str]] = field(default_factory=list)
+    refdes_delta: RefdesDelta | None = None
+    notes: Sequence[str] = field(default_factory=list)
+
+
+def emit_async_report(inp: AsyncReportInputs) -> str:
+    lines: list[str] = []
+    lines.append(f"# {inp.design} — asynchronous build report")
+    lines.append("")
+    lines.append("timing model: asynchronous (fundamental mode, §7.3)")
+    lines.append("")
+
+    lines.append("## Hazard guarantee (§7.3)")
+    lines.append("")
+    lines.append(
+        "- **fundamental mode is assumed**: exactly one input changes at a time "
+        "and the circuit settles before the next change."
+    )
+    groups = ", ".join(
+        "[{}]".format(", ".join(g)) for g in inp.mutually_exclusive
+    )
+    lines.append(
+        f"- mutually exclusive inputs (declared in `fundamental_mode`): {groups}"
+    )
+    lines.append(
+        f"- state-assignment width: {inp.assignment_width} bit(s) "
+        "(single-variable-change encoding)"
+    )
+    spares = inp.packed_stats.spare_count
+    lines.append(
+        f"- spare gates added: {spares if spares else 'none'}"
+    )
+    lines.append(
+        f"- maximum product-term literal count: {inp.max_literals} "
+        "(≤3 by the §7.3 constraint)"
+    )
+    for check in inp.hazard_checks:
+        lines.append(
+            f"- {check.name}: {check.status.value}"
+            + (f" — {check.detail}" if check.detail else "")
+        )
+    lines.append("")
+    lines.append(
+        "_This guarantee does **not** extend to concurrent (simultaneous) input "
+        "changes: only single-input transitions are checked (§7.3). The "
+        "Nowick–Dill **privileged-cube** condition is **not** enforced, so "
+        "dynamic hazards are **not** covered by construction; the ternary check "
+        "(5a) is the safety net that refuses any hazard it observes in the "
+        "mapped netlist._"
+    )
+    lines.append("")
+
+    lines.append("## Packing (§9.7)")
+    lines.append("")
+    lines.append("| result | packages | spare gates | package cost | pack_cost |")
+    lines.append("|---|---|---|---|---|")
+    lines.append(_row("packed", inp.packed_stats))
+    lines.append("")
+
+    lines.append("## Bill of materials")
+    lines.append("")
+    lines.append("| part | manufacturers | package | qty | refdes | tier | electrical data |")
+    lines.append("|---|---|---|---|---|---|---|")
+    for row in inp.packed_bom:
+        verification = "unverified" if row.unverified else "verified"
+        lines.append(
+            f"| {row.part_number} | {row.manufacturers} | {row.package} | "
+            f"{row.quantity} | {';'.join(row.refdes)} | {row.tier} | {verification} |"
+        )
+    lines.append("")
+
+    if inp.packages:
+        lines.append("## Package grouping (per-package rationale)")
+        lines.append("")
+        lines.append("| refdes | rationale |")
+        lines.append("|---|---|")
+        for ref, rationale in inp.packages:
+            lines.append(f"| {ref} | {rationale} |")
+        lines.append("")
+
+    lines.append("## Power (§13.3)")
+    lines.append("")
+    if inp.static_current is not None:
+        sc = inp.static_current
+        lines.append(
+            "Static current by tier (IQ values as cited in parts.csv; no "
+            "temperature derating):"
+        )
+        lines.append("")
+        lines.append("| tier | static current (µA) |")
+        lines.append("|---|---|")
+        for tier, value in sc.by_tier.items():
+            lines.append(f"| {tier} | {_fmt(value)} |")
+        lines.append(f"| **total** | **{_fmt(sc.total_ua)}** |")
+        lines.append("")
+    lines.append(
+        f"Spare-gate leakage penalty (estimate, §9.7): "
+        f"{_fmt(inp.spare_leakage_ua)} µA"
+    )
+    lines.append("")
+    lines.append(
+        "Dynamic current: not estimated (an asynchronous design has no clock "
+        "frequency to drive the C·V·f estimate)."
+    )
+    lines.append("")
+
+    lines.append("## Not computed for an asynchronous netlist")
+    lines.append("")
+    lines.append(
+        "- **timing (tPD/depth)**: the asynchronous netlist is a combinational "
+        "feedback loop with no clock-to-Q cut; the synchronous depth model does "
+        "not apply (§13.3)."
+    )
+    lines.append(
+        "- **SCOAP / stuck-at**: both models assume a synchronous combinational "
+        "cut at the flip-flops (§13.1, §13.2), which an asynchronous design has "
+        "no analogue of."
+    )
+    lines.append(
+        "- **flop count / reset structure / clock fanout**: an asynchronous "
+        "design has no clocked storage, so §9.3 reset structure and §6 flop "
+        "metrics do not apply."
+    )
+    lines.append("")
+
+    if inp.refdes_delta is not None:
+        d = inp.refdes_delta
+        lines.append("## Reference designator delta ([R4-19])")
+        lines.append("")
+        lines.append(f"- unchanged: {d.unchanged}")
+        lines.append(f"- added: {len(d.added)}")
+        lines.append(f"- removed: {len(d.removed)}")
+        lines.append(f"- renumbered: {len(d.renumbered)}")
+        lines.append("")
+
+    if inp.notes:
+        lines.append("## Notes")
+        lines.append("")
+        for note in inp.notes:
+            lines.append(f"- {note}")
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
