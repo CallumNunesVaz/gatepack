@@ -1,6 +1,6 @@
 # CI — gatepack core (§14, principle 7).
 #
-# Four jobs, one per layer of honesty:
+# Five jobs, one per layer of honesty:
 #
 #   * `test`             — the pure-Python floor: unit/golden/contract tests,
 #                          shell harness, citation check, reproducibility, and
@@ -11,6 +11,11 @@
 #                          themselves.  A toolchain test that skips is a failure,
 #                          because a skip is indistinguishable from the test not
 #                          existing.
+#   * `kicad-import`     — the M10-1 criterion ("KiCad import clean") that was
+#                          descoped: drives KiCad's own `pcbnew` headlessly in a
+#                          pinned image.  Measured result so far is that KiCad
+#                          exposes no headless netlist reader, so the job asserts
+#                          that honest "blocked" state (never a fake import).
 #   * `desktop-packaging` — the app: npm ci, version check, the bundled Python
 #                          core (PyInstaller), the licence audit over the real
 #                          npm tree *and* the bundle, the bundle acceptance test,
@@ -131,6 +136,47 @@ jobs:
           docker run --rm -v "$PWD:/repo" -w /repo gatepack-toolchain:m6 \
             bash -c 'python3 -m gatepack build examples/pelican/design.yaml \
                        --library libraries/74aup.csv --out .gpout/pelican-out'
+
+  kicad-import:
+    # The M10-1 criterion ("KiCad import clean, including power symbols and
+    # no-connects") was descoped because no automated check could close it. This
+    # job attacks that premise by driving KiCad's own `pcbnew` module headlessly
+    # in a pinned image. Measured result so far: KiCad 9.0.9 (and 10.0.5) expose
+    # no headless netlist reader, so `test_kicad_import.py` asserts that honest
+    # "blocked" state rather than faking an import — a hand-written parser is
+    # deliberately NOT a substitute here (the self-consistency check lives in
+    # `tests/unit/test_kicad_selfconsistency.py`, under the plain `test` job).
+    # A skip here is a failure for the same reason as `toolchain`: a skip is
+    # indistinguishable from the test not existing.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e . pytest
+
+      - name: Build the pinned KiCad image
+        run: docker build -f Dockerfile.kicad -t gatepack-kicad:9.0.9 .
+
+      - name: KiCad import probe (must not skip)
+        run: |
+          set -euo pipefail
+          mkdir -p .gpout
+          .venv/bin/pytest tests/toolchain/test_kicad_import.py -rs \
+            2>&1 | tee .gpout/kicad-pytest.log
+          # A skip here means the image did not provide what the test needed,
+          # which is indistinguishable from the test not existing.  Fail loudly.
+          if grep -q "skipped" .gpout/kicad-pytest.log; then
+            echo "a kicad-import test skipped; a skip is indistinguishable from the test not existing" >&2
+            exit 1
+          fi
 
   desktop-packaging:
     # Builds the bundled Python core and the unpacked Electron app (unsigned),
