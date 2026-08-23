@@ -1,0 +1,18 @@
+name: async_two_input
+timing_model: asynchronous
+reset: {signal: rst_n, active: low}
+inputs:
+  - {name: x, sync: false}
+  - {name: y, sync: false}
+states: [A, B, C]
+initial: A
+transitions:
+  - {from: A, to: B, when: "x & y"}
+  - {from: A, to: A, when: "!x & !y"}
+  - {from: A, to: C, when: "x & !y"}
+  - {from: A, to: C, when: "!x & y"}
+  - {from: B, to: B, when: "1"}
+  - {from: C, to: C, when: "1"}
+output_logic: {}
+fundamental_mode:
+  mutually_exclusive: [[x, y]]

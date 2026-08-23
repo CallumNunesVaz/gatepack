@@ -1,0 +1,19 @@
+name: async_latch
+timing_model: asynchronous
+reset: {signal: rst_n, active: low}
+inputs:
+  - {name: req, sync: false}
+  - {name: ack, sync: false}
+states: [IDLE, BUSY]
+initial: IDLE
+transitions:
+  - {from: IDLE, to: BUSY, when: "req"}
+  - {from: IDLE, to: IDLE, when: "!req"}
+  - {from: BUSY, to: IDLE, when: "ack"}
+  - {from: BUSY, to: BUSY, when: "!ack"}
+outputs:
+  - {name: q}
+output_logic:
+  q: "state == BUSY"
+fundamental_mode:
+  mutually_exclusive: [[req, ack]]

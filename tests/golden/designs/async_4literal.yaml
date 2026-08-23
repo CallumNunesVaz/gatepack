@@ -1,0 +1,21 @@
+name: async_4literal
+timing_model: asynchronous
+reset: {signal: rst_n, active: low}
+inputs:
+  - {name: a, sync: false}
+  - {name: b, sync: false}
+  - {name: c, sync: false}
+  - {name: d, sync: false}
+states: [S0, S1]
+initial: S0
+transitions:
+  - {from: S0, to: S1, when: "a"}
+  - {from: S0, to: S0, when: "!a"}
+  - {from: S1, to: S0, when: "!a"}
+  - {from: S1, to: S1, when: "a"}
+outputs:
+  - {name: q}
+output_logic:
+  q: "a & b & c & d"
+fundamental_mode:
+  mutually_exclusive: [[a, b], [c, d]]
