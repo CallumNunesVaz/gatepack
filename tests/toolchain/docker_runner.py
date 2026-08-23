@@ -42,11 +42,14 @@ def run(
     container_dir: str,
     workdir: str | None = None,
     timeout: int | None = None,
+    image: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run ``argv`` inside ``IMAGE`` with ``host_dir`` mounted at ``container_dir``.
 
     The invoking user's uid/gid is passed as ``-u`` (when the platform has one)
-    so nothing the container writes comes back root-owned.
+    so nothing the container writes comes back root-owned.  ``image`` overrides
+    the default toolchain image, so the same ``-u``/mount discipline is reused
+    for other pinned containers (e.g. the KiCad image) rather than hand-rolled.
     """
     cmd: list[str] = ["docker", "run", "--rm"]
     user = _user_spec()
@@ -55,19 +58,19 @@ def run(
     cmd += ["-v", f"{host_dir}:{container_dir}"]
     if workdir is not None:
         cmd += ["-w", workdir]
-    cmd += [IMAGE, *argv]
+    cmd += [image or IMAGE, *argv]
     return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 
 
 def run_repo(
-    *argv: str, timeout: int | None = None
+    *argv: str, timeout: int | None = None, image: str | None = None
 ) -> subprocess.CompletedProcess[str]:
     """Run ``argv`` with the checkout mounted at ``/repo``, working there."""
-    return run(*argv, host_dir=REPO, container_dir="/repo", workdir="/repo", timeout=timeout)
+    return run(*argv, host_dir=REPO, container_dir="/repo", workdir="/repo", timeout=timeout, image=image)
 
 
 def run_work(
-    host_dir: Path, *argv: str, timeout: int | None = None
+    host_dir: Path, *argv: str, timeout: int | None = None, image: str | None = None
 ) -> subprocess.CompletedProcess[str]:
     """Run ``argv`` with ``host_dir`` mounted at ``/work`` (no workdir override)."""
-    return run(*argv, host_dir=host_dir, container_dir="/work", timeout=timeout)
+    return run(*argv, host_dir=host_dir, container_dir="/work", timeout=timeout, image=image)

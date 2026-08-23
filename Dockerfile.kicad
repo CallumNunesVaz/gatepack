@@ -1,0 +1,36 @@
+# gatepack KiCad image — the container `tests/toolchain/test_kicad_import.py`
+# drives when it tries to make KiCad itself read an emitted `netlist.net`.
+#
+# This image exists to answer one question with KiCad's *own* code, not a
+# hand-written parser: does the `.net` s-expression that
+# `gatepack/emit/kicad.py` produces actually parse in real KiCad?  The plan was
+# to drive `pcbnew`'s netlist reader (the code path "Update PCB from Schematic"
+# uses) from Python, headlessly.
+#
+# Measured result, recorded here so the next reader does not re-derive it:
+#
+#   KiCad 9.0.9 AND 10.0.5 ship no headless netlist reader.  The `pcbnew`
+#   Python module exposes neither `NETLIST_READER`/`PCB_NETLIST` nor
+#   `LoadFootprintsFromNetlist` (grep -c NETLIST pcbnew.py == 0; the strings
+#   are absent from `_pcbnew.so`), and `kicad-cli` has no netlist-import
+#   subcommand (`pcb import` is only for Eagle/Altium/Cadstar/Fabmaster/PCAD/
+#   SolidWorks/PADS).  The only netlist-ish Python file shipped is
+#   `kicad_netlist_reader.py`, which reads the *XML* intermediate netlist used
+#   by BOM plugins — not the s-expression `.net`.
+#
+# Therefore the M10-1 "KiCad import clean" criterion still cannot be closed
+# automatically; see docs/BUILD-NOTES-kicad.md and docs/handoff/notes-kicad.md.
+# The image is kept (pinned) so the probe test keeps running against a real,
+# reproducible KiCad and fails loudly the day a version finally exposes the
+# reader.  `scripts/kicad_import_check.py` reports "blocked" against it.
+#
+# Pin discipline (§5.5 / R7): tag + digest, no floating `latest`.  The digest
+# below was resolved 2026-08-23 with
+# `docker inspect --format '{{index .RepoDigests 0}}' kicad/kicad:9.0.9`.
+# KiCad 10.0.5 was cross-checked and has the identical absence
+# (sha256:182c8005cb775a2c448a4c18681d489f1ff472a761885eba3e08b07e3c0564de).
+
+FROM kicad/kicad:9.0.9@sha256:e638b79b0321f29395a5b783e94bb9f3c73303e8da15da27b8f5cb4b67a37729
+
+# Nothing else is installed: `pcbnew` and `kicad-cli` are already present in
+# the base image, and the check is deliberately limited to what KiCad ships.
