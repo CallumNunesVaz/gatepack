@@ -8,6 +8,8 @@ import {
   setTestPoints,
   type DesignModel,
   type Transition,
+  setTransitionWhen,
+  setPropertyExpr,
 } from './model';
 import type { YValue } from './yaml';
 
@@ -489,5 +491,80 @@ describe('renames leave no stranded reference', () => {
     const out = renameState(RENAME_REFS_SPEC, 'RUN', 'ACTIVE');
     expect(out.text).toContain('when: "go"');
     expect(out.text).toContain('expr: "go -> busy"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reviewed addition: editing one list item must not rewrite the block.
+//
+// Measured 2026-08-23 on the spec below: editing the *first* transition's guard
+// through `applyTopLevelEdit` — what the Inspector did — deleted both comments
+// in the transitions block, including the one attached to the second
+// transition, which the user had not touched. Fourth instance of this defect
+// class in this file (setInputSync, setTestPoints, renameState were the others).
+// ---------------------------------------------------------------------------
+
+const ITEM_EDIT_SPEC = `name: p
+timing_model: synchronous
+clock: {net: clk, freq_hz: 1000}
+reset: {net: rst_n, polarity: active_low}
+inputs:
+  - {name: go, sync: true}
+  - {name: stop, sync: true}
+outputs:
+  - {name: busy}
+states: [IDLE, RUN]
+initial: IDLE
+transitions:
+  # the operator's start button — debounced in hardware, see review 2026-03
+  - {from: IDLE, to: RUN, when: "go"}
+  # deliberately unguarded: RUN must always fall back
+  - {from: RUN, to: IDLE, when: "!go"}
+output_logic:
+  busy: "state == RUN"
+properties:
+  # the safety property the whole design exists for
+  - {name: p1, kind: invariant, expr: "state == RUN -> busy"}
+  - {name: p2, kind: invariant, expr: "go -> busy"}
+`;
+
+describe('editing one list item leaves the rest of the block alone', () => {
+  it('setTransitionWhen keeps every comment in the block', () => {
+    const out = setTransitionWhen(ITEM_EDIT_SPEC, 0, 'go & !stop');
+    expect(out.diagnostics.filter((d) => d.severity === 'error')).toHaveLength(0);
+    expect(out.text).toContain('# the operator\'s start button');
+    expect(out.text).toContain('# deliberately unguarded');
+    expect(out.text).toContain('when: "go & !stop"');
+    // The untouched transition is byte-identical.
+    expect(out.text).toContain('- {from: RUN, to: IDLE, when: "!go"}');
+  });
+
+  it('setPropertyExpr keeps every comment in the block', () => {
+    const out = setPropertyExpr(ITEM_EDIT_SPEC, 1, 'go -> !busy');
+    expect(out.diagnostics.filter((d) => d.severity === 'error')).toHaveLength(0);
+    expect(out.text).toContain('# the safety property the whole design exists for');
+    expect(out.text).toContain('expr: "go -> !busy"');
+    expect(out.text).toContain('- {name: p1, kind: invariant, expr: "state == RUN -> busy"}');
+  });
+
+  it('an out-of-range item is refused, byte-identical', () => {
+    const out = setTransitionWhen(ITEM_EDIT_SPEC, 9, 'go');
+    expect(out.text).toBe(ITEM_EDIT_SPEC);
+    expect(out.diagnostics.some((d) => d.code === 'ED1026')).toBe(true);
+  });
+
+  it('a guard with YAML-significant characters survives quoting', () => {
+    const out = setTransitionWhen(ITEM_EDIT_SPEC, 0, '!go & (stop | go)');
+    expect(out.diagnostics.filter((d) => d.severity === 'error')).toHaveLength(0);
+    const back = parseDesignText(out.text).model;
+    expect(back?.transitions[0].when).toBe('!go & (stop | go)');
+  });
+
+  it('a field that is absent is inserted, not silently dropped', () => {
+    const noWhen = ITEM_EDIT_SPEC.replace('- {from: RUN, to: IDLE, when: "!go"}', '- {from: RUN, to: IDLE}');
+    const out = setTransitionWhen(noWhen, 1, '!go');
+    expect(out.diagnostics.filter((d) => d.severity === 'error')).toHaveLength(0);
+    expect(parseDesignText(out.text).model?.transitions[1].when).toBe('!go');
+    expect(out.text).toContain('# deliberately unguarded');
   });
 });

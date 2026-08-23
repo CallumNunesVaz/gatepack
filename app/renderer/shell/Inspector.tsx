@@ -16,6 +16,8 @@
 import { useEffect, useState } from 'react';
 import {
   applyTopLevelEdit,
+  setPropertyExpr,
+  setTransitionWhen,
   renameInput,
   renameState,
   setField,
@@ -23,7 +25,6 @@ import {
   type DesignModel,
   type EditOutcome,
   type PropertySpec,
-  type Transition,
 } from '../design/model';
 import type { YValue } from '../design/yaml';
 import { parse as parseExpr } from '../design/expr';
@@ -95,14 +96,11 @@ function editTransitionWhen(
   if (index === -1) {
     return { refused: true, text: specText, reasons: ['transition no longer resolves'] };
   }
-  const transitions: Transition[] = model.transitions.map((t, i) =>
-    i === index ? { ...t, when } : { ...t },
-  );
   try {
-    const outcome = applyTopLevelEdit(specText, 'transitions', () =>
-      transitions.map((t) => ({ from: t.from, to: t.to, when: t.when })),
-    );
-    return decide(outcome, specText);
+    // Line-spliced, not re-serialised: rebuilding the whole `transitions` block
+    // from the model deletes every comment in it, including comments on the
+    // transitions this edit does not touch.
+    return decide(setTransitionWhen(specText, index, when), specText);
   } catch (e) {
     return { refused: true, text: specText, reasons: [messageOf(e)] };
   }
@@ -126,14 +124,20 @@ function editPropertyExpr(
       return { refused: true, text: specText, reasons: [`property ${name}: ${messageOf(e)}`] };
     }
   }
-  const properties: PropertySpec[] = model.properties.map((p, i) => {
-    if (i !== index) return p;
-    const next: PropertySpec = { ...p };
-    if (trimmed === '') delete next.expr;
-    else next.expr = trimmed;
-    return next;
-  });
   try {
+    if (trimmed !== '') {
+      // Line-spliced, for the same reason as the transition guard above.
+      return decide(setPropertyExpr(specText, index, trimmed), specText);
+    }
+    // Clearing an expression *removes* the key, which the splice does not do —
+    // so this one case still rebuilds the block and still loses the comments in
+    // it. Narrower than before, and recorded rather than hidden.
+    const properties: PropertySpec[] = model.properties.map((p, i) => {
+      if (i !== index) return p;
+      const next: PropertySpec = { ...p };
+      delete next.expr;
+      return next;
+    });
     const outcome = applyTopLevelEdit(specText, 'properties', () =>
       properties.map((p) => {
         const m: Record<string, YValue> = { name: p.name, kind: p.kind };

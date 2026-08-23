@@ -620,6 +620,138 @@ function renameInMappingValues(code: string, oldName: string, newName: string): 
 }
 
 /* ------------------------------------------------------------------ */
+/* One field of one list item, spliced                                  */
+/* ------------------------------------------------------------------ */
+
+/** Quote a scalar for YAML, double-quoted so an expression's `!`, `&` and `|`
+ * cannot be read as YAML syntax. */
+function quoteScalar(value: string): string {
+  return '"' + value.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+}
+
+interface BlockLine {
+  /** The whole line, comment included. */
+  raw: string;
+  /** The line up to any `#`, which is the only part an edit may touch. */
+  code: string;
+  /** The `#` onwards, or ''. */
+  comment: string;
+}
+
+function splitBlockLine(raw: string): BlockLine {
+  const hash = raw.indexOf('#');
+  return hash === -1
+    ? { raw, code: raw, comment: '' }
+    : { raw, code: raw.slice(0, hash), comment: raw.slice(hash) };
+}
+
+/** The line indices in `lines` at which each `- ` list item starts. */
+function itemStartLines(lines: BlockLine[]): number[] {
+  const starts: number[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (/^\s*-\s/.test(lines[i].code)) starts.push(i);
+  }
+  return starts;
+}
+
+/**
+ * Set one field of one list item, touching only the line that carries it.
+ *
+ * The alternative — the `applyTopLevelEdit` path every list editor used before
+ * this — re-serialises the whole block from the model, which deletes every
+ * comment in it. Measured 2026-08-23 on a two-transition spec: editing the
+ * *first* transition's guard from the Inspector deleted both comments in the
+ * block, including one attached to the transition the user had not touched.
+ *
+ * Returns `null` when the item or a place to put the field cannot be found, so
+ * the caller refuses rather than falling back to a rewrite.
+ */
+function spliceItemField(
+  text: string,
+  range: Range,
+  index: number,
+  field: string,
+  value: string,
+): { start: number; end: number; value: string } | null {
+  const lines = text.slice(range.valueStart, range.valueEnd).split('\n').map(splitBlockLine);
+  const starts = itemStartLines(lines);
+  if (index < 0 || index >= starts.length) return null;
+
+  const from = starts[index];
+  const to = index + 1 < starts.length ? starts[index + 1] : lines.length;
+  const quoted = quoteScalar(value);
+  const fieldRe = new RegExp(`(\\b${field}\\s*:\\s*)("(?:\\\\.|[^"])*"|'(?:\\\\.|[^'])*'|[^,}\\n]*)`);
+
+  for (let i = from; i < to; i += 1) {
+    if (!fieldRe.test(lines[i].code)) continue;
+    lines[i] = {
+      ...lines[i],
+      code: lines[i].code.replace(fieldRe, (_m, prefix) => `${prefix}${quoted}`),
+    };
+    lines[i].raw = lines[i].code + lines[i].comment;
+    return {
+      start: range.valueStart,
+      end: range.valueEnd,
+      value: lines.map((l) => l.raw).join('\n'),
+    };
+  }
+
+  // The field is absent. A flow mapping takes it before the closing brace; a
+  // block mapping takes a new line at the item's key indentation.
+  const head = lines[from];
+  const brace = head.code.lastIndexOf('}');
+  if (brace !== -1) {
+    const before = head.code.slice(0, brace).trimEnd();
+    const sep = before.endsWith('{') ? '' : ', ';
+    head.code = `${before}${sep}${field}: ${quoted}${head.code.slice(brace)}`;
+    head.raw = head.code + head.comment;
+  } else {
+    const dash = head.code.indexOf('- ');
+    if (dash === -1) return null;
+    const indent = ' '.repeat(dash + 2);
+    lines.splice(from + 1, 0, splitBlockLine(`${indent}${field}: ${quoted}`));
+  }
+  return {
+    start: range.valueStart,
+    end: range.valueEnd,
+    value: lines.map((l) => l.raw).join('\n'),
+  };
+}
+
+function setItemField(
+  text: string,
+  blockKey: string,
+  index: number,
+  field: string,
+  value: string,
+  code: string,
+): EditOutcome {
+  const { ranges } = parseToJs(text);
+  const range = ranges.get(blockKey);
+  const refuse = (reason: string): EditOutcome => ({
+    text,
+    diagnostics: [...parseDesignText(text).diagnostics, diag('error', code, reason)],
+  });
+  if (!range) return refuse(`there is no ${blockKey} block to edit`);
+  const edit = spliceItemField(text, range, index, field, value);
+  if (!edit) return refuse(`${blockKey}[${index}] could not be located to set ${field}`);
+  const newText = applyRangeEdits(text, [edit]);
+  return { text: newText, diagnostics: parseDesignText(newText).diagnostics };
+}
+
+/** §C10: set one transition's `when` guard, preserving every comment in the
+ * transitions block — including comments on transitions the user did not edit. */
+export function setTransitionWhen(text: string, index: number, when: string): EditOutcome {
+  return setItemField(text, 'transitions', index, 'when', when, 'ED1026');
+}
+
+/** §11: set one property's `expr`, preserving every comment in the properties
+ * block. */
+export function setPropertyExpr(text: string, index: number, expr: string): EditOutcome {
+  return setItemField(text, 'properties', index, 'expr', expr, 'ED1027');
+}
+
+/* ------------------------------------------------------------------ */
 /* Renames                                                             */
 /* ------------------------------------------------------------------ */
 
