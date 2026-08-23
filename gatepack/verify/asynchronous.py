@@ -111,6 +111,19 @@ def run_functional_check(
     """
     pairs = enumerate_functional_pairs(table)
     total = len(pairs)
+    if total == 0:
+        # Zero pairs would fall through the loop below with no mismatches and
+        # report PASSED on no evidence — a check that cannot fail. A flow table
+        # with no stable total state is pathological and stage 1 should have
+        # refused it, but "should have" is not a guard.
+        return CheckResult(
+            FUNCTIONAL_CHECK_NAME,
+            CheckStatus.NOT_APPLICABLE,
+            "no stable total state to check: the flow table offers no "
+            "(stable state, single-input change) pair, so nothing was "
+            "simulated and 'the netlist implements the design' is not claimed",
+            kind="simulation",
+        )
     if total > max_pairs:
         return CheckResult(
             FUNCTIONAL_CHECK_NAME,

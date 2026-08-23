@@ -288,3 +288,36 @@ class _FakeZ3:
         n = script.count("(declare-const x_")
         vals = " ".join(f"(x_{i} true)" for i in range(n))
         return _Result(stdout=f"sat\n(({vals}))")
+
+
+# ---------------------------------------------------------------------------
+# Reviewed addition. `total > max_pairs` reported `not applicable`, but
+# `total == 0` fell straight through the comparison loop, found no mismatches,
+# and reported PASSED — on no evidence at all. A flow table with no stable
+# total state is pathological and stage 1 ought to refuse it, but "ought to" is
+# not a guard, and a check that cannot fail is worth nothing.
+# ---------------------------------------------------------------------------
+
+
+def test_zero_pairs_is_not_applicable_not_a_pass(monkeypatch):
+    table = build_flow_table(_compile(LATCH))
+    monkeypatch.setattr(
+        "gatepack.verify.asynchronous.enumerate_functional_pairs", lambda _t: []
+    )
+    result = run_functional_check(_correct_netlist(), FUNCS, table, _assignment())
+    assert result.status is CheckStatus.NOT_APPLICABLE
+    assert result.status is not CheckStatus.PASSED
+    assert "no stable total state" in result.detail
+
+
+def test_zero_pairs_gates_the_netlist(monkeypatch):
+    """`not applicable` must not hand out a netlist either — hazard_passed
+    requires every check to have PASSED."""
+    from gatepack.verify.base import CheckStatus as _CS
+
+    table = build_flow_table(_compile(LATCH))
+    monkeypatch.setattr(
+        "gatepack.verify.asynchronous.enumerate_functional_pairs", lambda _t: []
+    )
+    result = run_functional_check(_correct_netlist(), FUNCS, table, _assignment())
+    assert result.status is _CS.NOT_APPLICABLE

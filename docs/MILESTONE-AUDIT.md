@@ -16,7 +16,7 @@ tool closes, the only evidence that counts is that tool closing.
 | M4 | Sync path through the interface; async refuses cleanly | **met** |
 | M5 | Equivalence closes on all goldens; exhaustive sim; mutation | **met** (2026-08-16) |
 | M6 | sby discharges invariants/reachability/liveness; covers guard vacuity | **met** (2026-08-16) |
-| M7 | ~~AsynchronousBackend — deferred to v0.2~~ | **partial** (2026-08-23) — §7.3's constrained sub-problem is implemented with an independent hazard verifier; not wired into the CLI, which still refuses |
+| M7 | ~~AsynchronousBackend — deferred to v0.2~~ | **met, constrained** (2026-08-24) — §7.3's own ≤3-literal / single-variable-change sub-problem, wired through verify/build/estimate, with an independent hazard verifier and an exhaustive functional check against the flow table. The general problem remains a v0.2 research task |
 | M8 | CNT4 + SUPERVISOR + tie-off; shared behavioural models | **met** (2026-08-16) — a wrong M-cell model now fails equivalence |
 | M9 | `pack_cost`; spare avoidance; deterministic; override works | **met** (2026-08-16) |
 | M10 | ~~KiCad import clean~~; SCOAP delta; stuck-at classification | **met** (2026-08-16) for the analysis half; KiCad import **descoped**, and the descope re-confirmed by measurement 2026-08-23 — KiCad exposes no headless reader |

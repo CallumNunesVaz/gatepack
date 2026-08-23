@@ -488,12 +488,23 @@ hazards but cannot distinguish a dynamic hazard from a legitimate transition, so
 that class remains uncovered. Stage 5b perturbs delays per cell type rather than
 per instance.
 
-**Not yet reachable.** `compile_design` still refuses every asynchronous design,
-now after running admission so the refusal names the construct at fault. The
-backend is tested but not wired into `verify`/`build`/`estimate`, so M7 is
-**partial**: the machinery exists and delivers nothing to a user yet. When it is
-wired, no netlist may be emitted that has not passed stage 5 — that binding is
-the one hard rule of this component.
+**Wired, and gated.** `verify`, `build` and `estimate` all take the async path;
+`gatepack/async_pipeline.py` is the single public entry point and the netlist is
+reachable only through accessors that raise unless **every** stage-5 check
+passed, so `not applicable` gates it as firmly as `failed` does. `examples/
+async_latch` is the runnable deliverable.
+
+**A sixth stage, added after wiring exposed the need.** Stage 5's two hazard
+checks ask only whether outputs glitch, and equivalence is `not applicable`
+(there is no synchronous golden), so for a short while the async path had **no
+functional check at all** — a netlist that did not implement the specified
+machine reported `verification: passed`. That was found by fault injection
+rather than argument: dropping one z3-selected product term from the cover
+(`tests/toolchain/_async_hazard_injection.py`) produced exactly that. The
+functional check now exhaustively simulates the mapped netlist against the flow
+table — every stable total state against every admissible single-input change,
+enumerated rather than sampled, which stage 1's size cap makes affordable — and
+the injection probe is kept as the test that it works.
 
 **This remains the highest-risk component in the plan** (R15). The constrained
 mapper has no off-the-shelf equivalent, and generated code here should be
@@ -1728,7 +1739,7 @@ visible rather than quietly absorbed.
 | M4 | **Backend strategy interfaces** | Sync path runs through the interface; async stub refuses cleanly | 2 d | 2 d |
 | M5 | C4 sync verification | `golden_prep` shared front end; equivalence closes on all goldens; exhaustive sim under Icarus; **mutation suite passing** | 5 d | **10 d** |
 | M6 | Properties (§11) | sby discharges invariants, reachability, liveness; cover statements guard vacuity | 3 d | 4 d |
-| M7 | AsynchronousBackend | **Partial [M7-1]** — the constrained backend (§7.3's own ≤3-literal, single-variable-change sub-problem) and an independent hazard verifier are implemented and tested; not yet wired into the CLI, which still refuses. | 8 d | **partial** |
+| M7 | AsynchronousBackend | **Met, constrained [M7-1]** — §7.3's own ≤3-literal / single-variable-change sub-problem, wired through verify/build/estimate, with an independent hazard verifier and an exhaustive functional check. The general problem stays a v0.2 research task. | 8 d | **1 d** |
 | M8 | M-cell and S-cell libraries | CNT4 + SUPERVISOR + tie-off only (§23.2); shared behavioural models | 4 d | 4 d |
 | M9 | C5 packer | `pack_cost` reported; spare avoidance; deterministic; override works | 4 d | **9 d** |
 | M10 | C6 emitters + C7 analysis + C8 report | ~~KiCad import clean incl. power symbols and no-connects~~ **[M10-1]**; SCOAP delta; stuck-at classification; refdes delta | 6 d | **8 d** |
