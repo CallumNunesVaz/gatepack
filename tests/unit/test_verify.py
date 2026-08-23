@@ -420,7 +420,13 @@ def test_run_mutation_suite_applicable_undetected_is_a_failure():
     from gatepack.verify.base import VerificationReport
 
     lib, sim = _artefacts()
-    sequential = "module t;\n  NAND2 _0_ (.A(a), .B(b), .Y(y));\n  DFF_R _1_ (.D(d), .CK(clk), .Q(q), .RST_N(r));\nendmodule\n"
+    sequential = (
+        "module t;\n"
+        "  NAND2 _0_ (.A(a), .B(b), .Y(y));\n"
+        "  DFF_R _1_ (.D(d), .CK(clk), .Q(q), .RST_N(r));\n"
+        "  DFF_SR _2_ (.D(d), .CK(clk), .Q(q), .RST_N(r), .SET_N(s));\n"
+        "endmodule\n"
+    )
 
     def vacuous_equiv(_text):
         return CheckStatus.PASSED

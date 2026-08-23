@@ -117,6 +117,31 @@ _DFF_R_ALWAYS = (
     '  end'
 )
 
+# The ``DFF_SR`` cell as C2 emits it in both artefacts.  These anchors are the
+# mirror image of ``_DFF_R_FF``/``_DFF_R_ALWAYS``: they capture the set path —
+# the ``preset`` line in the ff group and the ``else if (!SET_N)`` line in the
+# always block — so each set-path mutation corrupts exactly the set and nothing
+# else.  Neither anchor collides with ``DFF_R``: ``DFF_R`` has no ``preset`` and
+# no ``else if``, so the reset family and the set family each keep their own.
+_DFF_SR_FF = (
+    '    ff (IQ, IQN) {\n'
+    '      next_state : "D";\n'
+    '      clocked_on : "CK";\n'
+    '      clear : "!RST_N";\n'
+    '      preset : "!SET_N";\n'
+    '      clear_preset_var1 : "L";\n'
+    '      clear_preset_var2 : "H";\n'
+    '    }'
+)
+
+_DFF_SR_ALWAYS = (
+    '  always @(posedge CK or negedge RST_N or negedge SET_N) begin\n'
+    "    if (!RST_N) Q <= 1'b0;\n"
+    "    else if (!SET_N) Q <= 1'b1;\n"
+    '    else Q <= D;\n'
+    '  end'
+)
+
 
 def _reset_never_asserts(lib: str, sim: str) -> tuple[str, str]:
     """Drop the async clear entirely, so the flop is a plain ``DFF``.
@@ -195,6 +220,93 @@ def _reset_value_flips(lib: str, sim: str) -> tuple[str, str]:
     )
 
 
+def _set_never_asserts(lib: str, sim: str) -> tuple[str, str]:
+    """Drop the async preset entirely, so the set pin is a no-op.
+
+    Stands for the "somebody forgot to wire the set" fault: the set pin is
+    present in the netlist but does nothing, so the flop never asserts it.  The
+    mirror of ``reset_never_asserts``: the cell degrades to a clear-only flop,
+    leaving the reset path intact and only the set path missing.
+    """
+    return (
+        lib.replace(
+            _DFF_SR_FF,
+            '    ff (IQ, IQN) {\n'
+            '      next_state : "D";\n'
+            '      clocked_on : "CK";\n'
+            '      clear : "!RST_N";\n'
+            '    }',
+        ),
+        sim.replace(
+            _DFF_SR_ALWAYS,
+            '  always @(posedge CK or negedge RST_N) begin\n'
+            "    if (!RST_N) Q <= 1'b0;\n"
+            '    else Q <= D;\n'
+            '  end',
+        ),
+    )
+
+
+def _set_becomes_synchronous(lib: str, sim: str) -> tuple[str, str]:
+    """Move the preset inside the clock edge: async-assert set becomes sync set.
+
+    Stands for gating the set through the clock (a set only sampled at
+    ``posedge CK``) where §9.3 promises async-assert / sync-de-assert.  A suite
+    that cannot tell an async set from a sync set is not verifying that
+    promise.  The clear stays async; only the set path changes.
+    """
+    return (
+        lib.replace(
+            _DFF_SR_FF,
+            '    ff (IQ, IQN) {\n'
+            '      next_state : "(!SET_N | D)";\n'
+            '      clocked_on : "CK";\n'
+            '      clear : "!RST_N";\n'
+            '    }',
+        ),
+        sim.replace(
+            _DFF_SR_ALWAYS,
+            '  always @(posedge CK or negedge RST_N) begin\n'
+            "    if (!RST_N) Q <= 1'b0;\n"
+            "    else if (!SET_N) Q <= 1'b1;\n"
+            '    else Q <= D;\n'
+            '  end',
+        ),
+    )
+
+
+def _set_value_flips(lib: str, sim: str) -> tuple[str, str]:
+    """Set presets to 0 instead of 1 (the set value is inverted).
+
+    Stands for a wrong set-value constant / a set-clear confusion.  A flop that
+    drives 0 when its set pin asserts leaves the state register in the wrong
+    encoding, observable through the reset phase.  The mirror of
+    ``reset_value_flips``, whose ``clear`` -> ``preset`` swap is reversed here
+    as ``preset`` -> ``clear`` on the set pin; the reset path is untouched.
+    """
+    return (
+        lib.replace(
+            _DFF_SR_FF,
+            '    ff (IQ, IQN) {\n'
+            '      next_state : "D";\n'
+            '      clocked_on : "CK";\n'
+            '      clear : "!RST_N";\n'
+            '      clear : "!SET_N";\n'
+            '      clear_preset_var1 : "L";\n'
+            '      clear_preset_var2 : "H";\n'
+            '    }',
+        ),
+        sim.replace(
+            _DFF_SR_ALWAYS,
+            '  always @(posedge CK or negedge RST_N or negedge SET_N) begin\n'
+            "    if (!RST_N) Q <= 1'b0;\n"
+            "    else if (!SET_N) Q <= 1'b0;\n"
+            '    else Q <= D;\n'
+            '  end',
+        ),
+    )
+
+
 MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         name="nand_to_and",
@@ -231,6 +343,24 @@ MUTATIONS: tuple[Mutation, ...] = (
         description="reset clears to 1 instead of 0 (inverted reset value)",
         targets=("DFF_R",),
         mutate=_reset_value_flips,
+    ),
+    Mutation(
+        name="set_never_asserts",
+        description="drop the async preset entirely (set never asserts, flop is clear-only)",
+        targets=("DFF_SR",),
+        mutate=_set_never_asserts,
+    ),
+    Mutation(
+        name="set_becomes_synchronous",
+        description="move the preset inside the clock edge (async-assert becomes sync set)",
+        targets=("DFF_SR",),
+        mutate=_set_becomes_synchronous,
+    ),
+    Mutation(
+        name="set_value_flips",
+        description="set presets to 0 instead of 1 (inverted set value)",
+        targets=("DFF_SR",),
+        mutate=_set_value_flips,
     ),
 )
 
