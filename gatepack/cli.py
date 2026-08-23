@@ -20,6 +20,7 @@ from pathlib import Path
 
 from gatepack import __version__, parts as parts_mod
 from gatepack import api
+from gatepack import pinmap as pinmap_mod
 from gatepack import refs as refs_mod
 from gatepack.diagnostic import (
     GP_ASYNC_REFUSED,
@@ -364,11 +365,30 @@ def _cmd_lib_check(args: argparse.Namespace) -> int:
     missing, refs_path = refs_mod.check_citations(parts, csv_path)
     citations = refs_mod.parse_refs(refs_path)
 
+    # Pin-map consistency + placeholder count.  The pin map is optional: a
+    # library with no ``<name>.pins.csv`` loads an empty map and skips these
+    # checks without changing anything else.
+    try:
+        pinmaps = pinmap_mod.load_pinmaps_cited(csv_path)
+    except pinmap_mod.PinMapError as exc:
+        if args.json:
+            _json_err("lib", error(GP_LIBRARY, str(exc)))
+        else:
+            print(f"error: {exc}", file=sys.stderr)
+        return 1
+    pin_violations = pinmap_mod.check_pinmaps(parts, pinmaps)
+    pin_placeholder = sum(1 for pm in pinmaps.values() if not pm.is_verified)
+
     if args.json:
-        # A report, never a gate: missing citations and a missing refs file are
-        # findings in the payload (refsPresent / missingCitations / per-part
-        # citation), not an `ok: false` envelope — the GUI must be able to show
-        # *why* validation failed. Only a malformed CSV is a hard error.
+        # An inconsistent pin map is a hard error (a wrong pinout reaches a
+        # board); the *placeholder count* is a finding, not a gate, and stays
+        # out of the JSON payload so the IPC contract is unchanged.
+        if pin_violations:
+            _json_err(
+                "lib",
+                error(GP_LIBRARY, "pin map is inconsistent:\n" + "\n".join(pin_violations)),
+            )
+            return 1
         payload = api.library_check_payload(
             csv_path, parts, included, excluded, citations, refs_path
         )
@@ -391,6 +411,21 @@ def _cmd_lib_check(args: argparse.Namespace) -> int:
         return 1
 
     print(f"citations: all {len(parts)} cells have a {refs_path.name} entry")
+
+    if pin_violations:
+        print(
+            f"error: {len(pin_violations)} pin-map consistency violation(s):",
+            file=sys.stderr,
+        )
+        for violation in pin_violations:
+            print(f"  - {violation}", file=sys.stderr)
+        return 1
+
+    cited = len(pinmaps) - pin_placeholder
+    print(
+        f"pin maps: {len(pinmaps)} part(s) mapped, {pin_placeholder} placeholder, "
+        f"{cited} cited"
+    )
 
     unverified = [
         cell
@@ -936,6 +971,13 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
         f"M-cell models={'ok' if resources['mcellModels'] else 'MISSING'} "
         f"({resources['mcellCount']})"
     )
+    pinmaps = pinmap_mod.bundled_pin_map_summary()
+    if pinmaps is not None:
+        print(
+            "bundled library pin maps: "
+            f"{pinmaps['total']} part(s), {pinmaps['placeholder']} placeholder, "
+            f"{pinmaps['cited']} cited"
+        )
     print(f"all required tools present: {payload['allToolsPresent']}")
     return EXIT_OK
 

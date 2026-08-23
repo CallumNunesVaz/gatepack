@@ -12,10 +12,19 @@ Three pin cases are emitted distinctly, per [R4-20]:
 
 The format follows the KiCad legacy ``.net`` s-expression shape as closely as it
 can be reproduced without KiCad installed; it has **not** been import-tested
-against real KiCad.  Pin *numbers* are assigned deterministically (gate-1 pins,
-gate-2 pins, ..., VCC, GND) because ``parts.csv`` carries no footprint pin map;
-real numbers need footprint data (a data concern, not a code one).  No
-timestamps appear anywhere in the payload (§C6).
+against real KiCad.  No timestamps appear anywhere in the payload (§C6).
+
+Pin *numbers* come from two sources, chosen per part:
+
+* a **pin map** (``gatepack.pinmap.PartPinMap``), when the part carries one —
+  its numbers are used verbatim;
+* otherwise the **positional fallback** (gate-1 signal pins, gate-2 signal
+  pins, ..., VCC, GND), which is what this emitter always produced before a pin
+  map existed.
+
+A pin map is only ever *cited* or *placeholder*; the notice below is conditional
+on that provenance, and is per-part, so a netlist mixing cited and placeholder
+parts says which is which instead of making one global claim.
 """
 
 from __future__ import annotations
@@ -25,12 +34,25 @@ from typing import Mapping, Sequence
 from gatepack import pins
 from gatepack.netlist import CellNames, MappedCell, MappedNetlist
 from gatepack.pack.packer import PackageGroup
+from gatepack.pinmap import SIGNAL_GND, SIGNAL_NC, SIGNAL_VCC
 
 PIN_NUMBER_NOTICE = (
     "PIN NUMBERS ARE POSITIONAL PLACEHOLDERS, NOT THE MANUFACTURER PINOUT: "
-    "parts.csv carries no footprint pin map, so pins are numbered gate-1 "
-    "signal pins, gate-2 signal pins, ..., VCC, GND. Do not fabricate a board "
-    "from these numbers without applying real footprint pin data."
+    "no footprint pin map was supplied for this part, so pins are numbered "
+    "gate-1 signal pins, gate-2 signal pins, ..., VCC, GND. Do not fabricate a "
+    "board from these numbers without applying real footprint pin data."
+)
+
+_PIN_MAP_PLACEHOLDER_NOTICE = (
+    "PIN NUMBERS ARE PLACEHOLDERS, NOT THE MANUFACTURER PINOUT: the pin map for "
+    "this part is marked placeholder (unverified) in the pin refs file, so it "
+    "has no datasheet citation. Do not fabricate a board from these numbers "
+    "until the pin map is verified."
+)
+
+_PIN_MAP_CITED_NOTICE = (
+    "PIN NUMBERS come from a cited pin map (see the pin refs file for the "
+    "datasheet citation)."
 )
 
 LIB_NAME = "gatepack"
@@ -61,8 +83,8 @@ def _sexp(head: str, *parts: object) -> str:
     return f"({head}" + (f" {body}" if body else "") + ")"
 
 
-def _package_pins(part) -> list[tuple[str, str]]:
-    """Ordered ``(pin_name, direction)`` list for a package.
+def _positional_pins(part) -> list[tuple[str, str]]:
+    """The positional fallback: ``(pin_name, direction)`` in pin-number order.
 
     Signal pins are gate-scoped for multi-gate packages (``1A``, ``1B``, ``2A``
     ...); VCC/GND are appended last.  The position in this list is the pin
@@ -80,6 +102,77 @@ def _package_pins(part) -> list[tuple[str, str]]:
     return out
 
 
+def _pinmap_entries(part, pinmap) -> list[tuple[str, str, str]]:
+    """``(pin_name, direction, pin_number)`` triples from a pin map.
+
+    The pin map stores an unscoped ``signal`` plus a 1-based ``gate``; the name
+    is re-scoped for multi-gate packages exactly as the positional fallback
+    scopes it (``1A``, ``2A``).  Directions are the cell's, except VCC/GND
+    (power) and NC (no-connect, emitted as a passive pin that attaches to no
+    net).
+    """
+    signal = pins.cell_pin_directions(part)
+    multi = part.gates_per_pkg > 1
+    out: list[tuple[str, str, str]] = []
+    for row in pinmap.ordered_pins:
+        if row.gate is not None:
+            name = f"{row.gate}{row.signal}" if multi else row.signal
+        else:
+            name = row.signal
+        if row.signal in (SIGNAL_VCC, SIGNAL_GND):
+            direction = "power_in"
+        elif row.signal == SIGNAL_NC:
+            direction = "passive"
+        else:
+            direction = signal[row.signal]
+        out.append((name, direction, str(row.pin)))
+    return out
+
+
+def _package_pin_entries(part, pinmap=None) -> list[tuple[str, str, str]]:
+    """Ordered ``(pin_name, direction, pin_number)`` triples for a package.
+
+    With a pin map the names and numbers come from the map; without one, pins
+    are numbered positionally (the pre-pin-map behaviour, preserved
+    byte-for-byte).
+    """
+    if pinmap is None:
+        return [
+            (name, direction, str(i + 1))
+            for i, (name, direction) in enumerate(_positional_pins(part))
+        ]
+    return _pinmap_entries(part, pinmap)
+
+
+def _pin_number_notice(part) -> str:
+    """The per-part pin-number provenance notice.
+
+    Three states, only one of which softens the warning: no pin map (positional
+    placeholder, loud), a placeholder pin map (loud, names the map as the
+    source), and a cited pin map (positive, no "do not fabricate").
+    """
+    pn = part.part_number or part.cell
+    pinmap = getattr(part, "pinmap", None)
+    if pinmap is None:
+        return f"{pn}: {PIN_NUMBER_NOTICE}"
+    if not pinmap.is_verified:
+        return f"{pn}: {_PIN_MAP_PLACEHOLDER_NOTICE}"
+    return f"{pn}: {_PIN_MAP_CITED_NOTICE}"
+
+
+def _pin_notices(assigned: Sequence[tuple[str, PackageGroup]]) -> list[str]:
+    """One notice per distinct part, in first-appearance order."""
+    seen: dict[str, str] = {}
+    notices: list[str] = []
+    for _ref, group in assigned:
+        pn = group.part.part_number or group.part.cell
+        if pn in seen:
+            continue
+        seen[pn] = pn
+        notices.append(_pin_number_notice(group.part))
+    return notices
+
+
 def _build_nets(
     assigned: Sequence[tuple[str, PackageGroup]],
     names: CellNames,
@@ -91,8 +184,8 @@ def _build_nets(
 
     for ref, group in assigned:
         part = group.part
-        ordered = _package_pins(part)
-        number = {name: str(i + 1) for i, (name, _) in enumerate(ordered)}
+        entries = _package_pin_entries(part, getattr(part, "pinmap", None))
+        number = {name: num for name, _, num in entries}
         signal = pins.cell_pin_directions(part)
         multi = part.gates_per_pkg > 1
 
@@ -157,8 +250,8 @@ def _libparts(assigned: Sequence[tuple[str, PackageGroup]]) -> list[str]:
         seen[pn] = pn
         pin_lines = [
             _sexp("pin", "num", num, "name", name, "type", direction)
-            for num, (name, direction) in (
-                (str(i + 1), pd) for i, pd in enumerate(_package_pins(part))
+            for name, direction, num in _package_pin_entries(
+                part, getattr(part, "pinmap", None)
             )
         ]
         lines.append(
@@ -188,16 +281,17 @@ def emit_netlist(
         _sexp(
             "design",
             "source", "gatepack",
-            # Say in the artefact what was previously said only in this file's
-            # docstring: these pin *numbers* are positional, not the
-            # manufacturer's pinout. `parts.csv` carries no footprint pin map,
-            # so numbering runs gate-1 signal pins, gate-2 signal pins, ...,
-            # VCC, GND. A netlist opened in KiCad shows numbers that look
-            # authoritative, and a reader has no way to tell from the file that
-            # they are a placeholder — which is exactly the kind of unmarked
-            # claim this project exists to avoid, and this one could reach a
-            # board.
-            _sexp("comment", "number", "1", "value", PIN_NUMBER_NOTICE),
+            # Say in the artefact, per part, what was previously said only once
+            # and only in this file's docstring: these pin *numbers* may be
+            # positional placeholders or placeholder pin-map values.  The
+            # notice is conditional on provenance and per-part, so a netlist
+            # mixing cited and placeholder parts names each part and its
+            # status — a single global claim over a mixed netlist is exactly
+            # the unmarked assumption this project refuses to emit.
+            *[
+                _sexp("comment", "number", str(i + 1), "value", notice)
+                for i, notice in enumerate(_pin_notices(assigned))
+            ],
             _sexp("sheet", "number", "1", "name", "", "tstamps", "/"),
         )
     )
