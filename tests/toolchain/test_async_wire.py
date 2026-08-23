@@ -51,6 +51,7 @@ def test_verify_async_example_is_green_and_reports_both_hazard_checks():
     assert "verification: passed" in combined, combined
     assert re.search(r"hazard \(ternary\):\s+passed", combined), combined
     assert re.search(r"hazard \(glitch sim\):\s+passed", combined), combined
+    assert re.search(r"functional \(fundamental mode\):\s+passed", combined), combined
     assert "not run" not in combined, combined
 
 

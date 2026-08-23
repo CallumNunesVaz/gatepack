@@ -87,8 +87,14 @@ class AsyncPipelineResult:
 
     @property
     def hazard_passed(self) -> bool:
-        """True only when stage 5 ran and every check passed — never on ``not run``."""
-        return self.report.ok
+        """True only when stage 5 ran and *every* check passed.
+
+        Never true on ``not run``, and — unlike a bare ``report.ok`` — never true
+        on ``not applicable`` either: a functional check that could not enumerate
+        has not measured "the netlist implements the design", so a netlist gated
+        on it must not be emitted (§7.3, §21.4).
+        """
+        return all(c.status is CheckStatus.PASSED for c in self.report.checks)
 
     def _require_pass(self) -> None:
         if self.hazard_passed:
