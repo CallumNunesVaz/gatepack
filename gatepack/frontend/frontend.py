@@ -73,6 +73,15 @@ def compile_design(
         raise CompileError(_format_validation_error(exc)) from exc
 
     if design.timing_model == "asynchronous":
+        # The refusal is now conditional: admission (stage 1) declines a design
+        # that cannot even be attempted, naming the specific construct; an
+        # admitted design is still refused here because the asynchronous backend
+        # is not wired into the CLI pipeline (run_verify/estimate/build are out
+        # of scope for this change) and must not fall through to the
+        # synchronous, clocked Verilog emitter.
+        from gatepack.synth.async_.admit import admit
+
+        admit(design)
         raise AsyncRefused(_async_refusal(design.name))
 
     compiled = model_mod.compile_design(design, source_name, provenance or {})

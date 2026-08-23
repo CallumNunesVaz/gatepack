@@ -1,0 +1,17 @@
+name: async_no_svc
+timing_model: asynchronous
+reset: {signal: rst_n, active: low}
+inputs:
+  - {name: x, sync: false}
+states: [A, B, C]
+initial: A
+transitions:
+  - {from: A, to: B, when: "x"}
+  - {from: A, to: A, when: "!x"}
+  - {from: B, to: C, when: "x"}
+  - {from: B, to: B, when: "!x"}
+  - {from: C, to: A, when: "x"}
+  - {from: C, to: C, when: "!x"}
+output_logic: {}
+fundamental_mode:
+  mutually_exclusive: [[x]]

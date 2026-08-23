@@ -1,0 +1,243 @@
+"""Netlist emission for the asynchronous backend (stage 4 tail).
+
+Turns a :class:`~gatepack.synth.async_.cover.CoverResult` into a mapped G-cell
+netlist: product terms become AND gates (fan-in 1..3), sums become 2-input OR
+trees, negated literals become inverter cells, and single-literal / constant
+functions are buffered so every primary output and state bit is driven by
+exactly one cell.  The AND-OR structure is mapped *directly*; ABC never sees
+this netlist, and neither does the synchronous ``dfflibmap``/``abc`` path.
+
+The result is a :class:`~gatepack.netlist.MappedNetlist` plus its two serialised
+forms: ``mapped.v`` (structural Verilog, for stage 5b / Icarus) and
+``mapped.json`` (Yosys ``write_json`` shape, for stage 5a and downstream tools).
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+
+from gatepack.frontend.model import CompiledDesign
+from gatepack.netlist import MappedCell, MappedNetlist
+from gatepack.synth.async_.assign import Assignment
+from gatepack.synth.async_.cover import CoverResult
+
+_DONTCARE = -1
+
+#: Cell name -> (input pin count).  Pin names are ``A``, ``B``, ``C`` and output ``Y``.
+_CELL_INPUTS = {"INV": 1, "BUF": 1, "AND2": 2, "AND3": 3, "OR2": 2}
+
+
+@dataclass(frozen=True)
+class EmittedNetlist:
+    """The mapped async netlist and its serialised forms."""
+
+    netlist: MappedNetlist
+    verilog: str
+    json: str
+
+
+class _Builder:
+    def __init__(self, state_names: tuple[str, ...]) -> None:
+        self.cells: list[MappedCell] = []
+        self.counter = 0
+        self.inv_net: dict[str, str] = {}
+        self.state_names = state_names
+
+    def fresh(self) -> str:
+        self.counter += 1
+        return f"n{self.counter}"
+
+    def literal_net(self, var: str, polarity: int) -> str:
+        """The net carrying ``var`` (polarity 1) or ``!var`` (polarity 0)."""
+        if polarity == 1:
+            return var
+        cached = self.inv_net.get(var)
+        if cached is None:
+            out = self.fresh()
+            self._add("INV", {"A": var}, out)
+            self.inv_net[var] = out
+            return out
+        return cached
+
+    def _add(self, cell: str, inputs: dict[str, str], output: str) -> None:
+        directions = {pin: "input" for pin in inputs} | {"Y": "output"}
+        self.cells.append(
+            MappedCell(
+                name=f"{cell.lower()}_{len(self.cells) + 1}",
+                cell=cell,
+                tier="G",
+                connections={**inputs, "Y": output},
+                directions=directions,
+            )
+        )
+
+
+def emit_netlist(
+    compiled: CompiledDesign,
+    assignment: Assignment,
+    covers: CoverResult,
+) -> EmittedNetlist:
+    """Emit the mapped netlist for a covered asynchronous design."""
+    builder = _Builder(covers.state_names)
+
+    for cover in covers.covers:
+        target = (
+            cover.name if cover.kind == "output" else covers.state_names[cover.index]
+        )
+        _emit_function(builder, cover.cubes, covers.variables, target)
+
+    netlist = MappedNetlist(
+        top=compiled.design.name,
+        cells=tuple(builder.cells),
+        inputs=tuple(compiled.input_names),
+        outputs=tuple(compiled.output_names),
+    )
+    return EmittedNetlist(
+        netlist=netlist,
+        verilog=_to_verilog(netlist, covers.state_names),
+        json=_to_json(netlist),
+    )
+
+
+def _emit_function(
+    builder: _Builder,
+    cubes: tuple[tuple[int, ...], ...],
+    variables: tuple[str, ...],
+    target: str,
+) -> None:
+    if not cubes:
+        # constant 0
+        builder._add("BUF", {"A": "0"}, target)
+        return
+
+    term_nets: list[str] = []
+    for cube in cubes:
+        literals = [
+            builder.literal_net(variables[i], cube[i])
+            for i in range(len(cube))
+            if cube[i] != _DONTCARE
+        ]
+        if not literals:
+            term_nets.append("1")  # constant-1 term
+        elif len(literals) == 1:
+            term_nets.append(literals[0])
+        else:
+            out = builder.fresh()
+            cell = f"AND{len(literals)}"
+            inputs = {pin: net for pin, net in zip(_pins(len(literals)), literals)}
+            builder._add(cell, inputs, out)
+            term_nets.append(out)
+
+    if len(term_nets) == 1:
+        builder._add("BUF", {"A": term_nets[0]}, target)
+        return
+
+    # OR tree of 2-input OR gates, last output drives the target.
+    current = term_nets[0]
+    for index in range(1, len(term_nets)):
+        out = target if index == len(term_nets) - 1 else builder.fresh()
+        builder._add("OR2", {"A": current, "B": term_nets[index]}, out)
+        current = out
+
+
+def _pins(count: int) -> list[str]:
+    return [chr(ord("A") + i) for i in range(count)]
+
+
+def _to_verilog(netlist: MappedNetlist, state_names: tuple[str, ...]) -> str:
+    lines = [
+        "// Generated by gatepack (async backend). Do not edit.",
+        "// Hazard-freedom is verified by gatepack verify (stage 5), not assumed.",
+        "`timescale 1ns/1ps",
+        "",
+        f"module {netlist.top} (",
+    ]
+    ports = [f"  input wire {name}" for name in netlist.inputs]
+    ports += [f"  output wire {name}" for name in netlist.outputs]
+    lines.append(",\n".join(ports))
+    lines.append(");")
+
+    internal = sorted(
+        {
+            net
+            for cell in netlist.cells
+            for net in cell.connections.values()
+            if net not in ("0", "1") and net not in netlist.inputs and net not in netlist.outputs
+        }
+    )
+    for net in internal:
+        lines.append(f"  wire {net};")
+
+    for cell in netlist.cells:
+        conns = ", ".join(
+            f".{pin}({net})" for pin, net in sorted(cell.connections.items())
+        )
+        lines.append(f"  {cell.cell} {cell.name} ({conns});")
+
+    lines.append("endmodule")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _to_json(netlist: MappedNetlist) -> str:
+    """Serialize a :class:`MappedNetlist` in Yosys ``write_json`` shape.
+
+    The shape matches :func:`gatepack.netlist.parse_mapped_json`'s input so stage
+    5a can parse the emitted artefact back independently of the synthesiser.
+    """
+    nets: list[str] = []
+    bit_of: dict[str, int] = {}
+
+    def bit(net: str) -> int:
+        if net not in bit_of:
+            idx = len(bit_of)
+            bit_of[net] = idx
+            nets.append(net)
+        return bit_of[net]
+
+    for name in netlist.inputs:
+        bit(name)
+    for name in netlist.outputs:
+        bit(name)
+    for cell in netlist.cells:
+        for net in cell.connections.values():
+            if net not in ("0", "1", "x", "z"):
+                bit(net)
+
+    netnames: dict[str, dict] = {
+        net: {"hide_name": 0, "bits": [bit_of[net]], "attributes": {}}
+        for net in nets
+    }
+    ports: dict[str, dict] = {}
+    for name in netlist.inputs:
+        ports[name] = {"direction": "input", "bits": [bit_of[name]]}
+    for name in netlist.outputs:
+        ports[name] = {"direction": "output", "bits": [bit_of[name]]}
+
+    cells: dict[str, dict] = {}
+    for cell in netlist.cells:
+        connections: dict[str, list] = {}
+        for pin, net in cell.connections.items():
+            connections[pin] = [net] if net in ("0", "1", "x", "z") else [bit_of[net]]
+        cells[cell.name] = {
+            "hide_name": 0,
+            "type": cell.cell,
+            "parameters": {},
+            "attributes": {},
+            "port_directions": dict(cell.directions),
+            "connections": connections,
+        }
+
+    data = {
+        "creator": "gatepack async backend",
+        "modules": {
+            netlist.top: {
+                "attributes": {},
+                "ports": ports,
+                "cells": cells,
+                "netnames": netnames,
+            }
+        },
+    }
+    return json.dumps(data, indent=2, sort_keys=True) + "\n"
