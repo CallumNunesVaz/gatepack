@@ -324,6 +324,49 @@ def build_payload(result, paths: Mapping[str, Path], mapped_json_path: str | Pat
     }
 
 
+def build_async_payload(
+    result, paths: Mapping[str, Path], mapped_json_path: str | Path
+) -> dict:
+    """The ``build`` payload for an *asynchronous* design.
+
+    Same envelope shape as :func:`build_payload`, but the analysis block omits
+    the synchronous-only metrics (flop count, combinational depth, SCOAP,
+    stuck-at) rather than emitting numbers an asynchronous netlist does not
+    support.  The reason for each omission is stated in ``report.md`` (§C8).
+    """
+    bom_rows = collect_bom(result.assigned)
+    static = result.static_current
+    metrics = [
+        metric(
+            "package count", result.packed_stats.package_count, "packages", None
+        ),
+        metric(
+            "static current",
+            static.total_ua if static is not None else None,
+            "uA",
+            None,
+        ),
+        metric("pack cost", result.packed_stats.pack_cost, "area", None),
+    ]
+    return {
+        "bomPath": str(paths["bom"]),
+        "netlistPath": str(paths["netlist"]),
+        "reportPath": str(paths["report"]),
+        "mappedJsonPath": str(mapped_json_path),
+        "packageCount": result.packed_stats.package_count,
+        "spareCount": result.packed_stats.spare_count,
+        "packCost": result.packed_stats.pack_cost,
+        "bom": [bomline(r) for r in bom_rows],
+        "analysis": {
+            "metrics": metrics,
+            "scoap": [],
+            "faults": {"detected": 0, "undetected": 0, "redundant": 0, "untestable": 0},
+            "cpldBlockers": [],
+        },
+        "stableCellNames": dict(result.stable_names) if result.stable_names else {},
+    }
+
+
 # ---------------------------------------------------------------------------
 # lib check (§C2)
 # ---------------------------------------------------------------------------

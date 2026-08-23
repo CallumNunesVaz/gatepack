@@ -10,7 +10,14 @@ hazard-freedom an **independently verified property of the emitted netlist**
 This backend does not go through Yosys: the cover is constructed in Python and
 mapped directly to G-cells, and ABC never sees the netlist.  ``generate_script``
 still refuses — it is the Yosys-script seam that belongs to the synchronous
-backend — and the real work lives in :meth:`synthesize`.
+backend — and the real work lives in :meth:`_synthesize`.
+
+``_synthesize`` is **internal** by design.  It runs stages 1–4 and therefore
+already holds a netlist, but it must never be a public entry point: the one rule
+of the package (§7.3) is that an async netlist may not be obtained without
+stage 5 (the independent hazard checks) having run and passed.  The public entry
+point is :func:`gatepack.async_pipeline.run_async_pipeline`, which binds stages
+1–4 to stage 5 structurally.
 """
 
 from __future__ import annotations
@@ -55,16 +62,21 @@ class AsynchronousBackend(SynthesisBackend):
             "Yosys-script seam of the SynchronousBackend only."
         )
 
-    def synthesize(
+    def _synthesize(
         self,
         compiled: CompiledDesign,
         runner,
         workdir: str = ".",
     ) -> AsyncSynthResult:
-        """Run the four synthesis stages and emit a mapped netlist.
+        """Run the four synthesis stages and emit a mapped netlist (internal).
 
         Every stage that can refuse does so with a reason naming the specific
         construct; the result is never emitted past a refusal.
+
+        This is the stages 1–4 half only.  It returns a result that already
+        contains a netlist, so it is deliberately **not** public: call
+        :func:`gatepack.async_pipeline.run_async_pipeline` instead, which runs
+        stage 5 on that netlist and only then hands it back.
         """
         admit(compiled.design)  # stage 1
         table = build_flow_table(compiled)  # stage 2

@@ -38,12 +38,20 @@ def cell_functions_from_liberty(lib_text: str) -> dict[str, str]:
 
     The asynchronous netlist is mapped to the same G-cells the Liberty file
     describes (INV/AND2/OR2/…), so the function table the hazard checker needs is
-    read from the actual library, not hard-coded.
+    read from the actual library, not hard-coded.  F-cells' ``function`` values
+    (``IQ``/``IQN``, the state-variable reference on the ``Q`` pin) are not
+    boolean expressions over ``A``/``B``/``C`` and are excluded, because the
+    asynchronous netlist never instantiates an F-cell and the hazard checker
+    cannot evaluate a state variable.
     """
     pattern = re.compile(
         r'cell\s*\(\s*(\w+)\s*\)\s*\{.*?function\s*:\s*"([^"]+)"', re.DOTALL
     )
-    return {cell: func for cell, func in pattern.findall(lib_text)}
+    return {
+        cell: func
+        for cell, func in pattern.findall(lib_text)
+        if func not in ("IQ", "IQN")
+    }
 
 
 def build_transition_probes(

@@ -42,11 +42,11 @@ import json
 from pathlib import Path
 from gatepack.frontend import yaml_subset, model as model_mod
 from gatepack.frontend.schema import Design
-from gatepack.synth.asynchronous import AsynchronousBackend
+from gatepack.async_pipeline import run_async_pipeline
+from gatepack.parts import load_parts
+from gatepack.liberty.generator import generate as generate_liberty
+from gatepack.verify.asynchronous import cell_functions_from_liberty
 from gatepack.toolchain import ToolchainRunner
-from gatepack.verify.asynchronous import AsynchronousVerify
-from gatepack.verify.base import VerifyConfig
-from gatepack.netlist import parse_mapped_json
 
 
 def compile_async(path):
@@ -55,23 +55,18 @@ def compile_async(path):
     return model_mod.compile_design(design, source_name=path, provenance={})
 
 compiled = compile_async('tests/golden/designs/async_latch.yaml')
+parts = load_parts('libraries/74aup.csv')
+lib = generate_liberty(parts, library_name="gatepack",
+                       project_vcc=compiled.design.constraints.vcc)
+cell_funcs = cell_functions_from_liberty(lib.text)
 runner = ToolchainRunner()
-backend = AsynchronousBackend()
-r1 = backend.synthesize(compiled, runner, workdir='.gpout/async_tc')
-r2 = backend.synthesize(compiled, runner, workdir='.gpout/async_tc')
+r1 = run_async_pipeline(compiled, runner, workdir='.gpout/async_tc', cell_functions=cell_funcs)
+r2 = run_async_pipeline(compiled, runner, workdir='.gpout/async_tc', cell_functions=cell_funcs)
 assert dict(r1.assignment.codes) == dict(r2.assignment.codes), "codes not deterministic"
-assert r1.emitted.verilog == r2.emitted.verilog, "netlist not deterministic"
-assert r1.emitted.json == r2.emitted.json, "mapped.json not deterministic"
-
-Path('.gpout/async_tc/mapped.json').write_text(r1.emitted.json)
-Path('.gpout/async_tc/mapped.v').write_text(r1.emitted.verilog)
-netlist = parse_mapped_json(r1.emitted.json)
-cell_funcs = {"INV": "!A", "BUF": "A", "AND2": "A&B", "AND3": "A&B&C", "OR2": "A|B"}
-config = VerifyConfig(top=compiled.design.name,
-                      mapped_json='.gpout/async_tc/mapped.json',
-                      mapped_v='.gpout/async_tc/mapped.v', cwd='.')
-report = AsynchronousVerify().verify_netlist(netlist, cell_funcs, compiled, runner, config)
-statuses = {c.name: c.status.value for c in report.checks}
+assert r1.mapped_verilog() == r2.mapped_verilog(), "netlist not deterministic"
+assert r1.mapped_json() == r2.mapped_json(), "mapped.json not deterministic"
+assert r1.hazard_passed, [c.name + '=' + c.status.value for c in r1.hazard_checks]
+statuses = {c.name: c.status.value for c in r1.hazard_checks}
 assert statuses['hazard (ternary)'] == 'passed', statuses
 assert statuses['hazard (glitch sim)'] == 'passed', statuses
 print('ASYNC_LATCH_OK', json.dumps(dict(r1.assignment.codes)), r1.assignment.width, r1.covers.max_literals)
@@ -94,8 +89,8 @@ backend = AsynchronousBackend()
 runner = ToolchainRunner()
 for name in ('async_4literal', 'async_no_svc', 'async_two_input'):
     try:
-        backend.synthesize(compile_async(f'tests/golden/designs/{name}.yaml'),
-                           runner, workdir='.gpout/async_tc')
+        backend._synthesize(compile_async(f'tests/golden/designs/{name}.yaml'),
+                            runner, workdir='.gpout/async_tc')
     except AsyncRefused as exc:
         print('REFUSED', name, ':', str(exc))
     else:

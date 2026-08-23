@@ -732,7 +732,11 @@ def _cmd_build(args: argparse.Namespace) -> int:
 
     if args.json:
         mapped_json_path = args.mapped if args.mapped else str(Path(args.out) / "mapped.json")
-        _json_ok("build", api.build_payload(result, paths, mapped_json_path))
+        if result.compiled is not None and result.compiled.design.timing_model == "asynchronous":
+            payload = api.build_async_payload(result, paths, mapped_json_path)
+        else:
+            payload = api.build_payload(result, paths, mapped_json_path)
+        _json_ok("build", payload)
         return EXIT_OK
 
     s = result.packed_stats

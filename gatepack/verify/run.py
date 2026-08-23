@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Mapping
 
 from gatepack import __version__
+from gatepack.async_pipeline import run_async_pipeline
+from gatepack.frontend.errors import AsyncRefused
 from gatepack.frontend.frontend import CompileResult, compile_design_file
 from gatepack.frontend.model import CompiledDesign
 from gatepack.infra import (
@@ -38,6 +40,7 @@ from gatepack.verify.base import (
     VerifyConfig,
 )
 from gatepack.verify import properties as properties_mod
+from gatepack.verify.asynchronous import AsynchronousVerify, cell_functions_from_liberty
 from gatepack.verify.synchronous import SynchronousVerify
 
 
@@ -163,6 +166,11 @@ def run_verify(
     compiled_result: CompileResult = compile_design_file(design_path)
     compiled = compiled_result.compiled
 
+    if compiled.design.timing_model == "asynchronous":
+        return _run_async_verify(
+            compiled, library_csv, build_dir, runner, properties_only
+        )
+
     generated_v = build_dir / "generated.v"
     properties_sv = build_dir / "properties.sv"
     generated_v.write_text(compiled_result.verilog)
@@ -256,6 +264,73 @@ def run_verify(
             "yosys_script": yosys_script_path,
             "manifest": manifest_path,
         },
+    )
+
+
+def _run_async_verify(
+    compiled: CompiledDesign,
+    library_csv: str | Path,
+    build_dir: Path,
+    runner,
+    properties_only: bool,
+) -> VerifyResult:
+    """``gatepack verify`` for an asynchronous design (§7.3).
+
+    Runs the full pipeline (stages 1–4 then stage 5) through
+    :func:`gatepack.async_pipeline.run_async_pipeline`, then reports each hazard
+    check as its own check.  Equivalence is reported honestly as not-applicable
+    (an async design has no synchronous golden netlist).  A hazard failure is a
+    **failed verification** — carried in the report and manifest — and the mapped
+    netlist is written to disk only past a passed stage 5.
+    """
+    runner = runner or SubprocessRunner()
+
+    if properties_only:
+        raise AsyncRefused(
+            f"asynchronous design {compiled.design.name!r} refused: "
+            "--properties-only runs the §11 sby property checks, which are "
+            "synchronous; an asynchronous design has no sby properties (§7.3)"
+        )
+
+    parts = load_parts(library_csv)
+    vcc = compiled.design.constraints.vcc
+    liberty = generate_liberty(parts, library_name="gatepack", project_vcc=vcc)
+    cell_functions = cell_functions_from_liberty(liberty.text)
+
+    pipeline = run_async_pipeline(
+        compiled, runner, workdir=build_dir, cell_functions=cell_functions
+    )
+
+    checks = [
+        CheckResult(
+            "equivalence",
+            CheckStatus.NOT_APPLICABLE,
+            "asynchronous designs have no synchronous golden netlist; "
+            "equivalence is not a meaningful check (§7.3)",
+            kind="equivalence",
+        ),
+        *pipeline.hazard_checks,
+    ]
+    report = VerificationReport(checks=checks, mutations=[])
+
+    paths: dict[str, Path] = {}
+    if pipeline.hazard_passed:
+        written = pipeline.write_artefacts(build_dir)
+        paths["mapped_json"] = written["mapped_json"]
+        paths["mapped_v"] = written["mapped_v"]
+
+    manifest = _manifest(compiled, report)
+    manifest_path = build_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    paths["manifest"] = manifest_path
+
+    return VerifyResult(
+        report=report,
+        compiled=compiled,
+        config=VerifyConfig(top=compiled.design.name, cwd="."),
+        manifest=manifest,
+        yosys_script="",
+        paths=paths,
     )
 
 
