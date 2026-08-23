@@ -214,3 +214,138 @@ def test_the_reset_family_are_four_distinct_faults() -> None:
         )
     finally:
         run_repo("rm", "-rf", str(work.relative_to(REPO)))
+
+
+# --- DFF_SR set-path family ---------------------------------------------------
+#
+# ``down_counter`` is the first bundled example to instantiate ``DFF_SR``: its
+# initial state D3 has binary code 3 (2'b11), so both state bits preset to 1 on
+# reset and Yosys reaches for the set-and-reset flop (the set-only ``DFF_S`` is
+# single-sourced and excluded from the library, so ``$_DFFSR_PNN_`` is the only
+# legal flop that can preset).  That is what makes the set-path mutations
+# *applicable* at all; before this example they reported ``not_applicable`` on
+# every design and measured nothing.
+_SET_FAMILY = (
+    "set_never_asserts",
+    "set_becomes_synchronous",
+    "set_value_flips",
+)
+
+
+def _mutation_state(stdout: str, name: str) -> str | None:
+    """The rendered verdict for ``name`` (e.g. ``"detected"``), padding-insensitive."""
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(f"mutation {name}:"):
+            return stripped.split(":", 1)[1].strip()
+    return None
+
+
+@requires_toolchain
+def test_set_mutations_detected_on_down_counter() -> None:
+    build = ".gpout/set_detected"
+    try:
+        proc = run_repo(
+            "python3", "-m", "gatepack", "verify",
+            "examples/down_counter/design.yaml",
+            "--library", "libraries/74aup.csv",
+            "--build", build,
+        )
+        combined = proc.stdout + proc.stderr
+        assert proc.returncode == 0, combined
+        for name in _SET_FAMILY:
+            assert _mutation_state(proc.stdout, name) == "detected", combined
+    finally:
+        run_repo("rm", "-rf", build)
+
+
+@requires_toolchain
+def test_set_mutations_not_applicable_on_dff_r_only_design() -> None:
+    """A design with no ``DFF_SR`` must report the set mutations as
+    ``not applicable``, never "NOT DETECTED" — that rendering confusion was a
+    real defect once (M5, defect 3).  ``sequence_detector`` is one-hot and uses
+    only ``DFF_R``.
+    """
+    build = ".gpout/set_not_applicable"
+    try:
+        proc = run_repo(
+            "python3", "-m", "gatepack", "verify",
+            "examples/sequence_detector/design.yaml",
+            "--library", "libraries/74aup.csv",
+            "--build", build,
+        )
+        combined = proc.stdout + proc.stderr
+        assert proc.returncode == 0, combined
+        for name in _SET_FAMILY:
+            assert _mutation_state(proc.stdout, name) == "not applicable", combined
+        assert "NOT DETECTED" not in proc.stdout, combined
+    finally:
+        run_repo("rm", "-rf", build)
+
+
+@requires_toolchain
+def test_the_set_family_are_three_distinct_faults() -> None:
+    """Each set mutation must be a *different* fault, not a renamed one.
+
+    Runs the three set mutations against ``down_counter`` and requires three
+    distinct failure traces.  ``set_becomes_synchronous`` must fail only the
+    async-assert check ("during reset") and *not* the held-edge check, because a
+    synchronous set does preset on the held edge; the other two fail both.  The
+    two remaining are separated by their step lines: ``set_never_asserts``
+    leaves the state at ``x`` (no set at all), while ``set_value_flips`` presets
+    to the wrong *determinate* code and fails with numeric step values.
+    """
+    work = REPO / ".gpout" / "set_family"
+    try:
+        work.mkdir(parents=True, exist_ok=True)
+        rel = work.relative_to(REPO)
+        built = run_repo(
+            "python3", "-m", "gatepack", "verify",
+            "examples/down_counter/design.yaml",
+            "--library", "libraries/74aup.csv",
+            "--build", f"{rel}/b",
+        )
+        assert built.returncode == 0, built.stdout + built.stderr
+
+        build = work / "b"
+        sim0 = (build / "cells_sim.v").read_text()
+        lib0 = (build / "cells.lib").read_text()
+        by_name = {m.name: m for m in mutation.MUTATIONS}
+
+        traces: dict[str, frozenset[str]] = {}
+        for name in _SET_FAMILY:
+            _lib, mutated = by_name[name].mutate(lib0, sim0)
+            assert mutated != sim0, f"{name} did not change cells_sim.v"
+            (build / "cells_sim.v").write_text(mutated)
+            compiled_ok = run_repo(
+                "bash", "-c",
+                f"iverilog -o {rel}/b/t.vvp {rel}/b/mapped.v {rel}/b/cells_sim.v "
+                f"{rel}/b/exhaustive_tb.v",
+            )
+            assert compiled_ok.returncode == 0, compiled_ok.stderr or compiled_ok.stdout
+            ran = run_repo("bash", "-c", f"vvp {rel}/b/t.vvp")
+            traces[name] = _fail_lines(ran.stdout + ran.stderr)
+            (build / "cells_sim.v").write_text(sim0)
+
+        for name, lines in traces.items():
+            assert lines, f"{name} was not caught by the simulation at all"
+
+        assert len(set(traces.values())) == len(_SET_FAMILY), (
+            "set mutations collapsed into the same fault: "
+            + repr({k: sorted(v) for k, v in traces.items()})
+        )
+
+        held = "FAIL: c1 held in reset"
+        assert held in traces["set_never_asserts"], sorted(traces["set_never_asserts"])
+        assert held in traces["set_value_flips"], sorted(traces["set_value_flips"])
+        assert held not in traces["set_becomes_synchronous"], sorted(
+            traces["set_becomes_synchronous"]
+        )
+
+        # The two that do fail the held-edge check are still distinct: only the
+        # never-asserts fault leaves the state at x (no set at all); the value
+        # flip presets to a wrong *determinate* code.
+        assert "FAIL: c1 at step x" in traces["set_never_asserts"]
+        assert "FAIL: c1 at step x" not in traces["set_value_flips"]
+    finally:
+        run_repo("rm", "-rf", str(work.relative_to(REPO)))

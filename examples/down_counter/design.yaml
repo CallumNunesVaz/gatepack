@@ -1,0 +1,70 @@
+# ---------------------------------------------------------------------------
+# A 2-bit binary down-counter — a divide-by-4 prescaler that resets to 3.
+#
+# Every other sequential example in this set resets to a state whose flops
+# are all cleared to 0, so its state register is built from reset-only flops
+# (DFF_R). This counter resets to D3, whose binary code is 11: *both* state
+# bits must come up HIGH while reset is asserted. A reset-only flop cannot do
+# that — clearing is all it knows. The state register therefore needs a flop
+# with a set (preset) as well as a clear, and this is the one example in the
+# set where Yosys reaches for the set-and-reset flop DFF_SR (74AUP1G74) rather
+# than DFF_R (74AUP1G175). "Reset" here means "return to the top of the count",
+# not "clear to zero".
+#
+# What it demonstrates:
+#
+#   encoding: binary      the state register is a genuine 2-bit binary value
+#   non-zero reset         D3 = 2'b11, so both flops preset to 1 on reset —
+#                          the set path, which no other example exercises
+#   countdown              D3 -> D2 -> D1 -> D0 -> D3, guarded by `en`
+#   decode outputs         c1/c0 surface the binary count directly
+#   enable input           a prescaler that only divides when told to
+#
+# The four states are named after their binary codes (D0 = 00, D3 = 11) so the
+# mapping between the state name and the code it resets to is visible in the
+# state list. The down count is the classic divide-by-4 prescaler core: from
+# D0 the next `en` wraps to D3, so four enabled edges make one full cycle.
+#
+# Synthetic, written for this project (§1.3). Nothing here is derived from any
+# real product or datasheet application note.
+# ---------------------------------------------------------------------------
+name: down_counter
+timing_model: synchronous
+
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+
+reset:
+  signal: rst_n
+  active: low
+  source: SUPERVISOR
+
+encoding: binary
+
+inputs:
+  # A clocked count-enable; combinational, so no synchroniser (§9.3).
+  - {name: en, sync: false}
+
+outputs:
+  - {name: c1}
+  - {name: c0}
+
+states: [D0, D1, D2, D3]
+initial: D3
+
+transitions:
+  # Count down while `en` is high; hold otherwise.
+  - {from: D3, to: D2, when: "en"}
+  - {from: D3, to: D3, when: "!en"}
+  - {from: D2, to: D1, when: "en"}
+  - {from: D2, to: D2, when: "!en"}
+  - {from: D1, to: D0, when: "en"}
+  - {from: D1, to: D1, when: "!en"}
+  - {from: D0, to: D3, when: "en"}
+  - {from: D0, to: D0, when: "!en"}
+
+output_logic:
+  # The 2-bit binary value: c1 is the high bit, c0 the low bit. D0 is the
+  # terminal count (c1 = c0 = 0), the pulse a prescaler would use to advance
+  # the next stage.
+  c1: "state == D2 | state == D3"
+  c0: "state == D1 | state == D3"
