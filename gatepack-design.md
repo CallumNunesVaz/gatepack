@@ -149,12 +149,30 @@ conflicts found. Rejected: `tinylogic` (onsemi/Fairchild trademark),
 EPL-2.0 (elkjs) is weak-copyleft at file scope, consumed unmodified as a
 library, so it does not constrain the GPL-3.0 choice.
 
-**[M10-1] Descoped from v0.1.0 on 2026-08-16.** "KiCad import clean" cannot be
-closed by any check this project can run: it requires a human with KiCad opening
-the emitted netlist and confirming power symbols and no-connect flags survive.
-Carrying a milestone open indefinitely on a criterion no automated test can
-discharge is worse than stating the limit, so the criterion leaves the v0.1.0
-exit set. The emitter still ships, and its tests establish that it emits what it
+**[M10-1] Descoped from v0.1.0 on 2026-08-16, and the descope re-confirmed by
+measurement on 2026-08-23.** "KiCad import clean" cannot be closed by any check
+this project can run: it requires a human with KiCad opening the emitted netlist
+and confirming power symbols and no-connect flags survive. Carrying a milestone
+open indefinitely on a criterion no automated test can discharge is worse than
+stating the limit, so the criterion leaves the v0.1.0 exit set.
+
+The obvious objection to that reasoning is that KiCad ships `pcbnew` as a Python
+module, so its *own* netlist reader ought to be drivable headlessly — which
+would turn the criterion from unclosable into merely unimplemented. Tested
+against `kicad/kicad:9.0.9` (pinned by digest) and cross-checked on 10.0.5:
+
+```
+dir(pcbnew) NETLIST symbols   -> []
+grep -c NETLIST pcbnew.py     -> 0
+reader symbols in _pcbnew.so  -> 0
+kicad-cli pcb subcommands     -> drc, export, render
+```
+
+The SWIG interface does not wrap `pcb_netlist.h` and `kicad-cli` has no
+netlist-import command, so closing this needs a source-level change to KiCad,
+not a script. `tests/toolchain/test_kicad_import.py` runs that probe against the
+real image and **fails the day a reader appears**, so the criterion reopens by
+itself rather than waiting for someone to remember to re-check. The emitter still ships, and its tests establish that it emits what it
 intends to emit — not that KiCad accepts it. See `docs/MILESTONE-AUDIT.md` for
 the check to reinstate when someone has KiCad.
 
@@ -431,6 +449,51 @@ survives review. Real async synthesis is a v0.2 research task (§23.3).
 If async synthesis is later re-scoped into v0.1.0, it is constrained to
 ≤3-literal product terms and single-variable-change encodings, with both limits
 stated in the report.
+
+**[M7-1] Re-scoped into v0.1.0 on 2026-08-23, under exactly those constraints.**
+The three problems above are still not solved in general; the constrained
+sub-problem this paragraph sanctions is what `gatepack/synth/async_/` now
+implements, in five deliberately separable stages:
+
+1. **admit** — refuses a design with no `fundamental_mode` declaration, an input
+   outside every mutual-exclusion group, a clock, or more states than the search
+   is willing to attempt.
+2. **flowtable** — the primitive flow table, plus an admissibility check that
+   refuses a transition requiring two simultaneous input changes. That is a
+   specification error, and naming it is more useful than synthesising for it.
+3. **assign** — single-variable-change assignment as a **z3** problem, not a
+   heuristic: distinct codes, Hamming distance exactly one across every
+   flow-table transition, widening the code on UNSAT to buy race-freedom with
+   spare rows. UNSAT at the cap is a refusal naming the conflicting transitions.
+4. **cover** — the hazard-free cover built under the required-cube condition and
+   solved with z3, **not requested from Espresso**, which guarantees no adjacency
+   condition (problem 3 above). A product term over three literals is **refused,
+   not factored** — multi-level decomposition of a hazard-free cover is not
+   hazard-preserving, which is problem 1 above, converted from an unsolved
+   research question into a stated limit with an honest refusal. ABC never sees
+   this netlist.
+5. **hazard** (`gatepack/verify/hazard.py`) — the reason the rest is allowed to
+   exist. Ternary X-propagation over the **mapped netlist**, plus a
+   randomised-delay Icarus run. It imports nothing from the synthesis stages and
+   a test parses its AST to keep it that way: a verifier that shares the
+   synthesiser's assumptions verifies nothing.
+
+**What is guaranteed, and what is not.** The guarantee is *fundamental mode
+only* — one input changes at a time and the circuit settles before the next
+change — and it must be reported that way everywhere, because a reader who
+applies "hazard-free" to concurrent input changes has been misled by this tool.
+The privileged-cube condition is **not** enforced in stage 4, so static-0 and
+dynamic hazards are not prevented by construction; stage 5a catches static
+hazards but cannot distinguish a dynamic hazard from a legitimate transition, so
+that class remains uncovered. Stage 5b perturbs delays per cell type rather than
+per instance.
+
+**Not yet reachable.** `compile_design` still refuses every asynchronous design,
+now after running admission so the refusal names the construct at fault. The
+backend is tested but not wired into `verify`/`build`/`estimate`, so M7 is
+**partial**: the machinery exists and delivers nothing to a user yet. When it is
+wired, no netlist may be emitted that has not passed stage 5 — that binding is
+the one hard rule of this component.
 
 **This remains the highest-risk component in the plan** (R15). The constrained
 mapper has no off-the-shelf equivalent, and generated code here should be
@@ -1665,7 +1728,7 @@ visible rather than quietly absorbed.
 | M4 | **Backend strategy interfaces** | Sync path runs through the interface; async stub refuses cleanly | 2 d | 2 d |
 | M5 | C4 sync verification | `golden_prep` shared front end; equivalence closes on all goldens; exhaustive sim under Icarus; **mutation suite passing** | 5 d | **10 d** |
 | M6 | Properties (§11) | sby discharges invariants, reachability, liveness; cover statements guard vacuity | 3 d | 4 d |
-| ~~M7~~ | ~~AsynchronousBackend~~ | **Deferred to v0.2** (§7.3). v0.1.0 detects and refuses. | 8 d | **0 d** |
+| M7 | AsynchronousBackend | **Partial [M7-1]** — the constrained backend (§7.3's own ≤3-literal, single-variable-change sub-problem) and an independent hazard verifier are implemented and tested; not yet wired into the CLI, which still refuses. | 8 d | **partial** |
 | M8 | M-cell and S-cell libraries | CNT4 + SUPERVISOR + tie-off only (§23.2); shared behavioural models | 4 d | 4 d |
 | M9 | C5 packer | `pack_cost` reported; spare avoidance; deterministic; override works | 4 d | **9 d** |
 | M10 | C6 emitters + C7 analysis + C8 report | ~~KiCad import clean incl. power symbols and no-connects~~ **[M10-1]**; SCOAP delta; stuck-at classification; refdes delta | 6 d | **8 d** |
@@ -1824,7 +1887,7 @@ CLI, and the desktop app as a read-mostly view.
 
 | Item | Disposition | Why |
 |---|---|---|
-| Async synthesis (M7) | **v0.2** | Three unsolved sub-problems (§7.3); refuse cleanly instead |
+| Async synthesis (M7) | **v0.1.0, constrained [M7-1]** | The general problem stays a v0.2 research task; the constrained sub-problem is implemented, with hazard-freedom independently verified |
 | §9.4 beyond CNT4 | v0.2 | Each M-cell is a hand-reviewed model; 4017/4040 are HC and VCC-incompatible at 3.3 V anyway |
 | `CLKBUF`, `OSC`, `DELAY` S-cells | v0.2 | `DELAY` is async-only; the others wait for a golden that needs them |
 | Random-vector simulation | **cut** | Proves nothing; formal equivalence is the guarantee (§21.4) |
