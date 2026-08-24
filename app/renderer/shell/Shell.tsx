@@ -16,9 +16,17 @@
 import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import { useProject } from '../state/project';
 import { useApi } from '../bridge/context';
+import { nextToken } from '../api';
+import {
+  deregisterInflightToken,
+  inflightTokensSnapshot,
+  registerInflightToken,
+} from '../hooks/useRevisionedTask';
 import { useTheme } from './theme';
 import { useDensity } from './density';
 import { CommandBusProvider, createCommandBus, useCommandBus } from './commands';
+import { requestLinkReload } from '../selection/linkData';
+import { RunRequestsProvider, useRunRequests } from './runRequests';
 import { useGlobalShortcuts } from './keyboard';
 import { CommandPalette } from './CommandPalette';
 import { ShortcutsSheet } from './ShortcutsSheet';
@@ -59,15 +67,17 @@ const VIEWS: ViewDef[] = [
 function ShellContent() {
   const { theme, toggle } = useTheme();
   const api = useApi();
+  const toast = useToast();
   useDensity();
   const bus = useCommandBus();
+  const { request } = useRunRequests();
   const { model } = useProject();
 
   const [activeView, setActiveView] = useState<ViewId>('spec');
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
-  // Built-in commands. Panels register the rest (run.*, inspect.*, project.*).
+  // Built-in commands. Panels register the rest (inspect.*, project.*).
   useEffect(() => {
     const unregisters: Array<() => void> = [
       bus.register('app.theme', () => toggle()),
@@ -81,9 +91,75 @@ function ShellContent() {
       bus.register('project.new', () => {
         void api.newProjectDialog();
       }),
+      // The run.* commands. Each switches to the owning view and *requests* a
+      // run; the view performs it (see runRequests.tsx). The switch is issued
+      // before the request so the target view is mounted and subscribed — and
+      // when React batches the two into one render, the view drains the pending
+      // request on mount instead of missing it.
+      bus.register('run.build', () => {
+        setActiveView('packing');
+        request('run.build');
+      }),
+      bus.register('run.verify', () => {
+        setActiveView('verify');
+        request('run.verify');
+      }),
+      bus.register('run.estimate', () => {
+        setActiveView('analysis');
+        request('run.estimate');
+      }),
+      bus.register('run.analyse', () => {
+        setActiveView('analysis');
+        request('run.analyse');
+      }),
+      // `run.simulate` does NOT go through the run-request bus. The truth
+      // table's only revisioned task is the `estimate`-backed cover preview;
+      // its divergence column comes from `simulate()` through the linked
+      // selection spine, which read it once on mount. Requesting the view's
+      // task would have re-run *estimate* while the command said "Simulate
+      // truth table" — a command reporting success for something else. The
+      // spine now has a reload signal, and this asks it for a fresh read.
+      bus.register('run.simulate', () => {
+        setActiveView('truthtable');
+        requestLinkReload();
+      }),
+      // `run.compile` has no owning view — the front-end `specification to
+      // Verilog` check does not belong to any of the six views, so it runs here
+      // and reports through the toast. It registers its token so `run.cancel`
+      // can still stop it mid-flight.
+      bus.register('run.compile', () => {
+        const token = nextToken();
+        registerInflightToken(token);
+        void api.compile(token).then(
+          (env) => {
+            deregisterInflightToken(token);
+            if (env.ok) {
+              toast.push(
+                `Compiled ${env.data.stateCount} states, ${env.data.flopCount} flops (${env.data.encoding} encoding)`,
+                'success',
+              );
+            } else {
+              toast.push(env.error.message, 'error');
+            }
+          },
+          () => {
+            // `api.compile` only rejects on cancellation (§16.1 — main re-throws
+            // CancelledError, every other failure arrives as an error envelope).
+            deregisterInflightToken(token);
+            toast.push('Compile cancelled', 'info');
+          },
+        );
+      }),
+      // Cancel every in-flight task. One task is normally in flight; cancelling
+      // all of them is correct and simpler than tracking which view is active.
+      bus.register('run.cancel', () => {
+        for (const token of inflightTokensSnapshot()) {
+          void api.cancel(token);
+        }
+      }),
     ];
     return () => unregisters.forEach((unregister) => unregister());
-  }, [bus, toggle, api]);
+  }, [bus, toggle, api, toast, request]);
 
   // Electron's own chrome — on Linux the menu bar drawn inside the window —
   // follows `nativeTheme`, which tracks the OS and knows nothing about the
@@ -199,7 +275,9 @@ function ShellWithBus() {
   );
   return (
     <CommandBusProvider bus={bus}>
-      <ShellContent />
+      <RunRequestsProvider>
+        <ShellContent />
+      </RunRequestsProvider>
     </CommandBusProvider>
   );
 }

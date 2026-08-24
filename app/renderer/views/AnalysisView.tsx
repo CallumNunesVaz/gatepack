@@ -1,6 +1,7 @@
 import { useApi } from '../bridge/context';
 import { useProject } from '../state/project';
 import { useRevisionedTask } from '../hooks/useRevisionedTask';
+import { useRunRequest } from '../shell/runRequests';
 import { Icon } from '../ui';
 import { ActionButton, EmptyState } from './kit';
 import type { AnalysisSummary, EstimateResult } from '../../shared/api';
@@ -43,6 +44,8 @@ export function AnalysisView() {
   const api = useApi();
   const analysis = useRevisionedTask<AnalysisSummary>(revision, (t) => api.analyse(t));
   const estimate = useRevisionedTask<EstimateResult>(revision, (t) => api.estimate(t));
+  useRunRequest('run.analyse', analysis.run);
+  useRunRequest('run.estimate', estimate.run);
 
   const runAll = () => {
     analysis.run();

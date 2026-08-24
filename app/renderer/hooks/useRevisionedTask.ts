@@ -14,6 +14,31 @@ import type { Diagnostic, Envelope } from '../../shared/api';
 import { nextToken } from '../api';
 import { useApi } from '../bridge/context';
 
+/**
+ * The shared in-flight token registry (§16.1).
+ *
+ * `useRevisionedTask` cancels its own token on re-run and unmount, but nothing
+ * else could reach that token — `run.cancel` (Escape) had no way to cancel the
+ * task the active view is running. This registry is the seam: the hook
+ * registers its token while a call is in flight and clears it on completion,
+ * and `run.cancel` cancels every registered token. One task is normally in
+ * flight; cancelling all of them is correct and simpler than tracking which
+ * view is active.
+ */
+const inflightTokens = new Set<string>();
+
+export function registerInflightToken(token: string): void {
+  inflightTokens.add(token);
+}
+
+export function deregisterInflightToken(token: string): void {
+  inflightTokens.delete(token);
+}
+
+export function inflightTokensSnapshot(): string[] {
+  return [...inflightTokens];
+}
+
 export interface TaskState<T> {
   status: 'idle' | 'running' | 'success' | 'error';
   data: T | null;
@@ -36,8 +61,13 @@ export function useRevisionedTask<T>(
 
   const run = useCallback(() => {
     const token = nextToken();
-    if (tokenRef.current) api.cancel(tokenRef.current);
+    const previous = tokenRef.current;
+    if (previous) {
+      api.cancel(previous);
+      deregisterInflightToken(previous);
+    }
     tokenRef.current = token;
+    registerInflightToken(token);
     setState({ status: 'running', data: null, error: null, revision });
     start(token)
       .then((env) => {
@@ -60,6 +90,11 @@ export function useRevisionedTask<T>(
           },
           revision,
         });
+      })
+      .finally(() => {
+        if (tokenRef.current === token) {
+          deregisterInflightToken(token);
+        }
       });
   }, [revision, api, start]);
 
@@ -67,6 +102,7 @@ export function useRevisionedTask<T>(
     return () => {
       if (tokenRef.current) {
         api.cancel(tokenRef.current);
+        deregisterInflightToken(tokenRef.current);
         tokenRef.current = null;
       }
     };
