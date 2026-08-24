@@ -107,15 +107,21 @@ it, not just the tools:
 ```bash
 docker build -f Dockerfile.probe -t gatepack-toolchain:m6 .
 
-# the toolchain test layer
-docker run --rm -v "$PWD:/repo" -w /repo gatepack-toolchain:m6 \
-    python3 -m pytest tests/toolchain -q
+# the toolchain test layer -- runs on the HOST, not inside the image
+.venv/bin/pytest tests/toolchain -q
 
 # the real thing, end to end
 docker run --rm -v "$PWD:/repo" -w /repo gatepack-toolchain:m6 \
     python3 -m gatepack verify tests/golden/designs/xor2.yaml \
       --library libraries/74aup.csv --build .gpout/xor2
 ```
+
+**`tests/toolchain` runs on the host and `docker run`s the image itself.** It
+cannot run *inside* the image: `Dockerfile.probe` installs pydantic and the
+tools, not pytest, and the container has no docker of its own. This block used
+to say `docker run ... python3 -m pytest tests/toolchain`, which fails with
+`No module named pytest` — a documented verification step that could never have
+verified anything. `.github/workflows/ci.yml` has always run it the right way.
 
 Two rules for this layer, both learned the hard way:
 
@@ -147,6 +153,28 @@ npx vitest run                 # both projects via vitest.workspace.ts
 npm run build:main             # e2e needs dist/main/index.cjs
 DISPLAY=:1 npm run test:e2e
 ```
+
+`examples-end-to-end.spec.ts` is the one that answers "can a user do this in the
+GUI?" It runs the whole journey — open, compile, estimate, verify, build, and
+every post-build view — once per bundled example, against a **real** core with
+the **real** toolchain. yosys and friends are usually absent from a dev host, so
+rather than skip (see the rule above), it points `GATEPACK_CORE` at a shim that
+runs the core inside `gatepack-toolchain:m6`, bind-mounting `/tmp` and the repo
+at their host paths so every absolute path the main process passes resolves
+identically inside the container. Electron still runs on the host and the main
+process is untouched; the only substitution is the documented core seam. Build
+the image first or the whole file skips.
+
+`schematic-pointer.spec.ts` measures how close you have to click — it steps
+outward from real geometry and asks what a click there would resolve to. It
+asserts *numbers*, not booleans, deliberately: a regression here is far more
+likely to be a narrowing than a disappearance (a stylesheet rule out-ranking the
+target width is exactly how the first fix silently failed), and only a
+measurement catches that.
+
+Note that neither can use Playwright's `waitForFunction`: the app's CSP has no
+`unsafe-eval`, which is how it installs its polling predicate, so it throws
+rather than waits. Poll with `evaluate()` in a loop instead.
 
 Notes that will save time:
 

@@ -28,6 +28,7 @@ tool closes, the only evidence that counts is that tool closing.
 | M15 | C12 schematic — all layers | **met** (2026-08-16) — packed and overlay layers render from `out/packed.json` |
 | M16 | Linked selection — §15.2 cross-highlights | **met** (2026-08-16) — package and property selections resolve |
 | M17 | C13 packing override, C14 dashboard, C15 tri-state | **met** (2026-08-16) |
+| M12–M17 (sweep) | The whole journey, per example, through the real app | **met, bounded [GUI-1]** (2026-08-24) — all thirteen bundled examples, and a design created from nothing, complete New/open → compile → estimate → verify → build and every post-build view. The GUI still offers no route to the build outputs. |
 | M18 | ~~Signed installers~~ **[M18-4]**; worked example; CI green | **met** (2026-08-23) — core and Linux toolchain ship; installers are unsigned by decision, not by omission |
 
 ## M5 — met (2026-08-16)
@@ -472,3 +473,105 @@ is not. Nothing fabricates an identity.
 
 That job is expected to fail until the M5 repair lands. That is the point of
 adding it before the fix rather than after.
+
+
+## [GUI-1] What the per-example sweep measured, 2026-08-24
+
+`app/tests/e2e/examples-end-to-end.spec.ts` runs the full journey once per
+bundled example, driving the real Electron main process against a real core with
+the real toolchain (via a `GATEPACK_CORE` shim into `gatepack-toolchain:m6`).
+Milestone-by-milestone auditing had checked each view against *one* design;
+sweeping all thirteen found two failures that only appear on a design class the
+per-milestone audit never used:
+
+* **The Analysis tab was a dead end for every asynchronous design.** `analyse`
+  reads each cell's boolean function out of `out/cells.lib`, and the synchronous
+  build wrote that file only incidentally — it needs it on disk to hand to
+  Yosys. The asynchronous build hands Yosys nothing, so it never wrote it. Fixed
+  in `gatepack/build.py`.
+* **The Provenance tab told users to run a build they had just run.** Coverage
+  needs a pre-map netlist, and an asynchronous design is synthesised straight
+  from its flow table (§7.3), so it has none. Both "not built" and "no pre-map
+  stage" returned the same `None`, and the message assumed the first. Fixed in
+  `gatepack/provenance/coverage.py`: the second case now says coverage is *not
+  measurable* rather than zero, and never instructs a rebuild.
+
+Two boundaries are open, and are the reason the row above says *bounded*:
+
+* ~~**The GUI cannot originate a design.**~~ **Closed 2026-08-24.** `gatepack
+  project new` scaffolds a working `design.yaml` + `parts.csv`, and File > New
+  Project… (`Mod+N`) runs it and opens the result. The template lives in the
+  core so the CLI and the GUI cannot drift. The pinned `test.fail()` has been
+  inverted into the positive test it was written as, and the sweep now covers
+  creating a design from nothing through to a BOM.
+* **The build outputs are written, not offered.** No *Reveal in folder*, no
+  *Export*; *Save As* bundles the specification into a `.gpk`, not the
+  manufacturing outputs. Still open.
+
+Closing the first one immediately found a third defect that had nothing to do
+with it, and that no bundled example could ever have surfaced:
+
+* **Any project in a path containing a space failed synthesis.** The generated
+  Yosys script embedded every path unquoted, and Yosys splits script arguments
+  on whitespace — so `/home/me/My Board/generated.v` became two arguments and
+  reported `Can't open input file '/home/me/My'`. That surfaced as
+  `equivalence: failed` and `exhaustive simulation: failed`: a *verification
+  verdict* produced by a path, not by the design. Every bundled example lives at
+  a whitespace-free path, so nothing in the suite had ever exercised it — it took
+  a New Project dialog, which invites names like "My First Board", to reach it.
+  Fixed in `gatepack/yosys/__init__.py` (`script_path`), quoting conditionally so
+  §5.5's byte-identical `yosys.ys` is unchanged for ordinary builds.
+
+
+## [GUI-2] How close you had to click, measured 2026-08-24
+
+The schematic resolves a selection from `event.target` alone, so the clickable
+area is exactly the geometry the browser painted. Nothing had ever measured what
+that came to. Driving a real 651-element sheet and stepping outward from each
+piece of geometry (`app/tests/e2e/schematic-pointer.spec.ts`):
+
+| target | before | after |
+|---|---|---|
+| wire, perpendicular to the line | **±0.5 px** | ±5 px |
+| centre of a 30×53 px gate symbol | **hit nothing** | selects the gate |
+
+Both numbers come from the same cause — SVG hit-testing only what is painted.
+netlistsvg draws wires at `stroke-width: 1`, and the skin sets `svg { fill:
+none }`, so a gate symbol's interior is unpainted and therefore untouchable: a
+click in the middle of one fell through to the bare `<svg>` and selected
+nothing. Only the 1 px outline responded. ±0.5 px is about a quarter of the
+hand tremor of a mouse user at rest, so selecting a wire was a matter of
+patience rather than aim.
+
+The fixes are separate because the causes are:
+
+* **Gates** — `pointer-events: all` on the body shapes hit-tests the fill region
+  whether or not anything is painted into it. One CSS rule; nothing drawn
+  changes.
+* **Wires** — a stroke's hit region *is* the painted stroke, and no CSS widens
+  one without widening the other, so each wire gets an invisible 10 px-wide
+  copy in a layer above the sheet (`applyHitTargets`). The copies carry the
+  wire's `net_<bits>` class, so every handler resolves through them unchanged.
+
+The first attempt at the wires silently did nothing, and the reason is worth
+recording: the copies carry the net class, so `applyNetValues` stamps them too,
+and `[data-gp-value='0'] { stroke-width: 1 }` out-ranks a presentation attribute
+— every target was quietly shrunk back to 1 px while the DOM still said
+`stroke-width="10"`. `[data-gp-value='x']` would have been worse, dashing the
+target so that a click landed or missed depending on where along the wire it
+fell. The width is now pinned in the stylesheet with the decoration reset.
+
+### Wheel zoom
+
+Added at the same time, and it exposed two things about the zoom that were
+already wrong:
+
+* The zoom host is `transform: scale()`, which scales what is drawn but **not
+  the layout box** — so the scroll container sized itself to the *unzoomed*
+  sheet, and zooming in pushed the right-hand side of a schematic somewhere no
+  scrollbar could reach. It now reserves the scaled size.
+* Anchoring the zoom under the pointer needs the scroll offset written *after*
+  the host has been resized. Doing it in `requestAnimationFrame` was not late
+  enough: the assignment was clamped to the old scroll area (it wanted
+  `scrollLeft` 312 and got 55, the old maximum), so the sheet anchored correctly
+  in Y and drifted 257 px in X. It is applied in a layout effect keyed on zoom.

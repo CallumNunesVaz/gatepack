@@ -76,7 +76,19 @@ design verifies, the must-fail goldens fail, and two clean builds are
 byte-identical including the mapped netlist and BOM. Provenance coverage is
 measured and reported on every golden (M11b). The GUI milestones (M12–M17) have
 been audited by driving the real application — `docs/GUI-AUDIT.md` — and all
-close. The Python core ships inside the app as a self-contained PyInstaller
+close.
+
+**All thirteen bundled examples complete the whole journey through the GUI**,
+and so does a design created from nothing: File > New, compile, estimate,
+verify, build, and every post-build view. That is measured, not assumed —
+`app/tests/e2e/examples-end-to-end.spec.ts` drives the real Electron main
+process against a real core with the real toolchain, once per example. Three
+things it found are fixed: the Analysis tab was a dead end for asynchronous
+designs, the Provenance tab told users to run a build they had just run, and
+**any project in a path containing a space failed synthesis** — the generated
+Yosys script embedded paths unquoted, so `/home/me/My Board` became
+`Can't open input file '/home/me/My'` and reported a *failed verification* for
+a reason with nothing to do with the design. The Python core ships inside the app as a self-contained PyInstaller
 binary (`scripts/bundle_core.py`), and the licence audit now enumerates what
 that binary actually contains rather than the declared dependency list. A
 walkthrough from specification to BOM is in `docs/worked-example.md`.
@@ -151,6 +163,33 @@ cd app && npm install && npm run build && npm start
 The application is strictly a **view over artefacts the CLI produces**. It never
 reimplements core logic — everything it shows comes from invoking `gatepack`.
 
+**File > New Project…** (`Mod+N`) scaffolds a `design.yaml` and a `parts.csv`
+into a directory you choose and opens them. The template is a *working* two-state
+design, not a stub: press verify immediately after creating it and you get a
+verdict, which is also the fastest way to confirm your toolchain is wired up.
+The template lives in the core (`gatepack project new`), not in the application,
+so the CLI and the GUI produce the same project and cannot drift. An existing
+`design.yaml` is never overwritten.
+
+In the schematic, the wheel zooms about the pointer, and clicking is forgiving:
+a wire is selectable within ±5 px of the line and a gate symbol anywhere inside
+it. Both were measured first — the wire was ±0.5 px and the middle of a gate
+symbol hit nothing at all, because SVG hit-tests only what it paints and the
+skin fills nothing. `docs/MILESTONE-AUDIT.md` [GUI-2] has the numbers.
+
+One boundary is still worth knowing, and it is pinned by a test rather than left
+to be discovered:
+
+* **The build outputs are written, not offered.** `build` emits the BOM, the
+  KiCad netlist and the report into `.gatepack/out` inside the project, and the
+  application has no *Reveal in folder* or *Export*; *Save As* bundles the
+  **specification** into a `.gpk`, not the manufacturing outputs. To hand the
+  netlist to a fabricator you go to the file manager.
+
+So the honest answer to "can I do all of this in the GUI?" is: from creating a
+design through to building it, yes; getting the outputs to a fabricator still
+happens on the filesystem.
+
 ## Windows
 
 The core is pure Python and runs on Windows; the desktop installer and the
@@ -184,6 +223,7 @@ binaries.
 | `gatepack build` | pack and emit BOM, KiCad netlist, report |
 | `gatepack simulate` | the exhaustive divergence table (spec vs mapped netlist) |
 | `gatepack lib check/gen` | cell-library citation audit and Liberty generation |
+| `gatepack project new` | scaffold a working `design.yaml` + `parts.csv` |
 | `gatepack project bundle/explode` | single-file `.gpk` project format |
 | `gatepack examples list/extract` | bundled example projects |
 
