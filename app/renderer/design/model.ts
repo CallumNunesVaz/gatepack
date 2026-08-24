@@ -751,6 +751,281 @@ export function setPropertyExpr(text: string, index: number, expr: string): Edit
   return setItemField(text, 'properties', index, 'expr', expr, 'ED1027');
 }
 
+/** §C10: set one transition's `from` state, preserving every comment in the
+ * transitions block — the same line-splice `setTransitionWhen` uses. */
+export function setTransitionFrom(text: string, index: number, from: string): EditOutcome {
+  return setItemField(text, 'transitions', index, 'from', from, 'ED1028');
+}
+
+/** §C10: set one transition's `to` state, preserving every comment in the
+ * transitions block. */
+export function setTransitionTo(text: string, index: number, to: string): EditOutcome {
+  return setItemField(text, 'transitions', index, 'to', to, 'ED1029');
+}
+
+/** §C12: set one input's `name`, preserving every comment in the inputs block. */
+export function setInputName(text: string, index: number, name: string): EditOutcome {
+  return setItemField(text, 'inputs', index, 'name', name, 'ED1032');
+}
+
+/** §C12: set one output's `name`, preserving every comment in the outputs block. */
+export function setOutputName(text: string, index: number, name: string): EditOutcome {
+  return setItemField(text, 'outputs', index, 'name', name, 'ED1033');
+}
+
+/** §11: set one property's `name`, preserving every comment in the properties block. */
+export function setPropertyName(text: string, index: number, name: string): EditOutcome {
+  return setItemField(text, 'properties', index, 'name', name, 'ED1034');
+}
+
+/** §11: set one property's `kind`, preserving every comment in the properties block. */
+export function setPropertyKind(text: string, index: number, kind: string): EditOutcome {
+  return setItemField(text, 'properties', index, 'kind', kind, 'ED1035');
+}
+
+/* ------------------------------------------------------------------ */
+/* Adding and removing list items, spliced                              */
+/* ------------------------------------------------------------------ */
+
+const SAFE_PLAIN = /^[A-Za-z_][A-Za-z0-9_./-]*$/;
+const RESERVED_INLINE = new Set(['true', 'false', 'null', '~']);
+
+function looksNumeric(s: string): boolean {
+  if (s === '') return false;
+  return Number.isFinite(Number(s));
+}
+
+/** Inline YAML for one value, quoting anything that would not round-trip as a
+ * plain scalar: empty, reserved words, numeric-looking strings, and anything
+ * with a character outside `SAFE_PLAIN`. */
+function inlineScalar(v: YValue): string {
+  if (v === null) return '~';
+  if (typeof v === 'boolean') return v ? 'true' : 'false';
+  if (typeof v === 'number') return String(v);
+  if (typeof v === 'string') {
+    if (v !== '' && SAFE_PLAIN.test(v) && !RESERVED_INLINE.has(v) && !looksNumeric(v)) return v;
+    return quoteScalar(v);
+  }
+  if (Array.isArray(v)) return `[${v.map(inlineScalar).join(', ')}]`;
+  if (isDict(v)) return `{${Object.keys(v).map((k) => `${k}: ${inlineScalar(v[k])}`).join(', ')}}`;
+  throw new Error(`cannot emit YAML for ${typeof v}`);
+}
+
+/** Render one list item as `- ` line(s) at `indent`, in the flow-mapping,
+ * block-mapping or scalar style the surrounding list already uses. */
+function renderListItemLines(item: YValue, indent: string, flow: boolean): string[] {
+  if (isDict(item)) {
+    if (flow) {
+      const inner = Object.keys(item).map((k) => `${k}: ${inlineScalar(item[k])}`).join(', ');
+      return [`${indent}- {${inner}}`];
+    }
+    const keys = Object.keys(item);
+    const lines = [`${indent}- ${keys[0]}: ${inlineScalar(item[keys[0]])}`];
+    for (const k of keys.slice(1)) lines.push(`${indent}  ${k}: ${inlineScalar(item[k])}`);
+    return lines;
+  }
+  if (Array.isArray(item)) return [`${indent}- [${item.map(inlineScalar).join(', ')}]`];
+  return [`${indent}- ${inlineScalar(item)}`];
+}
+
+/** Split a flow-sequence body on top-level commas, honouring quotes and nested
+ * `{}`/`[]`. */
+function splitTopLevelCommas(text: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let quote: string | null = null;
+  let cur = '';
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text[i];
+    if (quote) {
+      cur += c;
+      if (c === '\\' && i + 1 < text.length) {
+        cur += text[i + 1];
+        i += 1;
+        continue;
+      }
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      quote = c;
+      cur += c;
+      continue;
+    }
+    if (c === '{' || c === '[') depth += 1;
+    else if (c === '}' || c === ']') depth -= 1;
+    if (c === ',' && depth === 0) {
+      parts.push(cur.trim());
+      cur = '';
+      continue;
+    }
+    cur += c;
+  }
+  parts.push(cur.trim());
+  return parts.filter((p) => p !== '');
+}
+
+/** True for a line that is *only* a comment (no code, not blank). */
+function isAttachedComment(line: BlockLine): boolean {
+  return line.code.trim() === '' && line.comment !== '';
+}
+
+/**
+ * Append one item to a top-level list, spliced into the block rather than
+ * re-serialised. Re-serialising a list from the model deletes every comment in
+ * it (the same defect `setInputSync` documents for `inputs`); appending only
+ * touches the end of the block.
+ *
+ * The new item is written in the style the list already uses: a flow sequence
+ * (`states: [S0, PULSE]`) gets an inline item; a block list of flow mappings
+ * (`- {from: S0, to: PULSE, when: "din"}`) gets another flow mapping; a block
+ * list of block mappings (`- name: a`) gets another block mapping. When the key
+ * is absent the whole block is appended canonically (there is nothing to
+ * destroy). An empty list becomes a one-item list.
+ */
+export function appendListItem(text: string, key: string, item: YValue): EditOutcome {
+  const refuse = (reason: string): EditOutcome => ({
+    text,
+    diagnostics: [...parseDesignText(text).diagnostics, diag('error', 'ED1030', reason)],
+  });
+
+  let value: YValue;
+  let ranges: Map<string, Range>;
+  try {
+    const parsed = parseToJs(text);
+    value = parsed.value;
+    ranges = parsed.ranges;
+  } catch (e) {
+    return refuse(messageOf(e));
+  }
+
+  const range = ranges.get(key);
+  if (!range) {
+    // The key is not there at all: append a fresh block. Nothing exists to
+    // destroy, so the canonical serialiser is correct and safe.
+    return setField(text, key, [item]);
+  }
+  const root = asDict(value) ?? {};
+  // A list key with no items parses to `null` (`transitions:` with nothing after
+  // it), so `null` counts as an empty list, not as a type mismatch.
+  const current = root[key];
+  if (current !== null && !isList(current)) {
+    return refuse(`cannot append to ${JSON.stringify(key)}: it is not a list`);
+  }
+
+  const body = text.slice(range.valueStart, range.valueEnd);
+  const trimmed = body.trimStart();
+
+  let next: string;
+
+  if (trimmed.startsWith('[')) {
+    // Flow sequence: insert the new item inside the brackets, before any
+    // trailing comment.
+    const open = body.indexOf('[');
+    const close = body.lastIndexOf(']');
+    if (open === -1 || close === -1 || close < open) {
+      return refuse(`malformed flow sequence for ${JSON.stringify(key)}`);
+    }
+    const inner = body.slice(open + 1, close).trim();
+    const token = inlineScalar(item);
+    const nextInner = inner === '' ? token : `${inner}, ${token}`;
+    next = spliceText(text, range.valueStart + open + 1, range.valueStart + close, nextInner);
+  } else {
+    const lines = body.split('\n').map(splitBlockLine);
+    const starts = itemStartLines(lines);
+    if (starts.length > 0) {
+      const lastStart = starts[starts.length - 1];
+      const indent = /^\s*/.exec(lines[lastStart].code)?.[0] ?? '';
+      const flow = lines[lastStart].code.replace(/^\s*-\s*/, '').startsWith('{');
+      const newLines = renderListItemLines(item, indent, flow);
+      lines.splice(lines.length, 0, ...newLines.map(splitBlockLine));
+      next = spliceText(text, range.valueStart, range.valueEnd, lines.map((l) => l.raw).join('\n'));
+    } else {
+      // An empty block list: the first item goes on a new line after the key.
+      const newLines = renderListItemLines(item, '  ', isDict(item));
+      next = spliceText(text, range.valueStart, range.valueEnd, `\n${newLines.join('\n')}`);
+    }
+  }
+
+  // A splice that produced unparseable YAML must not be handed back as an edit.
+  const reparsed = parseDesignText(next);
+  if (reparsed.model === null) {
+    return { text, diagnostics: reparsed.diagnostics };
+  }
+  return { text: next, diagnostics: reparsed.diagnostics };
+}
+
+/**
+ * Remove one item from a top-level list, spliced so only the removed item's
+ * own lines change.
+ *
+ * The comment rule is a deliberate judgement call, not an accident of the line
+ * arithmetic: a comment line sitting *directly* above the item — no blank line
+ * between — is read as that item's annotation and goes with it; a comment
+ * separated from the item by a blank line, or sitting above a blank line at the
+ * top of the block, is a block header and stays. A single blank line is the
+ * only boundary we can reason about without trying to understand what the
+ * comment says.
+ */
+export function removeListItem(text: string, key: string, index: number): EditOutcome {
+  const refuse = (reason: string): EditOutcome => ({
+    text,
+    diagnostics: [...parseDesignText(text).diagnostics, diag('error', 'ED1031', reason)],
+  });
+
+  let ranges: Map<string, Range>;
+  try {
+    ranges = parseToJs(text).ranges;
+  } catch (e) {
+    return refuse(messageOf(e));
+  }
+  const range = ranges.get(key);
+  if (!range) {
+    return refuse(`there is no ${JSON.stringify(key)} block to remove from`);
+  }
+
+  const body = text.slice(range.valueStart, range.valueEnd);
+  const trimmed = body.trimStart();
+
+  let next: string;
+
+  if (trimmed.startsWith('[')) {
+    const open = body.indexOf('[');
+    const close = body.lastIndexOf(']');
+    if (open === -1 || close === -1 || close < open) {
+      return refuse(`malformed flow sequence for ${JSON.stringify(key)}`);
+    }
+    const parts = splitTopLevelCommas(body.slice(open + 1, close));
+    if (index < 0 || index >= parts.length) {
+      return refuse(`${JSON.stringify(key)}[${index}] does not exist to remove`);
+    }
+    parts.splice(index, 1);
+    next = spliceText(text, range.valueStart + open + 1, range.valueStart + close, parts.join(', '));
+  } else {
+    const lines = body.split('\n').map(splitBlockLine);
+    const starts = itemStartLines(lines);
+    if (index < 0 || index >= starts.length) {
+      return refuse(`${JSON.stringify(key)}[${index}] does not exist to remove`);
+    }
+    const from = starts[index];
+    const to = index + 1 < starts.length ? starts[index + 1] : lines.length;
+    // Extend upward over comment lines glued to the item (see the judgement
+    // documented on the function).
+    let head = from;
+    while (head > 0 && isAttachedComment(lines[head - 1])) {
+      head -= 1;
+    }
+    lines.splice(head, to - head);
+    next = spliceText(text, range.valueStart, range.valueEnd, lines.map((l) => l.raw).join('\n'));
+  }
+
+  const reparsed = parseDesignText(next);
+  if (reparsed.model === null) {
+    return { text, diagnostics: reparsed.diagnostics };
+  }
+  return { text: next, diagnostics: reparsed.diagnostics };
+}
+
 /* ------------------------------------------------------------------ */
 /* Renames                                                             */
 /* ------------------------------------------------------------------ */

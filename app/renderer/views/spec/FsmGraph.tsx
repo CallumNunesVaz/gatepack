@@ -15,7 +15,14 @@ import ReactFlow, {
 } from 'reactflow';
 import { useProject } from '../../state/project';
 import { createLocalStorageLayoutStore, type LayoutMap } from '../../design/layout';
-import { applyTopLevelEdit, renameState, type Transition } from '../../design/model';
+import {
+  appendListItem,
+  renameState,
+  setTransitionFrom,
+  setTransitionTo,
+  setTransitionWhen,
+  type Transition,
+} from '../../design/model';
 import { useHighlights, useSelection } from '../../selection/bus';
 import { useLinkContext } from '../../selection/useLinkContext';
 import { SelectionBadge } from '../../selection/SelectionBadge';
@@ -294,27 +301,28 @@ export function FsmGraph() {
     store.save(next);
   };
 
-  const setTransitions = (transitions: Transition[]) => {
-    const { text } = applyTopLevelEdit(specText, 'transitions', () =>
-      transitions.map((t) => ({ from: t.from, to: t.to, when: t.when })),
-    );
-    editSpec(() => text);
-  };
-
+  // Editing one edge is a line-splice on its `from`/`to`/`when`, not a rewrite
+  // of the whole `transitions` block: a rewrite deletes every per-transition
+  // comment in the block, which is exactly where the bundled examples teach.
   const updateEdge = (index: number, patch: Partial<Transition>) => {
-    setTransitions(model.transitions.map((t, i) => (i === index ? { ...t, ...patch } : t)));
+    editSpec((current) => {
+      let text = current;
+      if (patch.from !== undefined) text = setTransitionFrom(text, index, patch.from).text;
+      if (patch.to !== undefined) text = setTransitionTo(text, index, patch.to).text;
+      if (patch.when !== undefined) text = setTransitionWhen(text, index, patch.when).text;
+      return text;
+    });
   };
 
   const addState = () => {
     const name = `S${model.states.length}`;
-    const { text } = applyTopLevelEdit(specText, 'states', () => [...model!.states, name]);
-    editSpec(() => text);
+    editSpec((current) => appendListItem(current, 'states', name).text);
   };
 
   const addTransition = () => {
     const from = model.initial ?? model.states[0];
     const to = model.states[0] ?? from;
-    setTransitions([...model.transitions, { from, to, when: '1' }]);
+    editSpec((current) => appendListItem(current, 'transitions', { from, to, when: '1' }).text);
   };
 
   return (
