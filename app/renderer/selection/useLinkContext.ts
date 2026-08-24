@@ -14,7 +14,12 @@ import type { PackedView, ProvenanceMap, SimulationTable, VerifyResult } from '.
 import { useApi } from '../bridge/context';
 import { useProject } from '../state/project';
 import { parseWriteJson, type ParsedNetlist } from '../mapped/sim';
-import { getVerifyResult, subscribeVerifyResult } from './linkData';
+import {
+  getLinkReloadCount,
+  getVerifyResult,
+  subscribeLinkReload,
+  subscribeVerifyResult,
+} from './linkData';
 import type { LinkContext } from './types';
 
 const EMPTY_PROVENANCE: ProvenanceMap = { entries: [], coverage: 0 };
@@ -27,6 +32,11 @@ export function useLinkContext(): LinkContext | null {
   const [simulation, setSimulation] = useState<SimulationTable | null>(null);
   const [packed, setPacked] = useState<PackedView | null>(null);
   const [verify, setVerify] = useState<VerifyResult | null>(getVerifyResult);
+  // Bumped by `requestLinkReload()`; re-runs the fetch below. Without it the
+  // four artefacts were read once on mount and never again.
+  const [reload, setReload] = useState(getLinkReloadCount);
+
+  useEffect(() => subscribeLinkReload(() => setReload(getLinkReloadCount())), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,7 +57,7 @@ export function useLinkContext(): LinkContext | null {
       cancelled = true;
       unsubscribe();
     };
-  }, [api]);
+  }, [api, reload]);
 
   const linkContext = useMemo<LinkContext | null>(
     () => (model ? { model, provenance, netlist, simulation, packed, verify } : null),

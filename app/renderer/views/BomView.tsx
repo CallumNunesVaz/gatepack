@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApi } from '../bridge/context';
 import { useProject } from '../state/project';
 import { useRevisionedTask } from '../hooks/useRevisionedTask';
+import { useRunRequest } from '../shell/runRequests';
 import { setPackingForceGroups } from '../design/model';
 import { parseWriteJson } from '../mapped/sim';
 import { useLinkContext } from '../selection/useLinkContext';
@@ -37,6 +38,7 @@ export function BomView() {
   const { model, specText, editSpec, revision } = useProject();
   const api = useApi();
   const build = useRevisionedTask<BuildResult>(revision, (t) => api.build(t));
+  useRunRequest('run.build', build.run);
   const ctx = useLinkContext();
   const { setSelection } = useSelection();
   const highlights = useHighlights(ctx);

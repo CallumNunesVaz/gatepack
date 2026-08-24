@@ -3,7 +3,7 @@ import { act, render, screen } from '@testing-library/react';
 import { ApiProvider, useApi } from '../bridge/context';
 import { setApi } from '../api';
 import { FakeGatepack } from '../bridge/fake';
-import { useRevisionedTask } from './useRevisionedTask';
+import { inflightTokensSnapshot, useRevisionedTask } from './useRevisionedTask';
 import type { EstimateResult } from '../../shared/api';
 
 function estimateResult(): EstimateResult {
@@ -112,5 +112,59 @@ describe('useRevisionedTask — stale results are never shown as live', () => {
       resolveLate?.();
     });
     expect(screen.queryByTestId('packages')).toBeNull();
+  });
+
+  it('registers its token while running and clears it when it completes', async () => {
+    const fake = new FakeGatepack();
+    let resolveCall: (() => void) | null = null;
+    fake.setHook('estimate', () => new Promise<void>((res) => { resolveCall = res; }));
+    fake.setOk('estimate', estimateResult());
+
+    renderHarness(0, fake);
+    await act(async () => {
+      screen.getByText('run').click();
+    });
+    expect(screen.getByTestId('status').textContent).toBe('running');
+    const token = fake.calls.find((c) => c.command === 'estimate')?.token;
+    expect(token).toBeDefined();
+    expect(inflightTokensSnapshot()).toContain(token);
+
+    await act(async () => {
+      resolveCall?.();
+    });
+    expect(screen.getByTestId('status').textContent).toBe('success');
+    expect(inflightTokensSnapshot()).not.toContain(token);
+  });
+
+  it('leaves running and clears the registry when run.cancel cancels it', async () => {
+    const fake = new FakeGatepack();
+    let rejectCall: ((e: Error) => void) | null = null;
+    fake.setHook('estimate', () => new Promise<void>((_res, rej) => { rejectCall = rej; }));
+    fake.setOk('estimate', estimateResult());
+    // The real bridge's `cancel` rejects the pending call (§16.1), which is how
+    // the hook learns it left running. The fake's default `cancel` only records,
+    // so model the reject here.
+    fake.cancel = async (token: string) => {
+      fake.cancelled.push(token);
+      rejectCall?.(new Error(`cancelled: ${token}`));
+    };
+
+    renderHarness(0, fake);
+    await act(async () => {
+      screen.getByText('run').click();
+    });
+    expect(screen.getByTestId('status').textContent).toBe('running');
+    const token = fake.calls.find((c) => c.command === 'estimate')?.token;
+    expect(token).toBeDefined();
+    expect(inflightTokensSnapshot()).toContain(token);
+
+    // Exactly what the shell's run.cancel handler does.
+    await act(async () => {
+      for (const t of inflightTokensSnapshot()) void fake.cancel(t);
+    });
+
+    expect(fake.cancelled).toContain(token);
+    expect(screen.getByTestId('status').textContent).toBe('error');
+    expect(inflightTokensSnapshot()).not.toContain(token);
   });
 });

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useApi } from '../bridge/context';
 import { useProject } from '../state/project';
 import { useRevisionedTask } from '../hooks/useRevisionedTask';
+import { useRunRequest } from '../shell/runRequests';
 import { StatusBadge } from '../components/StatusBadge';
 import { useSelection } from '../selection/bus';
 import { setVerifyResult } from '../selection/linkData';
@@ -143,6 +144,7 @@ export function VerificationPanel() {
   const api = useApi();
   const { state, run, isStale } = useRevisionedTask<VerifyResult>(revision, (t) => api.verify(t));
   const { selection, setSelection } = useSelection();
+  useRunRequest('run.verify', run);
 
   // Publish the verified result into the selection spine so a property (or
   // counterexample-step) selection resolves against the same result this panel
