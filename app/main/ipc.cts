@@ -90,6 +90,17 @@ export function registerIpc(deps: IpcDeps): void {
     session.saveProjectAs(p.gpkPath),
   );
 
+  // §GUI-1: reveal the build outputs, and copy them out. Neither takes a path
+  // from the renderer — the destination is chosen by a native dialog, which is
+  // the trust boundary for writing outside the project root (§5.2).
+  handle('gatepack:revealOutputs', NoPayloadSchema, () => session.revealOutputs());
+
+  handle<Record<string, unknown>, Envelope<{ path: string; files: string[] }>>(
+    'gatepack:exportOutputs',
+    NoPayloadSchema,
+    () => exportViaDialog(session),
+  );
+
   // Chrome, not project state: the renderer reports the theme it is showing so
   // Electron's own menu bar matches it. Fire-and-forget — there is no result to
   // report, and a host whose chrome does not follow `nativeTheme` is not an
@@ -164,4 +175,26 @@ async function newViaDialog(session: SessionManager): Promise<Envelope<ProjectIn
     return errorEnvelope('newProject', 'GP4201', 'new project cancelled');
   }
   return session.newProject(result.filePaths[0]);
+}
+
+/**
+ * Ask for a directory to copy the build outputs into (§GUI-1).
+ *
+ * The destination always comes from this native dialog, never from the
+ * renderer: writing outside the project root is acceptable only because a
+ * native dialog picked it (§5.2). Cancelled is a visible, legitimate state
+ * (`GP4201`), the same shape the other dialogs return for a cancelled open.
+ */
+async function exportViaDialog(
+  session: SessionManager,
+): Promise<Envelope<{ path: string; files: string[] }>> {
+  const result = await dialog.showOpenDialog({
+    title: 'Export build outputs',
+    buttonLabel: 'Export here',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return errorEnvelope('exportOutputs', 'GP4201', 'export cancelled');
+  }
+  return session.exportOutputs(result.filePaths[0]);
 }

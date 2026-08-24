@@ -91,6 +91,25 @@ function ShellContent() {
       bus.register('project.new', () => {
         void api.newProjectDialog();
       }),
+      // §GUI-1: reveal the build outputs in the file manager, and copy them to
+      // a directory the user picks. Both go straight to the main process; the
+      // destination for export is chosen by a native dialog, never by us.
+      // Cancelled export is not an error to surface — it is the user changing
+      // their mind — so `GP4201` is swallowed rather than toasted.
+      bus.register('project.revealOutputs', () => {
+        void api.revealOutputs().then((env) => {
+          if (!env.ok) toast.push(env.error.message, 'error');
+        });
+      }),
+      bus.register('project.exportOutputs', () => {
+        void api.exportOutputs().then((env) => {
+          if (env.ok) {
+            toast.push(`Exported ${env.data.files.length} file(s) to ${env.data.path}`, 'success');
+          } else if (env.error.code !== 'GP4201') {
+            toast.push(env.error.message, 'error');
+          }
+        });
+      }),
       // The run.* commands. Each switches to the owning view and *requests* a
       // run; the view performs it (see runRequests.tsx). The switch is issued
       // before the request so the target view is mounted and subscribed — and

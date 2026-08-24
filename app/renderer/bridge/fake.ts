@@ -180,6 +180,24 @@ export class FakeGatepack implements GatepackApi {
     return this.newProject(this.project.path);
   }
 
+  /** Paths handed to `revealOutputs` (the directory it would reveal). */
+  revealedPaths: string[] = [];
+  /** Counts of `exportOutputs` calls, for asserting the shell wired them. */
+  exportCalls = 0;
+
+  async revealOutputs(): Promise<Envelope<{ path: string }>> {
+    this.revealedPaths.push(`${this.project.path}/.gatepack/out`);
+    return ok('revealOutputs', { path: `${this.project.path}/.gatepack/out` });
+  }
+
+  async exportOutputs(): Promise<Envelope<{ path: string; files: string[] }>> {
+    this.exportCalls += 1;
+    return ok('exportOutputs', {
+      path: `${this.project.path}/.gatepack/export`,
+      files: ['bom.csv', 'netlist.net', 'report.md'],
+    });
+  }
+
   async closeProject(): Promise<void> {
     // no-op in the fake
   }
