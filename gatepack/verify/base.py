@@ -97,6 +97,13 @@ class MutationOutcome:
     equivalence_only: bool = False
 
 
+# Check kinds that measure what the design *does*, as opposed to a property of
+# the netlist (hazard) or of the checks themselves (mutation).  A "passed"
+# verdict must rest on at least one of these; see
+# ``VerificationReport.has_behavioural_evidence``.
+_BEHAVIOURAL_KINDS = frozenset({"equivalence", "simulation", "property"})
+
+
 @dataclass
 class VerificationReport:
     checks: list[CheckResult] = field(default_factory=list)
@@ -114,10 +121,42 @@ class VerificationReport:
         return any(c.status == CheckStatus.NOT_RUN for c in self.checks)
 
     @property
+    def has_behavioural_evidence(self) -> bool:
+        """True when at least one check actually measured what the design *does*.
+
+        ``not applicable`` is an honest non-verdict, not a pass: it means a check
+        produced no evidence at all.  Counting it as a pass was safe only by
+        accident on the synchronous path, where an over-cap simulation still sits
+        beside a formal equivalence proof that did run (§21.4).  On the
+        asynchronous path equivalence is not applicable *by construction* (no
+        synchronous golden netlist, §7.3), so when the functional check is also
+        not applicable — above its enumeration cap, or with no stable total state
+        to enumerate — nothing is left but the hazard checks, and those measure
+        hazard-freedom, not correctness.  Reporting that as "passed" claims a
+        proof that was never run (§14).
+
+        Hazard and mutation checks are deliberately excluded: a hazard check says
+        the netlist does not glitch, and a mutation check says the *other* checks
+        can see a fault.  Neither says the netlist implements the design.  The
+        allowlist is positive so that a check kind added later has to opt in
+        rather than silently count.
+        """
+        return any(
+            c.kind in _BEHAVIOURAL_KINDS
+            and c.status in (CheckStatus.PASSED, CheckStatus.BOUNDED_PASS)
+            for c in self.checks
+        )
+
+    @property
     def ok(self) -> bool:
-        """True only when nothing failed, nothing is unrun, and every mutation was
-        detected — the honest "verified" verdict (§14, R2)."""
-        return not self.has_failure and not self.has_not_run
+        """True only when nothing failed, nothing is unrun, every mutation was
+        detected, and some check actually measured the design's behaviour — the
+        honest "verified" verdict (§14, R2)."""
+        return (
+            not self.has_failure
+            and not self.has_not_run
+            and self.has_behavioural_evidence
+        )
 
 
 @dataclass(frozen=True)

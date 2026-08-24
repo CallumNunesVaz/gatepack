@@ -126,6 +126,11 @@ def _manifest(
         overall = "failed"
     elif report.has_not_run:
         overall = "not run"
+    elif not report.has_behavioural_evidence:
+        # Nothing failed, but nothing measured the design's behaviour either --
+        # every such check was "not applicable".  That is not a pass (§14): see
+        # VerificationReport.has_behavioural_evidence.
+        overall = "inconclusive"
     else:
         overall = "passed"
     return {

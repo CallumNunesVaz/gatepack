@@ -295,6 +295,21 @@ def _build_parser() -> argparse.ArgumentParser:
     bundle_p.add_argument("source", help="project directory (design.yaml + optional csv)")
     bundle_p.add_argument("-o", "--output", required=True, help="output .gpk path")
 
+    new_p = project_sub.add_parser(
+        "new", help="scaffold a new project directory (design.yaml + parts.csv)"
+    )
+    new_p.add_argument("directory", help="directory to create the project in")
+    new_p.add_argument(
+        "--name",
+        default=None,
+        help="design name (default: derived from the directory name)",
+    )
+    # The desktop application's File > New goes through this, so it needs the
+    # envelope: the main process reads exactly one JSON object from stdout.
+    new_p.add_argument(
+        "--json", action="store_true", help="emit one machine-readable JSON object to stdout"
+    )
+
     explode_p = project_sub.add_parser(
         "explode", help="single-file .gpk -> exploded directory"
     )
@@ -338,6 +353,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "doctor":
         return _cmd_doctor(args)
     if args.command == "project":
+        if args.project_command == "new":
+            return _cmd_project_new(args)
         if args.project_command == "bundle":
             return _cmd_project_bundle(args)
         if args.project_command == "explode":
@@ -624,7 +641,11 @@ def _cmd_verify(args: argparse.Namespace) -> int:
         return EXIT_OK
     if report.has_failure:
         return EXIT_ERROR
-    return EXIT_ERROR  # not-run is not a pass (§14: never claim an unrun proof)
+    # Neither "not run" nor "inconclusive" is a pass (§14: never claim an
+    # unrun proof).  "inconclusive" means nothing failed but nothing
+    # measured the design's behaviour either -- see
+    # VerificationReport.has_behavioural_evidence.
+    return EXIT_ERROR
 
 
 def _cmd_simulate(args: argparse.Namespace) -> int:
@@ -755,6 +776,7 @@ def _cmd_provenance(args: argparse.Namespace) -> int:
     M16's cross-highlights could not work at all.
     """
     from gatepack.provenance.coverage import (
+        explain_missing_coverage,
         measure_coverage_from_dir,
         provenance_map_payload,
     )
@@ -769,10 +791,7 @@ def _cmd_provenance(args: argparse.Namespace) -> int:
         return EXIT_ERROR
 
     if report is None:
-        message = (
-            f"no captured netlists at {args.dir}: run `gatepack build` first "
-            "(provenance is never reported as empty when nothing was measured)"
-        )
+        message = explain_missing_coverage(args.dir)
         if args.json:
             _json_err("provenance", error(GP_IO, message))
         else:
@@ -1013,6 +1032,35 @@ def _cmd_examples_extract(args: argparse.Namespace) -> int:
     except ExampleError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_USAGE
+    for path in written:
+        print(f"wrote {path}")
+    return EXIT_OK
+
+
+def _cmd_project_new(args: argparse.Namespace) -> int:
+    """Scaffold a new project (§18.1).
+
+    The template lives in the core, not in the desktop application, so `File >
+    New` and `gatepack project new` produce the same project and cannot drift.
+    """
+    from gatepack.scaffold import ScaffoldError, new_project
+
+    try:
+        written = new_project(args.directory, args.name)
+    except ScaffoldError as exc:
+        if args.json:
+            _json_err("project", _command_error(exc))
+        else:
+            print(f"error: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+
+    if args.json:
+        _json_ok(
+            "project",
+            {"root": str(Path(args.directory)), "written": [str(p) for p in written]},
+        )
+        return EXIT_OK
+
     for path in written:
         print(f"wrote {path}")
     return EXIT_OK

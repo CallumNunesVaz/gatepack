@@ -369,6 +369,39 @@ def measure_coverage_from_dir(
     return measure_coverage(premap, mapped, post_abc=post_abc)
 
 
+def explain_missing_coverage(build_dir: str | Path) -> str:
+    """Why :func:`measure_coverage_from_dir` returned ``None``, in the user's terms.
+
+    Two very different situations reach the same ``None``, and telling them
+    apart matters because one of them is the user's fault and the other is not:
+
+    * nothing has been built yet -- ``mapped.json`` is absent too; and
+    * the design was built, but its flow never captured a pre-map netlist.
+
+    An asynchronous design is the second case and always will be: it is
+    synthesised straight from the flow table into a cube cover (§7.3), so there
+    is no pre-map Yosys netlist for the mapped one to be compared against.
+    Telling that user to "run `gatepack build` first" is simply false -- they
+    just did -- and sends them round a loop that cannot terminate.  Fabricating
+    a premap.json to make the number appear would be worse: coverage would read
+    100% while measuring nothing.
+    """
+    root = Path(build_dir)
+    if not (root / "mapped.json").exists():
+        return (
+            f"no captured netlists at {root}: run `gatepack build` first "
+            "(provenance is never reported as empty when nothing was measured)"
+        )
+    return (
+        f"no pre-map netlist at {root}: provenance measures which spec "
+        "constructs survive synthesis by comparing premap.json against "
+        "mapped.json, and this design was built without a pre-map stage. "
+        "An asynchronous design is synthesised directly from its flow table "
+        "(§7.3), so it has no pre-map netlist to compare against and its "
+        "provenance coverage is not measurable rather than zero."
+    )
+
+
 def provenance_map_payload(report: CoverageReport) -> dict:
     """The ``ProvenanceMap`` payload, field-for-field with ``app/shared/api.ts``.
 

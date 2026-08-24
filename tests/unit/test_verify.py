@@ -542,3 +542,210 @@ def test_simulation_must_be_shown_to_fail_by_something():
         MutationOutcome("a", detected=False, detail="", applicable=False)
     ]
     assert mutation.simulation_was_exercised(not_applicable) is True
+
+
+# ---------------------------------------------------------------------------
+# The overall verdict must rest on evidence (§14)
+# ---------------------------------------------------------------------------
+
+
+def _report(*checks):
+    from gatepack.verify.base import VerificationReport
+
+    return VerificationReport(checks=list(checks), mutations=[])
+
+
+def _check(name, status, kind):
+    from gatepack.verify.base import CheckResult
+
+    return CheckResult(name, status, "", kind=kind)
+
+
+def test_not_applicable_alone_is_not_a_pass():
+    """A report where nothing failed but nothing measured behaviour is not "passed".
+
+    ``not applicable`` is an honest non-verdict.  Rolling it up to a pass let a
+    verification whose every check produced no evidence report green — the
+    vacuous pass §14 exists to prevent.
+    """
+    report = _report(
+        _check("equivalence", CheckStatus.NOT_APPLICABLE, "equivalence"),
+        _check("exhaustive simulation", CheckStatus.NOT_APPLICABLE, "simulation"),
+    )
+    assert report.has_failure is False
+    assert report.has_not_run is False
+    assert report.has_behavioural_evidence is False
+    assert report.ok is False
+
+
+def test_hazard_checks_alone_are_not_behavioural_evidence():
+    """The asynchronous shape that made this reachable.
+
+    Equivalence is not applicable *by construction* on the async path (§7.3), so
+    when the functional check is also not applicable — above its enumeration cap,
+    or with no stable total state — only the hazard checks are left.  Those say
+    the netlist does not glitch, not that it implements the design.
+    """
+    report = _report(
+        _check("equivalence", CheckStatus.NOT_APPLICABLE, "equivalence"),
+        _check("hazard (ternary)", CheckStatus.PASSED, "hazard"),
+        _check("hazard (glitch sim)", CheckStatus.PASSED, "hazard"),
+        _check("functional (fundamental mode)", CheckStatus.NOT_APPLICABLE, "simulation"),
+    )
+    assert report.has_behavioural_evidence is False
+    assert report.ok is False
+
+
+def test_async_functional_pass_is_behavioural_evidence():
+    """The same shape with the functional check actually run *is* a pass.
+
+    Without this the fix would flatten the distinction it exists to draw: an
+    async design whose functional check ran must not read the same as one whose
+    functional check was skipped.
+    """
+    report = _report(
+        _check("equivalence", CheckStatus.NOT_APPLICABLE, "equivalence"),
+        _check("hazard (ternary)", CheckStatus.PASSED, "hazard"),
+        _check("hazard (glitch sim)", CheckStatus.PASSED, "hazard"),
+        _check("functional (fundamental mode)", CheckStatus.PASSED, "simulation"),
+    )
+    assert report.has_behavioural_evidence is True
+    assert report.ok is True
+
+
+def test_over_cap_simulation_beside_equivalence_still_passes():
+    """The synchronous over-cap case must NOT regress to inconclusive.
+
+    §21.4 skips the exhaustive simulation above the cap and says so in the
+    check's own detail: correctness there rests on the formal equivalence proof,
+    which did run.  That is evidence, and it stays a pass.
+    """
+    report = _report(
+        _check("equivalence", CheckStatus.PASSED, "equivalence"),
+        _check("exhaustive simulation", CheckStatus.NOT_APPLICABLE, "simulation"),
+    )
+    assert report.ok is True
+
+
+def test_properties_only_run_is_behavioural_evidence():
+    """`verify --properties-only` emits property checks and nothing else."""
+    report = _report(_check("property: no_deadlock", CheckStatus.PASSED, "property"))
+    assert report.ok is True
+
+
+def test_bounded_pass_counts_as_evidence():
+    """A bounded proof is bounded, not absent (§21.5)."""
+    from gatepack.verify.base import CheckResult
+
+    report = _report(
+        CheckResult("equivalence", CheckStatus.BOUNDED_PASS, "", bound=64, kind="equivalence")
+    )
+    assert report.has_behavioural_evidence is True
+
+
+def test_empty_report_is_not_a_pass():
+    assert _report().ok is False
+
+
+def test_manifest_reports_inconclusive_not_passed():
+    """The manifest's top line is what a script reads; it must say inconclusive.
+
+    This is the field that carried the bug: `verification.overall` said "passed"
+    for a report whose every behavioural check was not applicable.
+    """
+    from gatepack.verify.run import _manifest
+
+    compiled = compile_design_file(DESIGNS / "async_latch.yaml").compiled
+    report = _report(
+        _check("equivalence", CheckStatus.NOT_APPLICABLE, "equivalence"),
+        _check("hazard (ternary)", CheckStatus.PASSED, "hazard"),
+        _check("functional (fundamental mode)", CheckStatus.NOT_APPLICABLE, "simulation"),
+    )
+    assert _manifest(compiled, report)["verification"]["overall"] == "inconclusive"
+
+    passing = _report(
+        _check("equivalence", CheckStatus.NOT_APPLICABLE, "equivalence"),
+        _check("hazard (ternary)", CheckStatus.PASSED, "hazard"),
+        _check("functional (fundamental mode)", CheckStatus.PASSED, "simulation"),
+    )
+    assert _manifest(compiled, passing)["verification"]["overall"] == "passed"
+
+
+def test_provenance_explains_no_premap_without_telling_the_user_to_rebuild(tmp_path):
+    """After a successful build, "run `gatepack build` first" is a false instruction.
+
+    An asynchronous design has no pre-map netlist by construction (§7.3), so its
+    provenance coverage is not measurable.  Saying so is honest; sending the user
+    back to a build they have already run is a loop with no exit.
+    """
+    from gatepack.provenance.coverage import explain_missing_coverage
+
+    # Nothing built at all: the rebuild instruction is the right one.
+    assert "run `gatepack build` first" in explain_missing_coverage(tmp_path)
+
+    # Built, but with no pre-map stage.
+    (tmp_path / "mapped.json").write_text("{}")
+    message = explain_missing_coverage(tmp_path)
+    assert "run `gatepack build` first" not in message
+    assert "no pre-map netlist" in message
+    assert "not measurable rather than zero" in message
+
+
+# ---------------------------------------------------------------------------
+# A path with a space must not become two Yosys arguments
+# ---------------------------------------------------------------------------
+
+
+def test_script_path_quotes_only_when_it_has_to():
+    """Conditional, because §5.5 pins the script bytes for ordinary builds.
+
+    Yosys splits script arguments on whitespace, so `/home/me/My Board/x.v`
+    silently became two arguments and synthesis reported "Can't open input file
+    '/home/me/My'" — a *failed verification* for a reason with nothing to do
+    with the design. Quoting unconditionally would instead change the emitted
+    `yosys.ys` for every existing build, which two clean builds must produce
+    byte-identical.
+    """
+    from gatepack.yosys import script_path
+
+    assert script_path("build/generated.v") == "build/generated.v"
+    assert script_path("/tmp/my board/x.v") == '"/tmp/my board/x.v"'
+    assert script_path("/tmp/tab\there.v") == '"/tmp/tab\there.v"'
+
+
+def test_script_path_refuses_a_path_it_cannot_represent():
+    """A double quote has no portable escape inside a quoted Yosys argument.
+
+    Emitting something broken in a new way would turn a bad path into a bad
+    verification result, which is the one outcome this project will not produce.
+    """
+    from gatepack.yosys import script_path
+
+    with pytest.raises(ValueError, match="double quote"):
+        script_path('/tmp/we"ird/x.v')
+
+
+def test_generated_scripts_quote_a_build_directory_with_a_space():
+    """The end-to-end shape: every path in the script survives a space.
+
+    A GUI New Project dialog invites "My First Board", and a space is the
+    default shape of a home directory on macOS and Windows.
+    """
+    from gatepack.synth.base import SynthConfig
+    from gatepack.synth.synchronous import SynchronousBackend
+
+    build = "/tmp/my first board/.gatepack/build"
+    script = SynchronousBackend().generate_script(
+        SynthConfig(
+            top="widget",
+            generated_v=f"{build}/generated.v",
+            cells_lib=f"{build}/cells.lib",
+            premap_json=f"{build}/premap.json",
+            mapped_json=f"{build}/mapped.json",
+            mapped_v=f"{build}/mapped.v",
+        )
+    )
+    # No bare occurrence of the directory survives: every one is inside quotes.
+    for line in script.splitlines():
+        if "my first board" in line:
+            assert f'"{build}' in line, f"unquoted path in: {line}"

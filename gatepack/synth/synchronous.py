@@ -53,11 +53,11 @@ class SynchronousBackend(SynthesisBackend):
                     f"dfflegalize {legalize}    # [R4-2] explicit; flavours from "
                     f"cells.lib"
                 ),
-                f"dfflibmap -liberty {config.cells_lib}",
-                f"abc -liberty {config.cells_lib}",
+                f"dfflibmap -liberty {yosys.script_path(config.cells_lib)}",
+                f"abc -liberty {yosys.script_path(config.cells_lib)}",
                 "clean",
-                f"stat -liberty {config.cells_lib}",
-                f"write_json {config.mapped_json}",
-                f"write_verilog -noattr {config.mapped_v}      # [R4-17] for Icarus (§C4.3)",
+                f"stat -liberty {yosys.script_path(config.cells_lib)}",
+                f"write_json {yosys.script_path(config.mapped_json)}",
+                f"write_verilog -noattr {yosys.script_path(config.mapped_v)}      # [R4-17] for Icarus (§C4.3)",
             ]
         )

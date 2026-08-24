@@ -387,6 +387,14 @@ def _run_async_build(
         raise VccIncompatibleError("; ".join(vcc_errors))
     liberty = generate_liberty(parts, library_name="gatepack", project_vcc=vcc)
     cell_functions = cell_functions_from_liberty(liberty.text)
+    # The same artefact the synchronous build emits, and for the same reason:
+    # `gatepack analyse` reads each cell's boolean function out of cells.lib,
+    # and nothing else in the output directory carries it.  The synchronous
+    # path wrote it only incidentally -- it needs the file on disk to hand to
+    # Yosys -- so the asynchronous path, which hands Yosys nothing, silently
+    # shipped an output directory `analyse` could not read.  That made the
+    # GUI's Analysis tab a dead end for every asynchronous design (§C8).
+    (out / "cells.lib").write_text(liberty.text)
 
     pipeline = run_async_pipeline(
         compiled,
