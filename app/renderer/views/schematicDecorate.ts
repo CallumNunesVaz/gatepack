@@ -155,6 +155,89 @@ export function applyNetValues(root: ParentNode, decoration: ValueDecoration): n
   return stamped;
 }
 
+/** Class marking an invisible click target, excluded from every visual pass. */
+export const HIT_CLASS = 'gp-hit';
+
+/** Layer holding the click targets, so one pass can remove them all. */
+const HIT_LAYER = 'gp-hit-layer';
+
+/**
+ * Half-width, in SVG user units, of a wire's click target.
+ *
+ * Measured, not guessed: `hit-tolerance.probe.spec.ts` found netlistsvg wires
+ * rendered at `stroke-width: 1px` with no wider hit region, so a click had to
+ * land within **0.5 px** of the line's centre to select it. That is roughly a
+ * quarter of the ~4 px of hand tremor a mouse user has at rest, so selecting a
+ * wire was a game of patience rather than an interaction.
+ *
+ * 5 gives a 10 px-wide target, the low end of the usual 24-44 px touch
+ * guidance scaled for a precise pointing device, and narrow enough that two
+ * wires on netlistsvg's grid do not overlap into a coin toss.
+ *
+ * The width is also pinned in `views.css` with `!important`, because the value
+ * overlay's `[data-gp-value]` rules out-rank a presentation attribute and were
+ * silently shrinking every target back to 1 px. Change both together; the
+ * stylesheet is what actually decides.
+ */
+export const HIT_HALF_WIDTH = 5;
+
+/**
+ * Give every wire an invisible, generously wide click target.
+ *
+ * A stroke's hit region is exactly the painted stroke, so a 1 px line is a 1 px
+ * target and there is no CSS that widens one without widening the other. The
+ * fix is a second copy of each wire, drawn with a fat transparent stroke and
+ * `pointer-events: stroke`, which hit-tests the stroke area regardless of paint
+ * or visibility.
+ *
+ * The copies carry the original's `net_<bits>` class so `netClassOf`, the
+ * hover highlight and the §15.2 selection spine all resolve through them with
+ * no change to the handlers. They are marked {@link HIT_CLASS} so the passes
+ * that *draw* something — the flow dots — can skip them, and so the stylesheet
+ * can hold them transparent even under the selection rules.
+ *
+ * They go in a layer appended last so they sit above the sheet: a target
+ * underneath the drawing would be shadowed by whatever it is a target for.
+ */
+export function applyHitTargets(root: ParentNode): number {
+  clearHitTargets(root);
+  const svg = root.querySelector('svg');
+  if (!svg) return 0;
+
+  const wires = Array.from(svg.querySelectorAll('line[class*="net_"], path[class*="net_"]'));
+  if (wires.length === 0) return 0;
+
+  const layer = svg.ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'g');
+  layer.setAttribute('class', HIT_LAYER);
+  // The layer must not swallow clicks in the gaps between wires.
+  layer.setAttribute('pointer-events', 'none');
+
+  let made = 0;
+  for (const wire of wires) {
+    if (wire.classList.contains(HIT_CLASS)) continue;
+    const hit = wire.cloneNode(false) as Element;
+    // A clone inherits the id; two elements with one id breaks `getElementById`
+    // and the selection spine's `cell_<instance>` lookups.
+    hit.removeAttribute('id');
+    hit.setAttribute('class', `${wire.getAttribute('class') ?? ''} ${HIT_CLASS}`.trim());
+    hit.setAttribute('stroke', 'transparent');
+    hit.setAttribute('stroke-width', String(HIT_HALF_WIDTH * 2));
+    hit.setAttribute('fill', 'none');
+    hit.setAttribute('pointer-events', 'stroke');
+    layer.appendChild(hit);
+    made += 1;
+  }
+  svg.appendChild(layer);
+  return made;
+}
+
+/** Remove the click-target layer. */
+export function clearHitTargets(root: ParentNode): void {
+  for (const layer of Array.from(root.querySelectorAll(`.${HIT_LAYER}`))) {
+    layer.remove();
+  }
+}
+
 /** Remove every value stamp, for when the overlay is switched off. */
 export function clearNetValues(root: ParentNode): void {
   for (const el of Array.from(root.querySelectorAll('[data-gp-value]'))) {
@@ -199,7 +282,10 @@ export function applyFlowDots(root: ParentNode): number {
   if (svg === null) return 0;
 
   const wires = Array.from(
-    svg.querySelectorAll('line[data-gp-value="1"]:not([data-gp-clock]), path[data-gp-value="1"]:not([data-gp-clock])'),
+    svg.querySelectorAll(
+      'line[data-gp-value="1"]:not([data-gp-clock]):not(.gp-hit), ' +
+        'path[data-gp-value="1"]:not([data-gp-clock]):not(.gp-hit)',
+    ),
   );
   if (wires.length === 0) return 0;
 

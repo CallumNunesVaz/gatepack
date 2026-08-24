@@ -23,6 +23,7 @@ import {
 import {
   applyCellLabels,
   applyFlowDots,
+  applyHitTargets,
   applyNetValues,
   clearFlowDots,
   clearNetValues,
@@ -110,6 +111,13 @@ export function Schematic() {
 
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  /** Sheet point to hold under the pointer across the next zoom change. */
+  const pendingAnchor = useRef<{
+    sheetX: number;
+    sheetY: number;
+    offsetX: number;
+    offsetY: number;
+  } | null>(null);
 
   const [showMapped, setShowMapped] = useState(true);
   const [showPacked, setShowPacked] = useState(false);
@@ -334,6 +342,29 @@ export function Schematic() {
     if (!container || !svg) return;
     applyCellLabels(container, cellLabels);
   }, [svg, cellLabels]);
+
+  // Apply a pending wheel-zoom anchor. This runs after React has written the
+  // zoom host's new width/height, so the scroll assignment is measured against
+  // the new scroll area rather than clamped to the old one.
+  useLayoutEffect(() => {
+    const host = scrollRef.current;
+    const anchor = pendingAnchor.current;
+    if (!host || !anchor) return;
+    pendingAnchor.current = null;
+    host.scrollLeft = anchor.sheetX * zoom - anchor.offsetX;
+    host.scrollTop = anchor.sheetY * zoom - anchor.offsetY;
+  }, [zoom]);
+
+  // Wire click targets. A netlistsvg wire is a 1 px stroke, and a stroke's hit
+  // region is exactly the painted stroke — measured at +/-0.5 px, which is a
+  // fraction of ordinary hand tremor. Runs once per layout, before the value
+  // stamps, so the invisible copies are stamped with the rest and resolve a
+  // click through the same `data-gp-net` path as the wire they cover.
+  useLayoutEffect(() => {
+    const container = canvasRef.current;
+    if (!container || !svg) return;
+    applyHitTargets(container);
+  }, [svg]);
 
   // §24.2 value stamps. Re-run on every probe change; this only sets attributes
   // on the existing layout, so stepping the clock never re-lays out the sheet.
@@ -647,6 +678,52 @@ export function Schematic() {
   }, [decoration]);
 
   const zoomBy = (factor: number) => setZoom((z) => clamp(z * factor, ZOOM_MIN, ZOOM_MAX));
+
+  /**
+   * Wheel zoom, anchored under the pointer.
+   *
+   * Zooming about the scroll origin instead would throw whatever the user was
+   * looking at off-screen on a large sheet, which is worse than no wheel zoom
+   * at all. The zoom host is `transform: scale(z)` with `transform-origin: top
+   * left`, so the sheet coordinate under the cursor is
+   * `(scroll + offset) / z`; holding it fixed across the zoom gives the new
+   * scroll offset directly.
+   *
+   * Plain wheel zooms rather than scrolls: this is a schematic viewer, the
+   * gesture matches the EDA tools its users already have open, and the canvas
+   * keeps its scrollbars (and shift+wheel) for panning.
+   */
+  const onWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    const host = scrollRef.current;
+    if (!host || event.deltaY === 0) return;
+    // Shift+wheel is the conventional horizontal pan; leave it to the browser.
+    if (event.shiftKey) return;
+    event.preventDefault();
+
+    const rect = host.getBoundingClientRect();
+    const offsetX = event.clientX - rect.left;
+    const offsetY = event.clientY - rect.top;
+
+    // A trackpad reports many small deltas and a mouse a few large ones;
+    // scaling by the step per notch would make the trackpad unusable, so the
+    // factor is exponential in the delta and identical in feel for both.
+    const next = clamp(zoom * Math.pow(ZOOM_STEP, -event.deltaY / 100), ZOOM_MIN, ZOOM_MAX);
+    if (next === zoom) return;
+
+    // Record the anchor now; the scroll is applied by the layout effect below,
+    // once the zoom host has actually been resized. `requestAnimationFrame`
+    // here is not late enough: the assignment ran against the *old* scroll area
+    // and was clamped to it (measured — scrollLeft wanted 312 and got 55, the
+    // old maximum), so the sheet drifted horizontally by exactly the amount it
+    // could not scroll.
+    pendingAnchor.current = {
+      sheetX: (host.scrollLeft + offsetX) / zoom,
+      sheetY: (host.scrollTop + offsetY) / zoom,
+      offsetX,
+      offsetY,
+    };
+    setZoom(next);
+  };
   const fitToWindow = () => {
     const el = scrollRef.current;
     if (!el || !svgSize) return;
@@ -941,11 +1018,23 @@ export function Schematic() {
         data-edit={editMode ? 'on' : 'off'}
         ref={scrollRef}
         onMouseUp={onCanvasMouseUp}
+        onWheel={onWheel}
       >
         {svg ? (
           <div
             className="schematic__zoom-host"
-            style={{ transform: `scale(${zoom})` }}
+            style={{
+              transform: `scale(${zoom})`,
+              // `transform` scales what is drawn but not the layout box, so the
+              // scroll container sized itself to the *unzoomed* sheet: zooming
+              // in pushed the right-hand side of a schematic somewhere no
+              // scrollbar could reach, and wheel-zoom could not hold its anchor
+              // horizontally because there was nothing to scroll. Reserving the
+              // scaled size gives the scroll area the sheet actually occupies.
+              ...(svgSize
+                ? { width: svgSize.width * zoom, height: svgSize.height * zoom }
+                : null),
+            }}
           >
             {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
             <div

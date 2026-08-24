@@ -590,6 +590,53 @@ th.sortable[aria-sort='descending'] .sort-indicator svg {
   stroke-width: 2 !important;
 }
 
+/* --- schematic hit targets ------------------------------------------------
+ *
+ * Measured before changing anything (`hit-tolerance.probe.spec.ts`): the skin
+ * sets `svg { fill: none }`, so a gate symbol's interior is not painted, and an
+ * unpainted area is not hit-tested under the default `visiblePainted`. Clicking
+ * the middle of a 30x53 px NAND landed on the bare `<svg>` and selected
+ * nothing — only the 1 px outline responded. `all` hit-tests the fill region
+ * whether or not there is any paint in it, which makes the whole symbol the
+ * target it already looks like. Nothing here changes what is drawn.
+ */
+.schematic__canvas svg g[id^='cell_'] rect,
+.schematic__canvas svg g[id^='cell_'] polygon,
+.schematic__canvas svg g[id^='cell_'] path,
+.schematic__canvas svg g[id^='cell_'] circle {
+  pointer-events: all;
+}
+
+/* The invisible wire targets. `stroke` (not `visibleStroke`) hit-tests the
+ * stroke area regardless of paint, so a transparent stroke still catches the
+ * click. The selector out-specifies `line.gp-sel`'s `!important` stroke so a
+ * selected net cannot paint its own 10 px-wide click target across the sheet. */
+.schematic__canvas svg line.gp-hit,
+.schematic__canvas svg path.gp-hit {
+  stroke: transparent !important;
+  fill: none !important;
+  pointer-events: stroke;
+  /* Every one of these is load-bearing, and each was measured rather than
+   * assumed. The click targets carry their wire's `net_` class so the handlers
+   * resolve through them unchanged — which also means `applyNetValues` stamps
+   * them with `data-gp-value`, and the value-overlay rules below then apply:
+   *
+   *   [data-gp-value='0'] { stroke-width: 1 }   silently shrank every target
+   *                                             back to 1 px (a presentation
+   *                                             attribute loses to any rule),
+   *   [data-gp-value='x'] { stroke-dasharray }  would have made the target
+   *                                             itself dashed, so a click
+   *                                             landed or missed depending on
+   *                                             where along the wire it fell.
+   *
+   * A target must be one solid, constant-width band whatever the sheet is
+   * showing, so the width is pinned here and the decoration is reset. */
+  stroke-width: 10 !important;
+  stroke-dasharray: none !important;
+  opacity: 1 !important;
+  filter: none !important;
+}
+
 /* --- schematic legend ---------------------------------------------------- */
 .schematic__legend {
   display: flex;
