@@ -693,7 +693,7 @@ export function Schematic() {
    * gesture matches the EDA tools its users already have open, and the canvas
    * keeps its scrollbars (and shift+wheel) for panning.
    */
-  const onWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+  const onWheel = (event: WheelEvent) => {
     const host = scrollRef.current;
     if (!host || event.deltaY === 0) return;
     // Shift+wheel is the conventional horizontal pan; leave it to the browser.
@@ -724,6 +724,25 @@ export function Schematic() {
     };
     setZoom(next);
   };
+
+  // The wheel listener is attached natively, NOT through React's `onWheel`.
+  //
+  // React registers `wheel` at the root container as a *passive* listener, so
+  // `preventDefault()` inside an `onWheel` prop is silently ignored. The zoom
+  // still happened, which is why this went unnoticed: the canvas simply
+  // scrolled at the same time, so a wheel gesture both zoomed the sheet and
+  // slid it out from under the pointer. A non-passive listener is the only way
+  // to claim the gesture. Caught by asserting `defaultPrevented` in
+  // `schematic-pointer.spec.ts` rather than by looking at it.
+  const wheelHandler = useRef(onWheel);
+  wheelHandler.current = onWheel;
+  useEffect(() => {
+    const host = scrollRef.current;
+    if (!host) return;
+    const listener = (event: WheelEvent) => wheelHandler.current(event);
+    host.addEventListener('wheel', listener, { passive: false });
+    return () => host.removeEventListener('wheel', listener);
+  }, [svg]);
   const fitToWindow = () => {
     const el = scrollRef.current;
     if (!el || !svgSize) return;
@@ -1018,7 +1037,6 @@ export function Schematic() {
         data-edit={editMode ? 'on' : 'off'}
         ref={scrollRef}
         onMouseUp={onCanvasMouseUp}
-        onWheel={onWheel}
       >
         {svg ? (
           <div

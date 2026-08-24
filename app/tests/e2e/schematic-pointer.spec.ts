@@ -89,7 +89,7 @@ test.describe('schematic pointer targets', () => {
     close = null;
   });
 
-  async function openBuiltSchematic(): Promise<Page> {
+  async function openBuiltSchematic(): Promise<{ page: Page }> {
     const app = await _electron.launch({
       args: [APP_DIR],
       env: {
@@ -110,11 +110,11 @@ test.describe('schematic pointer targets', () => {
     await page.getByTestId('nav-schematic').click();
     expect(await waitForSheet(page), 'schematic drew geometry').toBeGreaterThan(50);
     await page.waitForTimeout(500);
-    return page;
+    return { page };
   }
 
   test('a wire can be hit without landing on the line itself', async () => {
-    const page = await openBuiltSchematic();
+    const { page } = await openBuiltSchematic();
 
     const measured = await page.evaluate(() => {
       const svg = document.querySelector('.schematic__zoom-host svg') as SVGSVGElement;
@@ -183,7 +183,7 @@ test.describe('schematic pointer targets', () => {
   });
 
   test('clicking the middle of a gate symbol selects that gate', async () => {
-    const page = await openBuiltSchematic();
+    const { page } = await openBuiltSchematic();
 
     const measured = await page.evaluate(() => {
       const svg = document.querySelector('.schematic__zoom-host svg') as SVGSVGElement;
@@ -229,7 +229,23 @@ test.describe('schematic pointer targets', () => {
   });
 
   test('the wheel zooms, anchored on the point under the pointer', async () => {
-    const page = await openBuiltSchematic();
+    // Driven with a dispatched WheelEvent rather than `page.mouse.wheel`.
+    //
+    // That is a deliberate narrowing, and worth stating. `page.mouse.wheel`
+    // asks the OS-level input path to deliver a wheel to a focused Electron
+    // window, and under this harness it is not reliably delivered — the same
+    // test passed, then failed three times running against identical sources,
+    // and instrumenting it showed the handler never fired while a dispatched
+    // event zoomed correctly to 171%. Focusing the window first did not help.
+    //
+    // A dispatched event goes through React's synthetic event system by exactly
+    // the path a real wheel takes, so everything on our side of the boundary is
+    // covered: the handler, the zoom factor, the anchoring maths, and the
+    // layout-effect ordering that the scroll compensation depends on. What is
+    // NOT covered is the browser delivering the event, which is not our code.
+    // Leaving the test flaky to nominally cover it would be worse than saying
+    // so here.
+    const { page } = await openBuiltSchematic();
 
     const readZoom = () =>
       page.locator('[data-testid="schematic-zoom"]').innerText().then((t) => parseInt(t, 10));
@@ -239,7 +255,6 @@ test.describe('schematic pointer targets', () => {
 
     const canvas = await page.locator('[data-testid="schematic-svg"]').boundingBox();
     expect(canvas).not.toBeNull();
-    // A point well inside the sheet, so there is something to stay anchored.
     const px = canvas!.x + canvas!.width * 0.5;
     const py = canvas!.y + canvas!.height * 0.5;
 
@@ -261,21 +276,42 @@ test.describe('schematic pointer targets', () => {
           left: rect.left,
           top: rect.top,
           zoom: parseInt(readout.innerText, 10) / 100,
-          // Kept in the failure message: the first attempt at this anchored
-          // correctly in Y and drifted 257 px in X, and only the scroll extents
-          // showed why (the assignment was clamped to the old scroll area).
+          // Kept in the failure message: the first attempt anchored correctly
+          // in Y and drifted 257 px in X, and only the scroll extents showed
+          // why (the assignment was clamped to the old scroll area).
           scrollWidth: host.scrollWidth,
           clientWidth: host.clientWidth,
         };
       });
 
+    /** Dispatch a wheel over the canvas; returns whether the handler took it. */
+    const wheel = async (deltaY: number) => {
+      const consumed = await page.evaluate(
+        ([x, y, dy]) => {
+          const host = document.querySelector('[data-testid="schematic-svg"]') as HTMLElement;
+          const event = new WheelEvent('wheel', {
+            deltaY: dy,
+            clientX: x,
+            clientY: y,
+            bubbles: true,
+            cancelable: true,
+          });
+          host.dispatchEvent(event);
+          // The handler calls preventDefault to claim the gesture; if it did
+          // not, the wheel would scroll the canvas instead of zooming it.
+          return event.defaultPrevented;
+        },
+        [px, py, deltaY],
+      );
+      await page.waitForTimeout(300);
+      return consumed;
+    };
+
     const s0 = await state();
     const sheetX = (s0.scrollLeft + (px - s0.left)) / s0.zoom;
     const sheetY = (s0.scrollTop + (py - s0.top)) / s0.zoom;
 
-    await page.mouse.move(px, py);
-    await page.mouse.wheel(0, -240); // scroll up = zoom in
-    await page.waitForTimeout(400);
+    expect(await wheel(-240), 'the handler claimed the gesture').toBe(true);
 
     const after = await readZoom();
     expect(after, 'wheel up zoomed in').toBeGreaterThan(before);
@@ -291,8 +327,7 @@ test.describe('schematic pointer targets', () => {
         `before=${JSON.stringify(s0)} after=${JSON.stringify(s1)}`,
     ).toBeLessThan(8);
 
-    await page.mouse.wheel(0, 240);
-    await page.waitForTimeout(400);
+    await wheel(240);
     expect(await readZoom(), 'wheel down zoomed back out').toBeLessThan(after);
   });
 });
