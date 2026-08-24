@@ -1,10 +1,15 @@
 import { useProject } from '../../state/project';
 import {
-  applyTopLevelEdit,
+  appendListItem,
+  removeListItem,
   setField,
+  setInputName,
+  setInputSync,
+  setOutputName,
+  setPropertyExpr,
+  setPropertyKind,
+  setPropertyName,
   type DesignModel,
-  type InputPort,
-  type OutputPort,
   type PropertySpec,
 } from '../../design/model';
 import type { YValue } from '../../design/yaml';
@@ -22,26 +27,17 @@ export function StructuredForm() {
     return <div className="pane__empty">The spec does not parse yet.</div>;
   }
 
-  const edit = (key: string, transform: (cur: YValue) => YValue) => {
-    try {
-      const { text } = applyTopLevelEdit(specText, key, transform);
-      editSpec(() => text);
-    } catch {
-      /* key not present — fall back to upsert below */
-    }
-  };
-
   const editField = (key: string, value: YValue) => {
     const { text } = setField(specText, key, value);
     editSpec(() => text);
   };
 
-  const setInput = (inputs: InputPort[]) =>
-    edit('inputs', () => inputs.map((i) => ({ name: i.name, sync: i.sync })));
-
-  const setOutput = (outputs: OutputPort[]) =>
-    edit('outputs', () => outputs.map((o) => ({ name: o.name })));
-
+  // The scalar top-level fields use `editField`; the list editors below never
+  // re-serialise a whole block, because that deletes every comment in it
+  // (measured for `inputs` in setInputSync). Each row operation splices instead
+  // — setItemField for a field, appendListItem / removeListItem for add/remove.
+  // `setProperty` survives only for the one case a splice cannot do: clearing a
+  // property expression removes the key, which a value splice cannot express.
   const setProperty = (properties: PropertySpec[]) =>
     editField(
       'properties',
@@ -53,16 +49,6 @@ export function StructuredForm() {
         return m;
       }),
     );
-
-  const setInputName = (index: number, name: string) => {
-    const inputs = model.inputs.map((i, idx) => (idx === index ? { ...i, name } : i));
-    setInput(inputs);
-  };
-
-  const setInputSync = (index: number, sync: boolean) => {
-    const inputs = model.inputs.map((i, idx) => (idx === index ? { ...i, sync } : i));
-    setInput(inputs);
-  };
 
   return (
     <div className="form">
@@ -105,21 +91,27 @@ export function StructuredForm() {
           <div className="field-row" key={index}>
             <input
               value={input.name}
-              onChange={(e) => setInputName(index, e.target.value)}
+              onChange={(e) => editSpec((current) => setInputName(current, index, e.target.value).text)}
               aria-label={`input ${index} name`}
             />
             <label className="inline-label">
               <input
                 type="checkbox"
                 checked={input.sync}
-                onChange={(e) => setInputSync(index, e.target.checked)}
+                onChange={(e) => editSpec((current) => setInputSync(current, input.name, e.target.checked).text)}
               />
               sync
             </label>
-            <button onClick={() => setInput(model.inputs.filter((_, i) => i !== index))}>×</button>
+            <button onClick={() => editSpec((current) => removeListItem(current, 'inputs', index).text)}>×</button>
           </div>
         ))}
-        <button onClick={() => setInput([...model.inputs, { name: `in${model.inputs.length}`, sync: false }])}>
+        <button
+          onClick={() =>
+            editSpec((current) =>
+              appendListItem(current, 'inputs', { name: `in${model.inputs.length}`, sync: false }).text,
+            )
+          }
+        >
           + input
         </button>
       </div>
@@ -130,13 +122,17 @@ export function StructuredForm() {
           <div className="field-row" key={index}>
             <input
               value={output.name}
-              onChange={(e) => setOutput(model.outputs.map((o, i) => (i === index ? { name: e.target.value } : o)))}
+              onChange={(e) => editSpec((current) => setOutputName(current, index, e.target.value).text)}
               aria-label={`output ${index} name`}
             />
-            <button onClick={() => setOutput(model.outputs.filter((_, i) => i !== index))}>×</button>
+            <button onClick={() => editSpec((current) => removeListItem(current, 'outputs', index).text)}>×</button>
           </div>
         ))}
-        <button onClick={() => setOutput([...model.outputs, { name: `out${model.outputs.length}` }])}>
+        <button
+          onClick={() =>
+            editSpec((current) => appendListItem(current, 'outputs', { name: `out${model.outputs.length}` }).text)
+          }
+        >
           + output
         </button>
       </div>
@@ -157,20 +153,12 @@ export function StructuredForm() {
           <div className="field-row" key={index}>
             <input
               value={prop.name}
-              onChange={(e) =>
-                setProperty(model.properties.map((p, i) => (i === index ? { ...p, name: e.target.value } : p)))
-              }
+              onChange={(e) => editSpec((current) => setPropertyName(current, index, e.target.value).text)}
               aria-label={`property ${index} name`}
             />
             <select
               value={prop.kind}
-              onChange={(e) =>
-                setProperty(
-                  model.properties.map((p, i) =>
-                    i === index ? { ...p, kind: e.target.value as PropertySpec['kind'] } : p,
-                  ),
-                )
-              }
+              onChange={(e) => editSpec((current) => setPropertyKind(current, index, e.target.value).text)}
             >
               <option value="invariant">invariant</option>
               <option value="reachability">reachability</option>
@@ -180,19 +168,24 @@ export function StructuredForm() {
             <input
               value={prop.expr ?? ''}
               placeholder="expr"
-              onChange={(e) =>
-                setProperty(
-                  model.properties.map((p, i) =>
-                    i === index ? { ...p, expr: e.target.value || undefined } : p,
-                  ),
-                )
-              }
+              onChange={(e) => {
+                const expr = e.target.value;
+                if (expr === '') {
+                  // Clearing removes the key, which a value splice cannot do;
+                  // this one case still rewrites the block (see the note above).
+                  setProperty(model.properties.map((p, i) => (i === index ? { ...p, expr: undefined } : p)));
+                } else {
+                  editSpec((current) => setPropertyExpr(current, index, expr).text);
+                }
+              }}
               aria-label={`property ${index} expr`}
             />
-            <button onClick={() => setProperty(model.properties.filter((_, i) => i !== index))}>×</button>
+            <button onClick={() => editSpec((current) => removeListItem(current, 'properties', index).text)}>×</button>
           </div>
         ))}
-        <button onClick={() => setProperty([...model.properties, { name: 'prop', kind: 'invariant' }])}>
+        <button
+          onClick={() => editSpec((current) => appendListItem(current, 'properties', { name: 'prop', kind: 'invariant' }).text)}
+        >
           + property
         </button>
       </div>

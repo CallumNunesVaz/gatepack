@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
+  appendListItem,
   applyTopLevelEdit,
   parseDesignText,
+  removeListItem,
   renameInput,
   renameState,
   setInputSync,
   setTestPoints,
   type DesignModel,
   type Transition,
+  setTransitionFrom,
+  setTransitionTo,
   setTransitionWhen,
   setPropertyExpr,
 } from './model';
@@ -566,5 +570,318 @@ describe('editing one list item leaves the rest of the block alone', () => {
     expect(out.diagnostics.filter((d) => d.severity === 'error')).toHaveLength(0);
     expect(parseDesignText(out.text).model?.transitions[1].when).toBe('!go');
     expect(out.text).toContain('# deliberately unguarded');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Package N: adding/removing list items must not destroy the comments they sit
+// among. The fixture is the real bundled example — copied verbatim — because it
+// is the one case that exercises all three losses at once: comments inside
+// `transitions`, hand-aligned columns, and quoted scalars.
+// ---------------------------------------------------------------------------
+
+const EDGE_DETECTOR = `# ---------------------------------------------------------------------------
+# A rising-edge detector — why "detect a change" needs memory.
+#
+# A purely combinational circuit cannot tell you the input *changed*: it can
+# only tell you the input's current value. To notice the 0 -> 1 transition you
+# must remember what the input was on the previous clock, and "remember" is
+# exactly what a state is. This machine emits a one-cycle \`pulse\` immediately
+# after the input rises, and holds it back while the input stays high or low.
+#
+# What it demonstrates:
+#
+#   memory is state      S0 means "the input was low", S1 "it was high"; the
+#                        edge is the crossing between them
+#   a one-cycle pulse     PULSE is entered once per rising edge and left on the
+#                        next clock, so the pulse is exactly one cycle wide
+#   sustained input       after the pulse the machine settles in S1 and does
+#                        not re-pulse until the input falls and rises again
+#   the registered form   the pulse appears one cycle after the raw edge, which
+#                        is the usual synchronous (registered) edge detector
+#
+# This is the smallest genuinely sequential example in the set: one input, one
+# output, three states, readable whole on screen.
+#
+# Synthetic, written for this project (§1.3). Not derived from any real product
+# or datasheet application note.
+# ---------------------------------------------------------------------------
+name: edge_detector
+timing_model: synchronous
+
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+
+reset:
+  signal: rst_n
+  active: low
+  source: SUPERVISOR
+
+encoding: one_hot
+
+inputs:
+  # A clocked data bit, so no synchroniser (§9.3).
+  - {name: din, sync: false}
+
+outputs:
+  - {name: pulse}
+
+states: [S0, PULSE, S1]
+initial: S0
+
+transitions:
+  # S0: the input was low. A rise is the edge we are looking for.
+  - {from: S0,    to: PULSE, when: "din"}
+  - {from: S0,    to: S0,    when: "!din"}
+  # PULSE: the edge was just seen; emit for this cycle, then track the input.
+  - {from: PULSE, to: S1,    when: "din"}
+  - {from: PULSE, to: S0,    when: "!din"}
+  # S1: the input is high; wait for it to fall before another edge can occur.
+  - {from: S1,    to: S1,    when: "din"}
+  - {from: S1,    to: S0,    when: "!din"}
+
+output_logic:
+  pulse: "state == PULSE"
+`;
+
+const TRANSITION_COMMENTS = [
+  '# S0: the input was low. A rise is the edge we are looking for.',
+  '# PULSE: the edge was just seen; emit for this cycle, then track the input.',
+  '# S1: the input is high; wait for it to fall before another edge can occur.',
+];
+
+/** The changed region as a line diff: the lines removed from `before` and the
+ * lines added in `after`, using a common prefix/suffix match. For a pure
+ * splice exactly one side is non-empty, and everything outside the region is
+ * byte-identical by construction. */
+function lineDiff(before: string, after: string): { removed: string[]; added: string[] } {
+  const b = before.split('\n');
+  const a = after.split('\n');
+  let prefix = 0;
+  while (prefix < b.length && prefix < a.length && b[prefix] === a[prefix]) prefix += 1;
+  let suffix = 0;
+  while (
+    suffix < b.length - prefix &&
+    suffix < a.length - prefix &&
+    b[b.length - 1 - suffix] === a[a.length - 1 - suffix]
+  ) {
+    suffix += 1;
+  }
+  return {
+    removed: b.slice(prefix, b.length - suffix),
+    added: a.slice(prefix, a.length - suffix),
+  };
+}
+
+function noErrors(out: { diagnostics: { severity: string }[] }): boolean {
+  return out.diagnostics.filter((d) => d.severity === 'error').length === 0;
+}
+
+describe('list-item edits preserve comments (real edge_detector fixture)', () => {
+  it('add a transition: the block is spliced, not re-serialised', () => {
+    const out = appendListItem(EDGE_DETECTOR, 'transitions', { from: 'S0', to: 'S0', when: '1' });
+    expect(noErrors(out)).toBe(true);
+    for (const c of TRANSITION_COMMENTS) expect(out.text).toContain(c);
+    const diff = lineDiff(EDGE_DETECTOR, out.text);
+    expect(diff.removed).toEqual([]);
+    expect(diff.added).toEqual(['  - {from: S0, to: S0, when: "1"}']);
+    expect(parseDesignText(out.text).model).not.toBeNull();
+  });
+
+  it("change a transition's `to`: only that line changes", () => {
+    const out = setTransitionTo(EDGE_DETECTOR, 0, 'S1');
+    expect(noErrors(out)).toBe(true);
+    for (const c of TRANSITION_COMMENTS) expect(out.text).toContain(c);
+    const diff = lineDiff(EDGE_DETECTOR, out.text);
+    expect(diff.removed).toEqual(['  - {from: S0,    to: PULSE, when: "din"}']);
+    expect(diff.added).toEqual(['  - {from: S0,    to: "S1", when: "din"}']);
+  });
+
+  it("change a transition's `from`: only that line changes", () => {
+    const out = setTransitionFrom(EDGE_DETECTOR, 5, 'PULSE');
+    expect(noErrors(out)).toBe(true);
+    for (const c of TRANSITION_COMMENTS) expect(out.text).toContain(c);
+    const diff = lineDiff(EDGE_DETECTOR, out.text);
+    expect(diff.removed).toEqual(['  - {from: S1,    to: S0,    when: "!din"}']);
+    expect(diff.added).toEqual(['  - {from: "PULSE",    to: S0,    when: "!din"}']);
+  });
+
+  it("change a transition's `when`: only that line changes", () => {
+    const out = setTransitionWhen(EDGE_DETECTOR, 0, '!din');
+    expect(noErrors(out)).toBe(true);
+    for (const c of TRANSITION_COMMENTS) expect(out.text).toContain(c);
+    const diff = lineDiff(EDGE_DETECTOR, out.text);
+    expect(diff.removed).toEqual(['  - {from: S0,    to: PULSE, when: "din"}']);
+    expect(diff.added).toEqual(['  - {from: S0,    to: PULSE, when: "!din"}']);
+  });
+
+  it('delete a transition: its glued comment goes with it, everything else is byte-identical', () => {
+    const out = removeListItem(EDGE_DETECTOR, 'transitions', 2);
+    expect(noErrors(out)).toBe(true);
+    expect(out.text).toContain('# S0: the input was low. A rise is the edge we are looking for.');
+    expect(out.text).toContain('# S1: the input is high; wait for it to fall before another edge can occur.');
+    expect(out.text).not.toContain('# PULSE: the edge was just seen');
+    const diff = lineDiff(EDGE_DETECTOR, out.text);
+    expect(diff.added).toEqual([]);
+    expect(diff.removed).toEqual([
+      '  # PULSE: the edge was just seen; emit for this cycle, then track the input.',
+      '  - {from: PULSE, to: S1,    when: "din"}',
+    ]);
+    expect(parseDesignText(out.text).model).not.toBeNull();
+  });
+
+  it('add a state: the flow sequence is extended in place', () => {
+    const out = appendListItem(EDGE_DETECTOR, 'states', 'S3');
+    expect(noErrors(out)).toBe(true);
+    for (const c of TRANSITION_COMMENTS) expect(out.text).toContain(c);
+    expect(out.text).toContain('# A clocked data bit, so no synchroniser (§9.3).');
+    const diff = lineDiff(EDGE_DETECTOR, out.text);
+    expect(diff.removed).toEqual(['states: [S0, PULSE, S1]']);
+    expect(diff.added).toEqual(['states: [S0, PULSE, S1, S3]']);
+  });
+
+  it('add an input: the existing input and its comment are untouched', () => {
+    const out = appendListItem(EDGE_DETECTOR, 'inputs', { name: 'din2', sync: false });
+    expect(noErrors(out)).toBe(true);
+    expect(out.text).toContain('# A clocked data bit, so no synchroniser (§9.3).');
+    expect(out.text).toContain('- {name: din, sync: false}');
+    const diff = lineDiff(EDGE_DETECTOR, out.text);
+    expect(diff.removed).toEqual([]);
+    expect(diff.added).toEqual(['  - {name: din2, sync: false}']);
+  });
+});
+
+// The negative control: the re-serialisation this package replaces is lossy,
+// and this test keeps the failure visible so a future revert is caught. If this
+// test ever fails it means applyTopLevelEdit no longer canonicalises — which is
+// a change of behaviour someone else depends on, not a green light to delete it.
+describe('the re-serialisation this replaces loses the comments (canary)', () => {
+  it('applyTopLevelEdit drops every comment and normalises quoting and alignment', () => {
+    const model = parseDesignText(EDGE_DETECTOR).model as DesignModel;
+    const out = applyTopLevelEdit(EDGE_DETECTOR, 'transitions', () =>
+      [...model.transitions, { from: 'S0', to: 'S0', when: '1' }].map((t) => ({
+        from: t.from,
+        to: t.to,
+        when: t.when,
+      })),
+    );
+    expect(out.text).not.toContain('# S0: the input was low');
+    expect(out.text).toContain('when: din'); // quoting normalised (was "din")
+    expect(out.text).not.toContain('    to:'); // hand alignment collapsed
+  });
+});
+
+describe('appendListItem / removeListItem edge cases', () => {
+  const EMPTY_TRANSITIONS = `name: t
+timing_model: synchronous
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+reset: {signal: rst_n, active: low, source: SUPERVISOR}
+encoding: one_hot
+inputs:
+  - {name: a, sync: false}
+outputs:
+  - {name: y}
+states: [S0]
+initial: S0
+transitions:
+output_logic:
+  y: "a"
+`;
+
+  const BLOCK_STATES = `name: t
+timing_model: synchronous
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+reset: {signal: rst_n, active: low, source: SUPERVISOR}
+encoding: one_hot
+inputs:
+  - {name: a, sync: false}
+outputs:
+  - {name: y}
+states:
+  # IDLE is the power-on state; do not reorder
+  - IDLE
+  - RUN
+initial: IDLE
+transitions:
+  - {from: IDLE, to: RUN, when: "a"}
+output_logic:
+  y: "a"
+`;
+
+  it('appends to a key that is not present by adding a fresh block', () => {
+    const out = appendListItem(EDGE_DETECTOR, 'macros', { instance: 'm0', cell: 'CNT4', clock: 'clk' });
+    expect(noErrors(out)).toBe(true);
+    expect(out.text).toContain('macros:');
+    expect(out.text).toContain('instance: m0');
+    expect(out.text).toContain('cell: CNT4');
+    expect(out.text).toContain('# S0: the input was low. A rise is the edge we are looking for.');
+  });
+
+  it('appends to a block list that has no items yet', () => {
+    const out = appendListItem(EMPTY_TRANSITIONS, 'transitions', { from: 'S0', to: 'S0', when: '1' });
+    expect(noErrors(out)).toBe(true);
+    expect(out.text).toContain('transitions:\n  - {from: S0, to: S0, when: "1"}');
+    expect(out.text).toContain('output_logic:');
+    expect(parseDesignText(out.text).model?.transitions).toEqual([
+      { from: 'S0', to: 'S0', when: '1' },
+    ]);
+  });
+
+  it('appends a state to a block-list `states` with a comment, keeping the style', () => {
+    const out = appendListItem(BLOCK_STATES, 'states', 'ACTIVE');
+    expect(noErrors(out)).toBe(true);
+    expect(out.text).toContain('# IDLE is the power-on state; do not reorder');
+    expect(out.text).toContain('  - ACTIVE');
+    // Still a block list, not reflowed into a flow sequence.
+    expect(out.text).not.toContain('states: [IDLE, RUN, ACTIVE]');
+    expect(parseDesignText(out.text).model?.states).toEqual(['IDLE', 'RUN', 'ACTIVE']);
+  });
+
+  it('removes an item from a flow sequence', () => {
+    const FLOW = `name: t
+timing_model: synchronous
+clock: {signal: clk, freq_hz: 1000, source: OSC}
+reset: {signal: rst_n, active: low, source: SUPERVISOR}
+encoding: one_hot
+inputs:
+  - {name: a, sync: false}
+outputs:
+  - {name: y}
+states: [A, B, C]
+initial: A
+transitions:
+  - {from: A, to: B, when: "a"}
+output_logic:
+  y: "a"
+`;
+    const out = removeListItem(FLOW, 'states', 2);
+    expect(noErrors(out)).toBe(true);
+    expect(out.text).toContain('states: [A, B]');
+  });
+
+  it('refuses to remove from an empty list, byte-identical', () => {
+    const out = removeListItem(EMPTY_TRANSITIONS, 'transitions', 0);
+    expect(out.text).toBe(EMPTY_TRANSITIONS);
+    expect(out.diagnostics.some((d) => d.code === 'ED1031')).toBe(true);
+  });
+
+  it('refuses to remove from a missing key, byte-identical', () => {
+    const out = removeListItem(EDGE_DETECTOR, 'macros', 0);
+    expect(out.text).toBe(EDGE_DETECTOR);
+    expect(out.diagnostics.some((d) => d.code === 'ED1031')).toBe(true);
+  });
+
+  it('refuses to append to a key whose value is not a list', () => {
+    const out = appendListItem(EDGE_DETECTOR, 'name', 'x');
+    expect(out.text).toBe(EDGE_DETECTOR);
+    expect(out.diagnostics.some((d) => d.code === 'ED1030')).toBe(true);
+  });
+
+  it('a splice that would not re-parse is refused, not written', () => {
+    // A state name with a newline would produce a broken flow sequence; the
+    // edit must refuse (return the original text) rather than hand back text
+    // that no longer parses.
+    const out = appendListItem(EDGE_DETECTOR, 'states', 'A\nB');
+    expect(out.text).toBe(EDGE_DETECTOR);
+    expect(out.diagnostics.some((d) => d.severity === 'error')).toBe(true);
   });
 });
