@@ -395,6 +395,26 @@ export interface GatepackApi {
   saveProjectAs(gpkPath: string): Promise<Envelope<ProjectInfo>>;
 
   /**
+   * Reveal the build output directory in the OS file manager.
+   *
+   * `build` writes the BOM, the KiCad netlist and the report into
+   * `.gatepack/out` inside the project and the application never offered them,
+   * so handing a netlist to a fabricator meant leaving the app. Errors rather
+   * than opening an empty directory when nothing has been built — an "outputs"
+   * command that reveals nothing is worse than one that says there are none.
+   */
+  revealOutputs(): Promise<Envelope<{ path: string }>>;
+
+  /**
+   * Copy the build outputs to a directory the user picks in a native dialog.
+   *
+   * Reveal is enough to find them; this is for handing them on. The native
+   * dialog is the trust boundary for writing outside the project root (§5.2),
+   * so the destination is always chosen by the user and never by the renderer.
+   */
+  exportOutputs(): Promise<Envelope<{ path: string; files: string[] }>>;
+
+  /**
    * Tell the main process which theme the renderer is showing, so Electron's
    * own chrome — on Linux, the application menu bar drawn inside the window —
    * matches it. `nativeTheme` otherwise follows the OS, which is a different

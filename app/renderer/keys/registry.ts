@@ -106,6 +106,8 @@ export const COMMANDS: CommandDef[] = [
   { id: 'project.saveAs', title: 'Save as…', group: 'project', icon: 'save', keys: 'Mod+Shift+S', cli: 'project' },
   { id: 'project.close', title: 'Close project', group: 'project', icon: 'close' },
   { id: 'project.examples', title: 'Open bundled example…', group: 'project', icon: 'open', cli: 'examples' },
+  { id: 'project.revealOutputs', title: 'Reveal outputs', group: 'project', icon: 'open', hint: 'Open the output folder (.gatepack/out) in the file manager' },
+  { id: 'project.exportOutputs', title: 'Export outputs…', group: 'project', icon: 'export', hint: 'Copy the BOM, netlist and report to a folder you choose' },
 
   // --- views -------------------------------------------------------------
   { id: 'view.spec', title: 'Spec editor', group: 'view', icon: 'spec', keys: 'Mod+1' },

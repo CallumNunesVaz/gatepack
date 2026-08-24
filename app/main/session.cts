@@ -70,6 +70,17 @@ export interface ProgressEvent {
   percent?: number;
 }
 
+/**
+ * The OS shell seam (§GUI-1): reveal a path in the file manager. Kept as a
+ * dependency rather than an `import { shell } from 'electron'` so a test can
+ * stub the reveal without spawning a real file manager, and so this module
+ * stays free of an Electron import (it runs under vitest in plain Node).
+ */
+export interface ShellSeam {
+  /** Reveal `fullPath` in the OS file manager. Empty string = success. */
+  openPath(fullPath: string): Promise<string>;
+}
+
 export interface SessionDeps {
   location: CoreLocation | null;
   registry: CancelRegistry;
@@ -81,6 +92,8 @@ export interface SessionDeps {
   onFileChanged: (paths: string[]) => void;
   onProgress: (p: ProgressEvent) => void;
   gitExec?: Exec;
+  /** Reveal the output directory in the OS file manager (Electron `shell`). */
+  shell: ShellSeam;
 }
 
 interface ProjectState {
@@ -115,6 +128,41 @@ function genToken(): string {
   return randomUUID();
 }
 
+/** The directory `build` writes its artefacts into, relative to the project root. */
+export function outputDir(root: string): string {
+  return path.join(root, '.gatepack', 'out');
+}
+
+/**
+ * The build artefacts a person actually hands on (§GUI-1): the BOM, the KiCad
+ * netlist and the report. The intermediates (`mapped.json`, `premap.json`,
+ * `cells.lib`, `yosys.ys`, `generated.v`, `mapped.v`, `netlist.unpacked.net`,
+ * `refdes.json`) are the core's own scratch for `analyse`/`provenance` and are
+ * deliberately not copied — see docs/BUILD-NOTES-outputs.md.
+ */
+const EXPORT_ARTEFACTS = ['bom.csv', 'netlist.net', 'report.md'] as const;
+
+/** What to say when there is nothing to reveal or export: say what to do. */
+function noOutputsMessage(outDir: string): string {
+  return `no build outputs at ${outDir} — run a build first`;
+}
+
+/** True when `outDir` exists, is a directory and holds at least one entry. */
+function hasOutputs(outDir: string): boolean {
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(outDir);
+  } catch {
+    return false;
+  }
+  if (!stat.isDirectory()) return false;
+  try {
+    return fs.readdirSync(outDir).length > 0;
+  } catch {
+    return false;
+  }
+}
+
 /** Build the argv (excluding the `--json` flag) for a core subcommand. */
 export function buildCommandArgs(
   kind: CoreKind,
@@ -126,7 +174,7 @@ export function buildCommandArgs(
   const library = path.join(root, 'parts.csv');
   const hasLibrary = project !== null && fs.existsSync(library);
   const buildDir = path.join(root, '.gatepack', 'build');
-  const outDir = path.join(root, '.gatepack', 'out');
+  const outDir = outputDir(root);
 
   switch (kind) {
     case 'compile':
@@ -408,6 +456,83 @@ export class SessionManager {
     if (res.code !== 0) {
       throw new Error(`gatepack project bundle failed (exit ${res.code}): ${res.stderr || res.stdout}`);
     }
+  }
+
+  /* --- outputs (§GUI-1) ----------------------------------------------- */
+
+  /**
+   * Reveal the build output directory in the OS file manager.
+   *
+   * §GUI-1: `build` writes the BOM, netlist and report into `.gatepack/out`
+   * and the application never offered them, so handing a netlist to a
+   * fabricator meant leaving the app. Refusing to reveal when nothing has been
+   * built is deliberate — an "outputs" command that opens an empty folder is a
+   * small lie of the kind this project spends its effort not telling.
+   */
+  revealOutputs(): Promise<Envelope<{ path: string }>> {
+    if (this.project === null) {
+      return Promise.resolve(errorEnvelope('revealOutputs', 'GP4200', 'no project open'));
+    }
+    const outDir = outputDir(this.project.root);
+    if (!hasOutputs(outDir)) {
+      return Promise.resolve(errorEnvelope('revealOutputs', 'GP4113', noOutputsMessage(outDir)));
+    }
+    // `shell.openPath` resolves to a string (empty on success), it never
+    // rejects — returning `ok` without checking it would be a silent failure.
+    return this.deps.shell.openPath(outDir).then((result) => {
+      if (result === '') return okEnvelope('revealOutputs', { path: outDir });
+      return errorEnvelope('revealOutputs', 'GP4114', `cannot reveal ${outDir}: ${result}`);
+    });
+  }
+
+  /**
+   * Copy the build artefacts into `destination`, chosen by the user in a native
+   * dialog (ipc.cts shows it). The destination is therefore never a path the
+   * renderer supplied: writing outside the project root is acceptable only
+   * because a native dialog picked it (§5.2).
+   */
+  async exportOutputs(destination: string): Promise<Envelope<{ path: string; files: string[] }>> {
+    if (this.project === null) {
+      return errorEnvelope('exportOutputs', 'GP4200', 'no project open');
+    }
+    const outDir = outputDir(this.project.root);
+    if (!hasOutputs(outDir)) {
+      return errorEnvelope('exportOutputs', 'GP4113', noOutputsMessage(outDir));
+    }
+    const missing = EXPORT_ARTEFACTS.filter((name) => !fs.existsSync(path.join(outDir, name)));
+    if (missing.length > 0) {
+      return errorEnvelope(
+        'exportOutputs',
+        'GP4113',
+        `${noOutputsMessage(outDir)} (missing ${missing.join(', ')})`,
+      );
+    }
+
+    const dest = path.resolve(destination);
+    // Do not overwrite silently: refuse the whole export when any target file
+    // already exists, rather than clobbering a file the user already had. The
+    // policy is deliberate — see docs/BUILD-NOTES-outputs.md.
+    const conflicts = EXPORT_ARTEFACTS.filter((name) => fs.existsSync(path.join(dest, name)));
+    if (conflicts.length > 0) {
+      return errorEnvelope(
+        'exportOutputs',
+        'GP4115',
+        `refusing to overwrite ${conflicts.length} existing file(s) in ${dest}: ${conflicts.join(', ')}`,
+      );
+    }
+
+    const written: string[] = [];
+    try {
+      fs.mkdirSync(dest, { recursive: true });
+      for (const name of EXPORT_ARTEFACTS) {
+        const target = path.join(dest, name);
+        fs.copyFileSync(path.join(outDir, name), target);
+        written.push(target);
+      }
+    } catch (err) {
+      return errorEnvelope('exportOutputs', 'GP4116', `cannot export to ${dest}`, err);
+    }
+    return okEnvelope('exportOutputs', { path: dest, files: written });
   }
 
   /* --- spec read/write ------------------------------------------------ */

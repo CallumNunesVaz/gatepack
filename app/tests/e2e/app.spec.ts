@@ -64,7 +64,16 @@ test('the §5.2 posture holds inside the renderer', async () => {
   // The bridge exposes exactly the documented methods, nothing else.
   expect(posture.gatepackKeys).toEqual([
     'analyse', 'build', 'cancel', 'checkLibrary', 'closeProject', 'compile',
-    'currentProject', 'doctor', 'estimate', 'listExamples', 'mappedNetlist',
+    'currentProject', 'doctor', 'estimate',
+    // `exportOutputs`/`revealOutputs` (2026-08-25): File > Reveal/Export build
+    // outputs (§GUI-1). Widening the bridge is a §5.2 decision, so it is
+    // declared here rather than allowed to pass by a looser assertion. The
+    // renderer names no path: `revealOutputs` opens the main process's own
+    // `<project>/.gatepack/out`, and `exportOutputs`'s destination is chosen
+    // by a native dialog in the main process — so no new capability reaches
+    // the renderer beyond what `openProjectPath` already allowed.
+    'exportOutputs',
+    'listExamples', 'mappedNetlist',
     // `newProject`/`newProjectDialog` (2026-08-24): File > New Project. Widening
     // the bridge is a §5.2 decision, so it is declared here rather than allowed
     // to pass by a looser assertion. Both go straight to the main process --
@@ -74,6 +83,7 @@ test('the §5.2 posture holds inside the renderer', async () => {
     'newProject', 'newProjectDialog',
     'onFileChanged', 'onProgress', 'onProjectChanged', 'openExample',
     'openProject', 'openProjectPath', 'packedNetlist', 'provenance', 'readSpec',
+    'revealOutputs',
     'saveProject', 'saveProjectAs', 'setNativeTheme', 'simulate', 'verify',
     'writeSpec',
   ]);

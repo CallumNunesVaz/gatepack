@@ -10,6 +10,7 @@ import {
   Menu,
   net,
   protocol,
+  shell,
   type MenuItemConstructorOptions,
   type OpenDialogOptions,
   session as electronSession,
@@ -234,6 +235,44 @@ function saveAsDialog(): void {
     .catch(() => {});
 }
 
+/**
+ * File > Export Outputs… (§GUI-1): copy the build outputs to a directory the
+ * user picks. The destination comes from this native dialog — the trust
+ * boundary for writing outside the project root (§5.2) — never from the
+ * renderer.
+ */
+function exportOutputsDialog(): void {
+  dialog
+    .showOpenDialog({
+      title: 'Export build outputs',
+      buttonLabel: 'Export here',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    .then((result) => {
+      if (result.canceled || result.filePaths.length === 0) return;
+      const sm = sessionManager;
+      if (!sm) return;
+      void sm.exportOutputs(result.filePaths[0]).then((env) => {
+        if (!env.ok) dialog.showErrorBox('Export Outputs', env.error.message);
+      });
+    })
+    .catch(() => {});
+}
+
+/**
+ * File > Reveal Outputs (§GUI-1). The menu action is fire-and-forget, but the
+ * refusal (nothing built) must not be silent: an "outputs" command that does
+ * nothing at all is the exact lie this project exists to avoid, so the error
+ * is surfaced in a native box rather than swallowed.
+ */
+function revealOutputsMenu(): void {
+  const sm = sessionManager;
+  if (!sm) return;
+  void sm.revealOutputs().then((env) => {
+    if (!env.ok) dialog.showErrorBox('Reveal Outputs', env.error.message);
+  });
+}
+
 async function buildMenu(location: CoreLocation | null): Promise<void> {
   const examplesSubmenu = await fetchExamplesSubmenu(location);
 
@@ -265,6 +304,10 @@ async function buildMenu(location: CoreLocation | null): Promise<void> {
       },
     },
     { label: 'Save As…', accelerator: 'CmdOrCtrl+Shift+S', click: () => saveAsDialog() },
+    { type: 'separator' },
+    { label: 'Reveal Outputs', click: () => revealOutputsMenu() },
+    { label: 'Export Outputs…', click: () => exportOutputsDialog() },
+    { type: 'separator' },
     { label: 'Close Project', click: () => sessionManager?.closeProject() },
     { type: 'separator' },
     { label: 'Quit', accelerator: 'CmdOrCtrl+Q', click: () => app.quit() },
@@ -354,6 +397,7 @@ async function bootstrap(): Promise<void> {
     onProjectChanged: (info: ProjectInfo) => broadcast('gatepack:projectChanged', info),
     onFileChanged: (paths: string[]) => broadcast('gatepack:fileChanged', paths),
     onProgress: (p) => broadcast('gatepack:progress', p),
+    shell: { openPath: (fullPath) => shell.openPath(fullPath) },
   });
 
   registerIpc({ session: sessionManager, registry });
