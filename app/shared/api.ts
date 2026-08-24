@@ -447,6 +447,10 @@ export interface GatepackApi {
    */
   checkLibrary(path: string): Promise<Envelope<LibraryCheckResult>>;
   /** The bundled examples (§18.1), showcase first. Answerable with no project. */
+  /** Scaffold a new project in `directory` (via `gatepack project new`) and open it. */
+  newProject(directory: string): Promise<Envelope<ProjectInfo>>;
+  /** Ask for a directory, then scaffold and open a new project there. */
+  newProjectDialog(): Promise<Envelope<ProjectInfo>>;
   listExamples(): Promise<Envelope<ExamplesList>>;
   /** Open a bundled example into a new project (scratch copy, §18.1). */
   openExample(name: string): Promise<Envelope<ProjectInfo>>;

@@ -17,6 +17,7 @@ import {
   InvokeTokenSchema,
   NativeThemeSchema,
   OpenExampleSchema,
+  NewProjectSchema,
   OpenProjectPathSchema,
   SaveProjectAsSchema,
   WriteSpecSchema,
@@ -73,6 +74,12 @@ export function registerIpc(deps: IpcDeps): void {
 
   handle('gatepack:openProjectPath', OpenProjectPathSchema, (p) =>
     session.openProjectPath(p.path),
+  );
+
+  handle('gatepack:newProject', NewProjectSchema, (p) => session.newProject(p.directory));
+
+  handle<Record<string, unknown>, Envelope<ProjectInfo>>('gatepack:newProjectDialog', NoPayloadSchema, () =>
+    newViaDialog(session),
   );
 
   handleVoid('gatepack:closeProject', NoPayloadSchema, () => session.closeProject());
@@ -137,4 +144,24 @@ async function openViaDialog(
     return errorEnvelope('openProject', 'GP4201', 'open cancelled');
   }
   return session.openProjectPath(result.filePaths[0]);
+}
+
+/**
+ * Ask for a directory to scaffold a new project into.
+ *
+ * `createDirectory` is what makes this usable: the natural gesture is to make
+ * a folder for the design at the moment you decide to start it, and without
+ * that property the user has to leave the application to create one first --
+ * which is the very thing having a New Project command is meant to end.
+ */
+async function newViaDialog(session: SessionManager): Promise<Envelope<ProjectInfo>> {
+  const result = await dialog.showOpenDialog({
+    title: 'New gatepack project',
+    buttonLabel: 'Create project here',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return errorEnvelope('newProject', 'GP4201', 'new project cancelled');
+  }
+  return session.newProject(result.filePaths[0]);
 }

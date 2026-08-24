@@ -43,6 +43,34 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+// What `project new` writes. Shape only -- the real template lives in
+// gatepack/scaffold.py and is tested there; the fake exists so the main
+// process's New Project path can be driven without Python.
+const FAKE_SPEC = [
+  '# a new gatepack design (fake core)',
+  'name: from_scratch',
+  'timing_model: synchronous',
+  'clock: {signal: clk, freq_hz: 1000, source: OSC}',
+  'reset: {signal: rst_n, active: low, source: SUPERVISOR}',
+  'encoding: one_hot',
+  'inputs:',
+  '  - {name: go, sync: true}',
+  'outputs:',
+  '  - {name: active}',
+  'states: [IDLE, RUN]',
+  'initial: IDLE',
+  'transitions:',
+  '  - {from: IDLE, to: RUN,  when: "go"}',
+  '  - {from: IDLE, to: IDLE, when: "!go"}',
+  '  - {from: RUN,  to: RUN,  when: "go"}',
+  '  - {from: RUN,  to: IDLE, when: "!go"}',
+  'output_logic:',
+  '  active: "state == RUN"',
+  '',
+].join('\n');
+
+const FAKE_PARTS_CSV = 'part_number,cell,package,vcc_min_v,vcc_max_v,citation\n';
+
 const argv = process.argv.slice(2);
 const cmd = argv[0] ?? '';
 const sub = argv[1] ?? '';
@@ -400,6 +428,23 @@ async function main() {
       const dir = argv[2];
       fs.mkdirSync(path.dirname(out), { recursive: true });
       fs.copyFileSync(path.join(dir, 'design.yaml'), out);
+      process.exit(0);
+    }
+    // `project new` scaffolds a project. The fake mirrors the two properties
+    // the main process actually depends on: both files land, and an existing
+    // design.yaml is refused rather than overwritten.
+    if (sub === 'new') {
+      const dir = argv[2];
+      const design = path.join(dir, 'design.yaml');
+      if (fs.existsSync(design)) {
+        process.stderr.write(`error: ${design} already exists\n`);
+        process.exit(2);
+      }
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(design, FAKE_SPEC);
+      const parts = path.join(dir, 'parts.csv');
+      if (!fs.existsSync(parts)) fs.writeFileSync(parts, FAKE_PARTS_CSV);
+      process.stdout.write(`wrote ${design}\nwrote ${parts}\n`);
       process.exit(0);
     }
     process.exit(2);

@@ -40,6 +40,12 @@ const api: GatepackApi = {
   openProjectPath: (path: string) =>
     ipcRenderer.invoke('gatepack:openProjectPath', { path }) as Promise<Envelope<ProjectInfo>>,
 
+  newProject: (directory: string) =>
+    ipcRenderer.invoke('gatepack:newProject', { directory }) as Promise<Envelope<ProjectInfo>>,
+
+  newProjectDialog: () =>
+    ipcRenderer.invoke('gatepack:newProjectDialog') as Promise<Envelope<ProjectInfo>>,
+
   closeProject: () => ipcRenderer.invoke('gatepack:closeProject') as Promise<void>,
 
   saveProject: () =>

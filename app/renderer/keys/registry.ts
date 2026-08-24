@@ -98,6 +98,7 @@ export function displayKeys(chord: string, platform: string = navigator.platform
  */
 export const COMMANDS: CommandDef[] = [
   // --- project -----------------------------------------------------------
+  { id: 'project.new', title: 'New project…', group: 'project', icon: 'open', keys: 'Mod+N', cli: 'project', hint: 'Scaffold a design.yaml and parts.csv, then open them' },
   { id: 'project.open', title: 'Open project…', group: 'project', icon: 'open', keys: 'Mod+O', hint: 'Open a project directory or .gpk file' },
   { id: 'project.save', title: 'Save', group: 'project', icon: 'save', keys: 'Mod+S', hint: 'Write the specification back to disk' },
   // `project bundle` / `project explode` are what saving and opening a .gpk

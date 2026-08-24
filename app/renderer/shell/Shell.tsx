@@ -74,9 +74,16 @@ function ShellContent() {
       bus.register('app.palette', () => setPaletteOpen((v) => !v)),
       bus.register('app.shortcuts', () => setShortcutsOpen((v) => !v)),
       ...VIEWS.map((v) => bus.register(v.command, () => setActiveView(v.id))),
+      // A reachable command that does nothing is a lie (see commands.tsx). The
+      // palette lists `project.new`, so it is wired here rather than left to
+      // report itself unhandled — the main process's File > New goes through
+      // the same `newProjectDialog`, so the two surfaces cannot diverge.
+      bus.register('project.new', () => {
+        void api.newProjectDialog();
+      }),
     ];
     return () => unregisters.forEach((unregister) => unregister());
-  }, [bus, toggle]);
+  }, [bus, toggle, api]);
 
   // Electron's own chrome — on Linux the menu bar drawn inside the window —
   // follows `nativeTheme`, which tracks the OS and knows nothing about the

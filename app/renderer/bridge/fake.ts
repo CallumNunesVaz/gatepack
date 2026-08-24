@@ -168,6 +168,18 @@ export class FakeGatepack implements GatepackApi {
     return ok('openProjectPath', { ...this.project });
   }
 
+  /** Directories passed to `newProject`, so a test can assert what was scaffolded. */
+  newProjects: string[] = [];
+
+  async newProject(directory: string): Promise<Envelope<ProjectInfo>> {
+    this.newProjects.push(directory);
+    return ok('newProject', { ...this.project, path: directory });
+  }
+
+  async newProjectDialog(): Promise<Envelope<ProjectInfo>> {
+    return this.newProject(this.project.path);
+  }
+
   async closeProject(): Promise<void> {
     // no-op in the fake
   }

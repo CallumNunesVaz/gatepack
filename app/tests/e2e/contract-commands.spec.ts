@@ -48,6 +48,7 @@ const SUB_PARENT: Record<string, string> = {
   extract: 'examples',
   explode: 'project',
   bundle: 'project',
+  new: 'project',
 };
 
 /** Commands the fake core answers, derived from its dispatch source. */

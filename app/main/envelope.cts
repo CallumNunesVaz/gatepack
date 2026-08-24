@@ -268,6 +268,7 @@ export function envelopeSchema<T>(data: z.ZodType<T>) {
 /* ------------------------------------------------------------------ */
 
 export const OpenProjectPathSchema = z.object({ path: z.string().min(1) });
+export const NewProjectSchema = z.object({ directory: z.string().min(1) });
 export const SaveProjectAsSchema = z.object({ gpkPath: z.string().min(1) });
 export const WriteSpecSchema = z.object({ text: z.string() });
 export const InvokeTokenSchema = z.object({ token: z.string().min(1).optional() });

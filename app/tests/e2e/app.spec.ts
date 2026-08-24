@@ -65,6 +65,13 @@ test('the §5.2 posture holds inside the renderer', async () => {
   expect(posture.gatepackKeys).toEqual([
     'analyse', 'build', 'cancel', 'checkLibrary', 'closeProject', 'compile',
     'currentProject', 'doctor', 'estimate', 'listExamples', 'mappedNetlist',
+    // `newProject`/`newProjectDialog` (2026-08-24): File > New Project. Widening
+    // the bridge is a §5.2 decision, so it is declared here rather than allowed
+    // to pass by a looser assertion. Both go straight to the main process --
+    // `newProject` shells out to `gatepack project new`, `newProjectDialog`
+    // opens the directory chooser -- so no new capability reaches the renderer
+    // beyond naming a directory, which `openProjectPath` already allowed.
+    'newProject', 'newProjectDialog',
     'onFileChanged', 'onProgress', 'onProjectChanged', 'openExample',
     'openProject', 'openProjectPath', 'packedNetlist', 'provenance', 'readSpec',
     'saveProject', 'saveProjectAs', 'setNativeTheme', 'simulate', 'verify',

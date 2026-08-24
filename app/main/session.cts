@@ -526,6 +526,37 @@ export class SessionManager {
     return this.openBundledExample(name);
   }
 
+  /**
+   * Scaffold a new project in `directory`, then open it (§18.1).
+   *
+   * The template comes from the core (`gatepack project new`), not from here.
+   * "What a valid starting design looks like" and "which parts library it
+   * ships with" are core knowledge, and this process is a view over artefacts
+   * the CLI produces -- a template duplicated in the main process would drift
+   * from the one `gatepack project new` writes, and only one of them would be
+   * covered by the core's tests.
+   *
+   * The core refuses to overwrite an existing design.yaml, which matters here:
+   * a user picking a directory in a file dialog can easily land on a project
+   * they already have, and the refusal must not be second-guessed by opening
+   * it silently instead.
+   */
+  async newProject(directory: string): Promise<Envelope<ProjectInfo>> {
+    if (this.deps.location === null) {
+      return errorEnvelope('newProject', 'GP9001', 'gatepack executable not found');
+    }
+    const abs = path.resolve(directory);
+    const res = await runRaw(this.deps.location, ['project', 'new', abs]);
+    if (res.code !== 0) {
+      return errorEnvelope(
+        'newProject',
+        'GP4112',
+        (res.stderr || res.stdout || `gatepack project new failed (exit ${res.code})`).trim(),
+      );
+    }
+    return this.openProjectPath(abs);
+  }
+
   private invoke<T>(
     schema: z.ZodType<T>,
     kind: CoreKind,

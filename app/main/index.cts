@@ -199,6 +199,28 @@ function openViaDialog(kind: 'any' | 'gpk'): void {
     .catch(() => {});
 }
 
+/**
+ * File > New Project.
+ *
+ * `createDirectory` lets the user make the folder inside the dialog, at the
+ * moment they decide to start a design. Without it they would have to leave
+ * the application to create a directory first — which is exactly the gap this
+ * command exists to close.
+ */
+function newProjectDialog(): void {
+  dialog
+    .showOpenDialog({
+      title: 'New gatepack project',
+      buttonLabel: 'Create project here',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    .then((result) => {
+      if (result.canceled || result.filePaths.length === 0) return;
+      void sessionManager?.newProject(result.filePaths[0]);
+    })
+    .catch(() => {});
+}
+
 function saveAsDialog(): void {
   if (!mainWindow) return;
   dialog
@@ -216,6 +238,8 @@ async function buildMenu(location: CoreLocation | null): Promise<void> {
   const examplesSubmenu = await fetchExamplesSubmenu(location);
 
   const fileMenu: MenuItemConstructorOptions[] = [
+    { label: 'New Project…', accelerator: 'CmdOrCtrl+N', click: () => newProjectDialog() },
+    { type: 'separator' },
     { label: 'Open Project…', accelerator: 'CmdOrCtrl+O', click: () => openViaDialog('any') },
     { label: 'Open .gpk…', accelerator: 'CmdOrCtrl+Shift+O', click: () => openViaDialog('gpk') },
     { type: 'separator' },
