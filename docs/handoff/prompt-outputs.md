@@ -74,8 +74,13 @@ written to be copied.
 - **Error when the project is not open, or the directory does not exist or is
   empty.** An "outputs" command that opens an empty folder is a small lie of
   the kind this project spends most of its effort not telling. Use a `GP4xxx`
-  code consistent with the ones already in `envelope.cts`, and make the message
-  say what to do ("run a build first"), not merely what went wrong.
+  code consistent with the family already in `session.cts` and `ipc.cts`
+  (`GP4100`/`GP4101` open failures, `GP4111`/`GP4112` project failures,
+  `GP4201` cancelled). Codes are free-form strings — `envelope.cts` types them
+  as `z.string()` and holds only the `GP9xxx` bridge codes — so there is no
+  registry to update and no validation to satisfy; pick one that reads as
+  belonging to the set. Make the message say what to do ("run a build first"),
+  not merely what went wrong.
 - Reveal with Electron's `shell` module. Prefer `openPath` on the directory
   (opens the folder) over `showItemInFolder` on a file (opens the parent and
   selects it) — say in the build notes which you chose and why.

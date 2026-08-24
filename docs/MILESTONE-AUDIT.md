@@ -28,7 +28,7 @@ tool closes, the only evidence that counts is that tool closing.
 | M15 | C12 schematic — all layers | **met** (2026-08-16) — packed and overlay layers render from `out/packed.json` |
 | M16 | Linked selection — §15.2 cross-highlights | **met** (2026-08-16) — package and property selections resolve |
 | M17 | C13 packing override, C14 dashboard, C15 tri-state | **met** (2026-08-16) |
-| M12–M17 (sweep) | The whole journey, per example, through the real app | **met, bounded [GUI-1]** (2026-08-24) — all thirteen bundled examples, and a design created from nothing, complete New/open → compile → estimate → verify → build and every post-build view. The GUI still offers no route to the build outputs. |
+| M12–M17 (sweep) | The whole journey, per example, through the real app | **met [GUI-1]** (2026-08-25) — all thirteen bundled examples, and a design created from nothing, complete New/open → compile → estimate → verify → build, every post-build view, and reveal/export of the artefacts. Both boundaries recorded on 2026-08-24 are now closed. |
 | M18 | ~~Signed installers~~ **[M18-4]**; worked example; CI green | **met** (2026-08-23) — core and Linux toolchain ship; installers are unsigned by decision, not by omission |
 
 ## M5 — met (2026-08-16)
@@ -504,9 +504,11 @@ Two boundaries are open, and are the reason the row above says *bounded*:
   core so the CLI and the GUI cannot drift. The pinned `test.fail()` has been
   inverted into the positive test it was written as, and the sweep now covers
   creating a design from nothing through to a BOM.
-* **The build outputs are written, not offered.** No *Reveal in folder*, no
-  *Export*; *Save As* bundles the specification into a `.gpk`, not the
-  manufacturing outputs. Still open.
+* ~~**The build outputs are written, not offered.**~~ **Closed 2026-08-25.**
+  File > Reveal Outputs opens `.gatepack/out`; Export Outputs… copies the BOM,
+  netlist and report to a chosen folder. Reveal refuses rather than opening an
+  empty directory, and export refuses rather than overwriting — all-or-nothing,
+  naming the conflicts.
 
 Closing the first one immediately found a third defect that had nothing to do
 with it, and that no bundled example could ever have surfaced:
@@ -575,3 +577,51 @@ already wrong:
   enough: the assignment was clamped to the old scroll area (it wanted
   `scrollLeft` 312 and got 55, the old maximum), so the sheet anchored correctly
   in Y and drifted 257 px in X. It is applied in a layout effect keyed on zoom.
+
+
+## [GUI-3] The command palette was advertising four lies, 2026-08-25
+
+Pressing each advertised shortcut in the running application:
+
+```
+Ctrl+B        -> "Build" is not wired yet
+Ctrl+E        -> "Estimate viability" is not wired yet
+Ctrl+Shift+C  -> "Compile" is not wired yet
+Ctrl+Shift+V  -> "Verify" is not wired yet
+```
+
+The features worked — the views call `api.verify()` and friends through
+`useRevisionedTask` — so nothing was broken except the route a user is told to
+take. `commands.tsx` states the rule: *a reachable command that does nothing is
+a lie; a reachable command that says so is a promise.* The toast kept the second
+half, which is why this was a gap rather than a disaster.
+
+`run.compile` was worse than unwired: **nothing in the renderer called
+`api.compile` at all**, so there was no code path to connect. Its registry hint
+promises a front-end-only check, which is a genuinely useful thing, so it now
+runs from the shell and reports the state/flop counts through a toast.
+
+`run.simulate` produced the one defect worth recording. The brief said to
+trigger "TruthTable's task"; the truth table's only revisioned task is the
+`estimate`-backed cover preview, and its divergence column comes from
+`simulate()` through the linked-selection spine, which read it once on mount with
+no refresh path. The literal mapping therefore made "Simulate truth table" run
+*estimate* — a command reporting success having run something else. The spine now
+has a reload signal. The error was in the brief, not the implementation, and the
+delegated model flagged it as its own weakest point before it was found here.
+
+## [GUI-4] Editing the graph deleted what the example was teaching, 2026-08-25
+
+`applyTopLevelEdit` re-serialised a whole top-level block from the parsed model.
+Adding one transition to `examples/edge_detector/design.yaml` deleted both
+per-transition comments, unquoted `when: "din"`, and collapsed the hand-aligned
+columns. Those comments are where that example explains what each state means, so
+dragging one edge destroyed the thing the user was reading — silently, and behind
+a debounced write with no obvious moment to undo.
+
+Adding and removing list items are now line splices, alongside the field splices
+the rename work already had. `setInputSync` had recorded the identical finding on
+the `inputs:` block a milestone earlier: *toggling input `b` deleted `# MUST stay
+synchronised — metastability` from input `a`*. The same defect, found twice, on
+two different blocks, because the first fix was applied to one field rather than
+to the pattern.

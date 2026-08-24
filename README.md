@@ -177,18 +177,16 @@ it. Both were measured first — the wire was ±0.5 px and the middle of a gate
 symbol hit nothing at all, because SVG hit-tests only what it paints and the
 skin fills nothing. `docs/MILESTONE-AUDIT.md` [GUI-2] has the numbers.
 
-One boundary is still worth knowing, and it is pinned by a test rather than left
-to be discovered:
+**File > Reveal Outputs** opens `.gatepack/out` in the file manager, and
+**Export Outputs…** copies the BOM, the KiCad netlist and the report to a folder
+you choose. Both refuse rather than doing something useless: reveal will not open
+an empty directory when nothing has been built, and export will not overwrite a
+file you already had — it names the conflicts and writes nothing.
 
-* **The build outputs are written, not offered.** `build` emits the BOM, the
-  KiCad netlist and the report into `.gatepack/out` inside the project, and the
-  application has no *Reveal in folder* or *Export*; *Save As* bundles the
-  **specification** into a `.gpk`, not the manufacturing outputs. To hand the
-  netlist to a fabricator you go to the file manager.
-
-So the honest answer to "can I do all of this in the GUI?" is: from creating a
-design through to building it, yes; getting the outputs to a fabricator still
-happens on the filesystem.
+So the answer to "can I do all of this in the GUI?" is now: yes, from creating a
+design to handing the outputs on. What the GUI still cannot do is tell you
+whether KiCad will accept the netlist — see the Status note above; that needs a
+human with KiCad open.
 
 ## Windows
 
