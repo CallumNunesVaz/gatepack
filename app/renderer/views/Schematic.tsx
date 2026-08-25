@@ -55,6 +55,19 @@ const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 4;
 const ZOOM_STEP = 1.25;
 
+/**
+ * How far the pointer must travel before a press becomes a pan rather than a
+ * click.
+ *
+ * The two gestures share a button, so the threshold is what keeps them apart.
+ * Too small and ordinary hand tremor turns a click-to-select into a pan that
+ * swallows the selection; too large and a short drag does nothing at all. 4 px
+ * is the same order as the 5 px wire hit target measured in
+ * `schematic-pointer.spec.ts`, which is the tremor figure this view already
+ * designs around.
+ */
+const PAN_THRESHOLD_PX = 4;
+
 /** Auto-run clock period. Slow enough to read a state change on the sheet. */
 const RUN_PERIOD_MS = 700;
 
@@ -111,6 +124,16 @@ export function Schematic() {
 
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  /** In-flight drag-to-pan: where the press started and the scroll it started from. */
+  const pan = useRef<{
+    x: number;
+    y: number;
+    scrollLeft: number;
+    scrollTop: number;
+    moved: boolean;
+  } | null>(null);
+  /** Set when a pan actually moved, so the `click` it ends with is not a select. */
+  const panConsumedClick = useRef(false);
   /** Sheet point to hold under the pointer across the next zoom change. */
   const pendingAnchor = useRef<{
     sheetX: number;
@@ -126,6 +149,8 @@ export function Schematic() {
   const [showFlow, setShowFlow] = useState(true);
 
   const [zoom, setZoom] = useState(1);
+  const [panning, setPanning] = useState(false);
+  const [pannable, setPannable] = useState(false);
 
   /* --- spec editing (§C12 input surface) -------------------------------- */
   const [editMode, setEditMode] = useState(false);
@@ -577,6 +602,13 @@ export function Schematic() {
   );
 
   const onCanvasClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    // A pan ends with a `click` on whatever the pointer happens to be over.
+    // Letting it through would mean every drag across the sheet also changed
+    // the selection — or, in edit mode, rewrote the spec.
+    if (panConsumedClick.current) {
+      panConsumedClick.current = false;
+      return;
+    }
     const target = event.target as Element | null;
     if (editMode) {
       // In edit mode a click on a wire is a test-point edit and a click on an
@@ -724,6 +756,104 @@ export function Schematic() {
     };
     setZoom(next);
   };
+
+  // Whether there is anything to pan *to*. A grab cursor over a sheet that
+  // already fits the pane promises a movement the view cannot make, which is
+  // the same class of lie as a button that does nothing. Re-measured on resize
+  // as well as on zoom: the pane is a flex child of a resizable window, so its
+  // client size changes without either the sheet or the zoom changing.
+  useLayoutEffect(() => {
+    const host = scrollRef.current;
+    if (!host) {
+      setPannable(false);
+      return;
+    }
+    const measure = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      setPannable(el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1);
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(host);
+    return () => ro.disconnect();
+  }, [svg, zoom, svgSize, showMapped, showPacked]);
+
+  /* --- drag to pan ------------------------------------------------------
+   *
+   * A large sheet is taller and wider than the pane, and the only way to reach
+   * the rest of it was the scrollbars — on a schematic, where every other tool
+   * lets you grab the sheet and move it. The wheel is already spoken for: it
+   * zooms (and claims the gesture, see below), so it cannot also scroll.
+   *
+   * Left-drag pans and left-*click* still selects. Those share a button, so
+   * they are separated by distance, not by modifier: the press is recorded and
+   * nothing happens until the pointer has moved PAN_THRESHOLD_PX, at which
+   * point the gesture becomes a pan and the `click` that ends it is dropped.
+   * Middle-drag always pans, whatever it started on.
+   *
+   * The move/up listeners live on `window`, not on the canvas: a pan that
+   * stopped the moment the pointer left the pane would strand the sheet
+   * half-moved, and a mouseup delivered outside the canvas would leave the
+   * drag latched on for ever.
+   */
+  const onPanStart = (event: React.MouseEvent<HTMLDivElement>) => {
+    const host = scrollRef.current;
+    if (!host) return;
+    if (event.button !== 0 && event.button !== 1) return;
+    // An edit-mode regroup drag owns the pointer from the same press
+    // (`onCanvasMouseDown`); two drags on one gesture is one drag too many.
+    if (event.button === 0 && editMode && showPacked) {
+      const group = (event.target as Element | null)?.closest?.('g[id^="cell_"]') ?? null;
+      if (group !== null) return;
+    }
+    pan.current = {
+      x: event.clientX,
+      y: event.clientY,
+      scrollLeft: host.scrollLeft,
+      scrollTop: host.scrollTop,
+      moved: false,
+    };
+    // Middle-drag is unambiguously a pan, so claim it before the platform's
+    // own autoscroll starts and fights us for the same gesture.
+    if (event.button === 1) event.preventDefault();
+  };
+
+  useEffect(() => {
+    const move = (event: MouseEvent) => {
+      const state = pan.current;
+      const host = scrollRef.current;
+      if (!state || !host) return;
+      const dx = event.clientX - state.x;
+      const dy = event.clientY - state.y;
+      if (!state.moved) {
+        if (Math.abs(dx) < PAN_THRESHOLD_PX && Math.abs(dy) < PAN_THRESHOLD_PX) return;
+        state.moved = true;
+        setPanning(true);
+      }
+      // Drag the sheet with the pointer: content moves the way the hand does,
+      // so the scroll offset moves the other way.
+      host.scrollLeft = state.scrollLeft - dx;
+      host.scrollTop = state.scrollTop - dy;
+      // Without this the drag also runs a text selection across the sheet's
+      // `<text>` labels and paints the schematic blue as it goes.
+      event.preventDefault();
+    };
+    const up = () => {
+      const state = pan.current;
+      pan.current = null;
+      if (!state || !state.moved) return;
+      panConsumedClick.current = true;
+      setPanning(false);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    return () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+  }, []);
 
   // The wheel listener is attached natively, NOT through React's `onWheel`.
   //
@@ -1035,7 +1165,10 @@ export function Schematic() {
         data-testid="schematic-svg"
         data-flow={showValues && showFlow ? 'on' : 'off'}
         data-edit={editMode ? 'on' : 'off'}
+        data-panning={panning ? 'on' : 'off'}
+        data-pannable={pannable ? 'on' : 'off'}
         ref={scrollRef}
+        onMouseDown={onPanStart}
         onMouseUp={onCanvasMouseUp}
       >
         {svg ? (

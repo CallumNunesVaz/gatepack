@@ -1773,6 +1773,33 @@ th.sortable[aria-sort='descending'] .sort-indicator svg {
   fill: var(--gp-accent) !important;
 }
 
+/* --- schematic: drag to pan ----------------------------------------------
+ *
+ * The cursor is the only thing that says the sheet can be grabbed, so it is
+ * shown only when the sheet actually overflows the pane (`data-pannable`): a
+ * grab cursor over a sheet that already fits promises a movement the view
+ * cannot make.
+ *
+ * `user-select` is suppressed for the duration of the drag rather than always.
+ * The sheet's `<text>` labels are the net and instance names, and being able
+ * to select one to copy it is worth keeping — it is only *during* a pan that a
+ * selection is never what was meant. */
+.schematic__canvas[data-pannable='on'] {
+  cursor: grab;
+}
+
+.schematic__canvas[data-panning='on'] {
+  cursor: grabbing;
+  user-select: none;
+}
+
+/* Whatever is under the pointer must not override the drag cursor mid-pan —
+ * a `crosshair` on an editable wire while the sheet is being dragged says the
+ * click will write to the spec, and it will not. */
+.schematic__canvas[data-panning='on'] * {
+  cursor: grabbing !important;
+}
+
 /* --- schematic: probe bar ------------------------------------------------ */
 .schematic__probe {
   display: flex;
@@ -1839,10 +1866,45 @@ th.sortable[aria-sort='descending'] .sort-indicator svg {
   display: flex;
   align-items: center;
   gap: var(--gp-space-4);
-  flex-wrap: wrap;
   font-size: var(--gp-text-xs);
   color: var(--gp-text-muted);
   font-family: var(--gp-font-mono);
+
+  /* This strip sits *above* the canvas in a flex column, so anything that
+   * changes its height moves the whole sheet. Two things did, both on hover:
+   *
+   *   line box   idle holds a plain span, hovered holds <code>/<strong>, which
+   *              resolve to a different fallback family. `line-height: normal`
+   *              is derived from the resolved font's metrics, so the box went
+   *              12px -> 13px and the sheet stepped down 1px and back on every
+   *              hover. Measured, not guessed (jiggle probe, seven_segment).
+   *
+   *   wrapping   `flex-wrap: wrap` plus a slot whose text swaps between
+   *              "hover a wire for its value" and "b3 = 0" meant a narrow pane
+   *              could reflow to two lines on hover — the same bug, an order
+   *              of magnitude larger.
+   *
+   * A fixed line-height kills the first; `nowrap` kills the second outright
+   * rather than reserving a second line's worth of empty space for it. */
+  line-height: 1rem;
+  min-height: 1rem;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+/* The net readout is the part that may truncate when the pane is too narrow;
+ * the counts are short, fixed and must stay whole. Truncation is visible, a
+ * silent reflow is not. */
+.schematic__readout .readout__net {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.schematic__readout .readout__counts,
+.schematic__readout .readout__forced {
+  flex: 0 0 auto;
 }
 
 .schematic__readout .readout__net--idle {
