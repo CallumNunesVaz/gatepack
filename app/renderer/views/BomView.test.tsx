@@ -5,6 +5,7 @@ import { ProjectProvider } from '../state/project';
 import { SelectionProvider } from '../selection/bus';
 import { setApi } from '../api';
 import { FakeGatepack } from '../bridge/fake';
+import { subscribeBuildStateReload } from '../state/buildState';
 import { BomView } from './BomView';
 import type { BuildResult, PackedView } from '../../shared/api';
 
@@ -285,5 +286,27 @@ describe('BomView — C13 packing and BOM', () => {
     fireEvent.click(screen.getByText('Qty'));
     fireEvent.click(screen.getByText('Qty'));
     await waitFor(() => expect(bodyRows()[0].textContent).toContain('74AUP1G02'));
+  });
+
+  it('notifies the build-state reload signal when its build finishes', async () => {
+    // The strip reads `buildState()` and re-fetches when this signal fires.
+    // Deleting the notify from BomView's build success path must fail this
+    // test — a call site that goes silent means the strip lies for the rest of
+    // the session.
+    const fake = new FakeGatepack();
+    fake.setOk('mappedNetlist', mappedJson());
+    fake.setOk('build', buildResult());
+
+    const reloads: number[] = [];
+    const unsubscribe = subscribeBuildStateReload(() => reloads.push(1));
+
+    try {
+      renderBom(fake);
+      fireEvent.click(screen.getByText('Run build'));
+      await waitFor(() => expect(screen.getByTestId('single-source-marker')).toBeTruthy());
+      expect(reloads.length).toBeGreaterThan(0);
+    } finally {
+      unsubscribe();
+    }
   });
 });

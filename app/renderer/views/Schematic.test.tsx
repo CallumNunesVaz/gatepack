@@ -6,6 +6,7 @@ import { ProjectProvider } from '../state/project';
 import { SelectionProvider, useSelection } from '../selection/bus';
 import { setApi } from '../api';
 import { FakeGatepack } from '../bridge/fake';
+import { subscribeBuildStateReload } from '../state/buildState';
 import { Schematic } from './Schematic';
 import { UNOBSERVABLE } from '../worker/schematicOverlay';
 import type { AnalysisSummary, PackedView } from '../../shared/api';
@@ -125,6 +126,9 @@ async function renderWithNetlist(fake: FakeGatepack) {
 describe('Schematic — honest failure reporting', () => {
   it('reports a mappedNetlist() failure instead of an endless spinner', async () => {
     const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    // A build exists, so this is a genuine netlist-fetch failure, not the
+    // unbuilt state (which shows the shared note + Run build instead).
+    fake.buildArtefacts = ['mapped.json'];
     fake.setError('mappedNetlist', {
       severity: 'error',
       code: 'GP9999',
@@ -154,6 +158,68 @@ describe('Schematic — honest failure reporting', () => {
       expect(container.textContent).toContain('analysis unavailable');
     });
     expect(container.textContent).not.toContain('(none reported)');
+  });
+});
+
+describe('Schematic — unbuilt project', () => {
+  it('shows the shared note and a Run build button, not the CLI instruction', async () => {
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    // The real core returns an error envelope naming the missing file and the
+    // CLI command; the fake reproduces it so the defect is pinned.
+    fake.setError('mappedNetlist', {
+      severity: 'error',
+      code: 'GP9999',
+      message:
+        'no mapped netlist at /tmp/project/.gatepack/out/mapped.json: run `gatepack build` first',
+    });
+
+    const { container } = renderSchematic(fake);
+
+    await waitFor(() => expect(screen.getByTestId('schematic-unbuilt')).toBeTruthy());
+    expect(container.textContent).toContain('The schematic reads the mapped netlist');
+    // A GUI that tells you to go and type a CLI command has not finished the
+    // job — the instruction must not survive as the guidance.
+    expect(container.textContent).not.toContain('gatepack build');
+    expect(screen.getByTestId('schematic-build').textContent).toContain('Run build');
+  });
+
+  it('the Run build button is not rendered for a genuine netlist-fetch failure', async () => {
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.buildArtefacts = ['mapped.json'];
+    fake.setError('mappedNetlist', {
+      severity: 'error',
+      code: 'GP9999',
+      message: 'core emitted no parseable JSON envelope',
+    });
+
+    renderSchematic(fake);
+
+    await waitFor(() => expect(screen.getByTestId('schematic-error')).toBeTruthy());
+    expect(screen.queryByTestId('schematic-build')).toBeNull();
+  });
+
+  it('Run build fires the build-state reload signal when the build finishes', async () => {
+    const fake = new FakeGatepack({ specText: XOR2_SPEC });
+    fake.setError('mappedNetlist', {
+      severity: 'error',
+      code: 'GP9999',
+      message: 'no mapped netlist at /tmp/project/.gatepack/out/mapped.json',
+    });
+
+    const reloads: number[] = [];
+    const unsubscribe = subscribeBuildStateReload(() => reloads.push(1));
+
+    try {
+      renderSchematic(fake);
+      await waitFor(() => expect(screen.getByTestId('schematic-unbuilt')).toBeTruthy());
+
+      fireEvent.click(screen.getByTestId('schematic-build'));
+
+      await waitFor(() => expect(fake.calls.some((c) => c.command === 'build')).toBe(true));
+      expect(reloads.length).toBeGreaterThan(0);
+    } finally {
+      unsubscribe();
+    }
   });
 });
 

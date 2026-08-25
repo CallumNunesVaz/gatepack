@@ -33,6 +33,8 @@ import { ShortcutsSheet } from './ShortcutsSheet';
 import { PanelHost } from './PanelHost';
 import { Inspector } from './Inspector';
 import { StatusBar } from './StatusBar';
+import { PipelineStrip } from './PipelineStrip';
+import type { ViewId } from './pipeline';
 import { Icon, IconButton, ToastProvider, useToast } from '../ui';
 import { commandById, displayKeys } from '../keys/registry';
 import type { IconName } from '../ui';
@@ -44,8 +46,6 @@ import { Schematic } from '../views/Schematic';
 import { BomView } from '../views/BomView';
 import { AnalysisView } from '../views/AnalysisView';
 import { VerificationPanel } from '../views/VerificationPanel';
-
-type ViewId = 'spec' | 'truthtable' | 'schematic' | 'packing' | 'analysis' | 'verify';
 
 interface ViewDef {
   id: ViewId;
@@ -256,6 +256,7 @@ function ShellContent() {
             </span>
           </button>
         </header>
+        <PipelineStrip />
         <div className="shell__content">
           <ActiveView />
         </div>

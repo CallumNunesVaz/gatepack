@@ -17,6 +17,12 @@ import { PackingCards } from '../components/PackingCards';
 import { Icon, Tooltip } from '../ui';
 import { ActionButton } from './kit';
 import { nextDir, sortBomLines, type BomSortKey, type SortDir } from './bomSort';
+import {
+  requestBuildStateReload,
+  setBuildRevision,
+  setBuildRunning,
+} from '../state/buildState';
+import { VIEW_BLOCKS } from '../shell/pipeline';
 import type { BuildResult } from '../../shared/api';
 import './views.css';
 
@@ -71,6 +77,17 @@ export function BomView() {
   useEffect(() => {
     if (build.state.status === 'success') setNetlistVersion((v) => v + 1);
   }, [build.state.status]);
+
+  // Publish the build's progress to the pipeline strip. The build-finished
+  // reload signal is what keeps the strip from lying for the rest of the
+  // session; every site that runs `api.build()` must fire it.
+  useEffect(() => {
+    setBuildRunning(build.state.status === 'running');
+    if (build.state.status === 'success') {
+      requestBuildStateReload();
+      if (build.state.revision !== null) setBuildRevision(build.state.revision);
+    }
+  }, [build.state.status, build.state.revision]);
 
   const forceGroups = model?.packing.forceGroups ?? [];
   const groups = useMemo(
@@ -176,7 +193,7 @@ export function BomView() {
       {cells === null ? (
         <div className="gp-empty" data-testid="bom-empty">
           <Icon name="packing" size={30} decorative />
-          <p className="gp-empty__title">Run a build to see the mapped cells and BOM.</p>
+          <p className="gp-empty__title">{VIEW_BLOCKS.packing.note}</p>
         </div>
       ) : (
         <PackingCards
