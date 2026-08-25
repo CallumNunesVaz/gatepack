@@ -384,6 +384,25 @@ export interface ExamplesList {
  * in-flight work is cancelled on new input, because a stale result arriving
  * after a newer edit is a correctness bug, not a performance issue.
  */
+/**
+ * The filesystem state of a project's build outputs. See `buildState()`.
+ */
+export interface BuildState {
+  /** Absolute path of the build output directory. It need not exist. */
+  outputDir: string;
+  /**
+   * The files present in `outputDir`, sorted. Empty when nothing has been
+   * built — this is the `readdir`, not a summary of it.
+   */
+  artefacts: string[];
+  /**
+   * Whether `mapped.json` is present. It is the artefact the schematic,
+   * packing and analysis views all read, so it — not "the directory exists" —
+   * is what decides whether those views have anything real to show.
+   */
+  hasMappedNetlist: boolean;
+}
+
 export interface GatepackApi {
   /* --- session (C9) --- */
   openProject(): Promise<Envelope<ProjectInfo>>;
@@ -404,6 +423,29 @@ export interface GatepackApi {
    * command that reveals nothing is worse than one that says there are none.
    */
   revealOutputs(): Promise<Envelope<{ path: string }>>;
+
+  /**
+   * What the build has actually left on disk.
+   *
+   * The pipeline has an order — a spec compiles, a build synthesises it, and
+   * the schematic, packing and analysis views read the build's artefacts — and
+   * until this existed nothing in the application stated it. Each view
+   * discovered the order for itself by failing, and measured against a real
+   * unbuilt project (`docs/GUI-AUDIT.md`, [GUI-5]) three of the six got it
+   * wrong: the schematic told a GUI user to "run `gatepack build` first" with
+   * no build button anywhere on screen, analysis offered "Run analysis to see
+   * metrics" without mentioning the build it requires, and verification —
+   * which runs its own synthesis and needs no prior build at all — was
+   * indistinguishable from the two that do.
+   *
+   * This reports **existence, not freshness**. A build older than the spec is
+   * still a build as far as this call is concerned; staleness is the project
+   * revision's job (§16.1) and the views already carry it. Conflating the two
+   * here would make one answer mean two different things.
+   *
+   * Nothing is inferred: `artefacts` is the directory listing.
+   */
+  buildState(): Promise<Envelope<BuildState>>;
 
   /**
    * Copy the build outputs to a directory the user picks in a native dialog.

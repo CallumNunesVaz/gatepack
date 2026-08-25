@@ -14,6 +14,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import type {
   AnalysisSummary,
   BuildResult,
+  BuildState,
   CompileResult,
   Envelope,
   EstimateResult,
@@ -53,6 +54,9 @@ const api: GatepackApi = {
 
   saveProjectAs: (gpkPath: string) =>
     ipcRenderer.invoke('gatepack:saveProjectAs', { gpkPath }) as Promise<Envelope<ProjectInfo>>,
+
+  buildState: () =>
+    ipcRenderer.invoke('gatepack:buildState') as Promise<Envelope<BuildState>>,
 
   revealOutputs: () =>
     ipcRenderer.invoke('gatepack:revealOutputs') as Promise<Envelope<{ path: string }>>,

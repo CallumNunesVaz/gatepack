@@ -7,6 +7,7 @@
 import type {
   AnalysisSummary,
   BuildResult,
+  BuildState,
   CompileResult,
   Diagnostic,
   Envelope,
@@ -178,6 +179,20 @@ export class FakeGatepack implements GatepackApi {
 
   async newProjectDialog(): Promise<Envelope<ProjectInfo>> {
     return this.newProject(this.project.path);
+  }
+
+  /**
+   * What `buildState` reports. Defaults to *unbuilt*: the fake's job is to make
+   * the empty state the one a test has to opt out of, not the one it forgets.
+   */
+  buildArtefacts: string[] = [];
+
+  async buildState(): Promise<Envelope<BuildState>> {
+    return ok('buildState', {
+      outputDir: `${this.project.path}/.gatepack/out`,
+      artefacts: [...this.buildArtefacts].sort(),
+      hasMappedNetlist: this.buildArtefacts.includes('mapped.json'),
+    });
   }
 
   /** Paths handed to `revealOutputs` (the directory it would reveal). */

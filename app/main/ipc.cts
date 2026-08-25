@@ -93,6 +93,8 @@ export function registerIpc(deps: IpcDeps): void {
   // §GUI-1: reveal the build outputs, and copy them out. Neither takes a path
   // from the renderer — the destination is chosen by a native dialog, which is
   // the trust boundary for writing outside the project root (§5.2).
+  handle('gatepack:buildState', NoPayloadSchema, () => session.buildState());
+
   handle('gatepack:revealOutputs', NoPayloadSchema, () => session.revealOutputs());
 
   handle<Record<string, unknown>, Envelope<{ path: string; files: string[] }>>(

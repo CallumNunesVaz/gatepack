@@ -212,3 +212,50 @@ describe('exportOutputs', () => {
     if (!env.ok) expect(env.error.code).toBe('GP4200');
   });
 });
+
+/**
+ * `buildState` reports the filesystem, and nothing else.
+ *
+ * The whole point of the call is that the application can say which step is
+ * still owed *before* a view fails. If it guessed — inferred a build from the
+ * directory existing, or from `report.md` alone — it would report a state
+ * stronger than its evidence, which is the defect it exists to fix.
+ */
+describe('buildState', () => {
+  it('reports an unbuilt project as unbuilt, with no artefacts', async () => {
+    session = makeSession();
+    await openProject(session);
+    const env = await session.buildState();
+    expect(env.ok).toBe(true);
+    if (!env.ok) return;
+    expect(env.data.artefacts).toEqual([]);
+    expect(env.data.hasMappedNetlist).toBe(false);
+    expect(env.data.outputDir).toBe(outDir());
+  });
+
+  it('lists what is there, sorted, and reports mapped.json specifically', async () => {
+    session = makeSession();
+    await openProject(session);
+    writeArtefacts(outDir(), ['report.md', 'bom.csv']);
+
+    // Outputs present but no netlist is NOT a state the schematic, packing or
+    // analysis views can render: they read mapped.json. Answering "built" from
+    // "the directory has files in it" is exactly the over-claim this avoids.
+    let env = await session.buildState();
+    expect(env.ok && env.data.hasMappedNetlist).toBe(false);
+    expect(env.ok && env.data.artefacts).toEqual(['bom.csv', 'report.md']);
+
+    writeArtefacts(outDir(), ['mapped.json']);
+    env = await session.buildState();
+    expect(env.ok && env.data.hasMappedNetlist).toBe(true);
+    expect(env.ok && env.data.artefacts).toEqual(['bom.csv', 'mapped.json', 'report.md']);
+  });
+
+  it('refuses when no project is open rather than answering about nothing', async () => {
+    session = makeSession();
+    const env = await session.buildState();
+    expect(env.ok).toBe(false);
+    if (env.ok) return;
+    expect(env.error.message).toContain('no project');
+  });
+});

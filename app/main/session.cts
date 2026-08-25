@@ -16,6 +16,7 @@ import type { z } from 'zod';
 import type {
   AnalysisSummary,
   BuildResult,
+  BuildState,
   CompileResult,
   Envelope,
   EstimateResult,
@@ -141,6 +142,13 @@ export function outputDir(root: string): string {
  * deliberately not copied — see docs/BUILD-NOTES-outputs.md.
  */
 const EXPORT_ARTEFACTS = ['bom.csv', 'netlist.net', 'report.md'] as const;
+
+/**
+ * The synthesised netlist the schematic, packing and analysis views all read.
+ * Named once here because `buildState` reports on it and the core's error
+ * messages already name it; two spellings of one filename is one too many.
+ */
+const MAPPED_NETLIST = 'mapped.json';
 
 /** What to say when there is nothing to reveal or export: say what to do. */
 function noOutputsMessage(outDir: string): string {
@@ -469,6 +477,35 @@ export class SessionManager {
    * built is deliberate — an "outputs" command that opens an empty folder is a
    * small lie of the kind this project spends its effort not telling.
    */
+  /**
+   * Report what the build has left on disk, so the application can say which
+   * step is still owed before a view has anything to show (§GUI-5).
+   *
+   * Existence only. A build older than the spec still counts here; freshness
+   * is the project revision's business and the views already track it.
+   */
+  buildState(): Promise<Envelope<BuildState>> {
+    if (this.project === null) {
+      return Promise.resolve(errorEnvelope('buildState', 'GP4200', 'no project open'));
+    }
+    const outDir = outputDir(this.project.root);
+    let artefacts: string[] = [];
+    try {
+      artefacts = fs.readdirSync(outDir).sort();
+    } catch {
+      // No directory is not an error: it is the answer, and it is the state a
+      // freshly opened project is *supposed* to be in.
+      artefacts = [];
+    }
+    return Promise.resolve(
+      okEnvelope('buildState', {
+        outputDir: outDir,
+        artefacts,
+        hasMappedNetlist: artefacts.includes(MAPPED_NETLIST),
+      }),
+    );
+  }
+
   revealOutputs(): Promise<Envelope<{ path: string }>> {
     if (this.project === null) {
       return Promise.resolve(errorEnvelope('revealOutputs', 'GP4200', 'no project open'));
