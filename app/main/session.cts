@@ -150,6 +150,34 @@ const EXPORT_ARTEFACTS = ['bom.csv', 'netlist.net', 'report.md'] as const;
  */
 const MAPPED_NETLIST = 'mapped.json';
 
+/**
+ * True when any of `sources` is newer than `artefact`.
+ *
+ * Answers "is the build on disk out of date?" from the filesystem rather than
+ * from a renderer's memory of when it happened to look. Returns `null` when the
+ * question cannot be answered — an unreadable file makes this unknown, and
+ * unknown must not be reported as either fresh or stale.
+ */
+function sourcesNewerThan(artefact: string, sources: string[]): boolean | null {
+  let built: number;
+  try {
+    built = fs.statSync(artefact).mtimeMs;
+  } catch {
+    return null;
+  }
+  let sawOne = false;
+  for (const source of sources) {
+    try {
+      if (fs.statSync(source).mtimeMs > built) return true;
+      sawOne = true;
+    } catch {
+      // A source we cannot stat cannot be compared. Keep looking; if none of
+      // them could be read, the answer is unknown rather than "fresh".
+    }
+  }
+  return sawOne ? false : null;
+}
+
 /** What to say when there is nothing to reveal or export: say what to do. */
 function noOutputsMessage(outDir: string): string {
   return `no build outputs at ${outDir} — run a build first`;
@@ -497,11 +525,18 @@ export class SessionManager {
       // freshly opened project is *supposed* to be in.
       artefacts = [];
     }
+    const hasMappedNetlist = artefacts.includes(MAPPED_NETLIST);
     return Promise.resolve(
       okEnvelope('buildState', {
         outputDir: outDir,
         artefacts,
-        hasMappedNetlist: artefacts.includes(MAPPED_NETLIST),
+        hasMappedNetlist,
+        sourcesNewerThanBuild: hasMappedNetlist
+          ? sourcesNewerThan(path.join(outDir, MAPPED_NETLIST), [
+              path.join(this.project.root, 'design.yaml'),
+              path.join(this.project.root, 'parts.csv'),
+                    ])
+          : null,
       }),
     );
   }

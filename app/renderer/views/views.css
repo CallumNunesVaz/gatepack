@@ -812,6 +812,12 @@ th.sortable[aria-sort='descending'] .sort-indicator svg {
   font-size: var(--gp-text-sm);
 }
 
+.verdict__source {
+  margin: 0;
+  color: var(--gp-text-muted);
+  font-size: var(--gp-text-xs);
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));

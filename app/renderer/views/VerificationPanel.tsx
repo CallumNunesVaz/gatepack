@@ -6,6 +6,7 @@ import { useRunRequest } from '../shell/runRequests';
 import { StatusBadge } from '../components/StatusBadge';
 import { useSelection } from '../selection/bus';
 import { setVerifyResult } from '../selection/linkData';
+import { setVerifyRevision, setVerifyRunning } from '../state/verifySession';
 import { Icon } from '../ui';
 import { ActionButton, EmptyState } from './kit';
 import type { Check, Counterexample, VerifyResult } from '../../shared/api';
@@ -149,9 +150,15 @@ export function VerificationPanel() {
   // Publish the verified result into the selection spine so a property (or
   // counterexample-step) selection resolves against the same result this panel
   // just showed. `verify()` is expensive and revisioned here; the link context
-  // only reads it back.
+  // only reads it back. The session store records *when* verification ran for
+  // the strip — the only evidence that exists, since `verify` writes nothing to
+  // disk.
   useEffect(() => {
-    if (state.status === 'success' && state.data) setVerifyResult(state.data);
+    setVerifyRunning(state.status === 'running');
+    if (state.status === 'success' && state.data) {
+      setVerifyResult(state.data);
+      if (state.revision !== null) setVerifyRevision(state.revision);
+    }
   }, [state]);
 
   const selectedProperty = selection?.kind === 'property' ? selection.name : null;

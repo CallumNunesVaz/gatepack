@@ -401,6 +401,22 @@ export interface BuildState {
    * is what decides whether those views have anything real to show.
    */
   hasMappedNetlist: boolean;
+  /**
+   * Whether a source file is newer than `mapped.json` — i.e. the build on disk
+   * predates the current spec or parts table. `null` when there is no build to
+   * compare against, or when a file could not be stat'd.
+   *
+   * This exists because the alternative is a guess. Artefacts carry no
+   * revision, so a renderer that opens a project can only record "I observed a
+   * build now" and detect staleness from edits made *afterwards* — which means
+   * a project whose spec was edited after its last build reports a fresh build
+   * until the user touches it again. The filesystem already knows the answer;
+   * asking it turns an inference into a measurement.
+   *
+   * Both sources count: a parts table edit changes what a build would produce
+   * just as a spec edit does.
+   */
+  sourcesNewerThanBuild: boolean | null;
 }
 
 export interface GatepackApi {

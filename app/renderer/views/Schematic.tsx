@@ -38,6 +38,13 @@ import { useLinkContext } from '../selection/useLinkContext';
 import { useHighlights, useSelection } from '../selection/bus';
 import { setInputSync, setTestPoints } from '../design/model';
 import {
+  requestBuildStateReload,
+  setBuildRevision,
+  setBuildRunning,
+  useBuildState,
+} from '../state/buildState';
+import { VIEW_BLOCKS } from '../shell/pipeline';
+import {
   applyEditAffordances,
   NO_BUILD_REFUSAL,
   regroupToPackage,
@@ -104,6 +111,7 @@ function clamp(value: number, min: number, max: number): number {
 export function Schematic() {
   const { model, specText, editSpec, revision } = useProject();
   const api = useApi();
+  const buildState = useBuildState(revision);
   const ctx = useLinkContext();
   const highlights = useHighlights(ctx);
   const { setSelection } = useSelection();
@@ -441,6 +449,7 @@ export function Schematic() {
   const rebuild = useCallback(() => {
     setRebuilding(true);
     setError(null);
+    setBuildRunning(true);
     api
       .build()
       .then((env) => {
@@ -449,10 +458,16 @@ export function Schematic() {
           return;
         }
         // Only now is the artefact on disk newer than the edit, so refetch.
+        // Also tell the build-state readers (the strip) that a build finished.
+        requestBuildStateReload();
+        setBuildRevision(revision);
         setNetlistVersion((v) => v + 1);
       })
-      .finally(() => setRebuilding(false));
-  }, [api]);
+      .finally(() => {
+        setBuildRunning(false);
+        setRebuilding(false);
+      });
+  }, [api, revision]);
 
   /* --- probe controls --------------------------------------------------- */
 
@@ -901,6 +916,11 @@ export function Schematic() {
 
   const resetHeld = resetSignal !== null && probe[resetSignal] === resetAsserted;
 
+  // The schematic is unbuilt only when the netlist failed to load AND the disk
+  // confirms there is no `mapped.json`. A netlist that loaded means the build
+  // exists whatever `buildState` says (the two can only disagree in the fake).
+  const unbuilt = error !== null && buildState.state !== null && !buildState.state.hasMappedNetlist;
+
   return (
     <section className="pane schematic" data-testid="schematic-view">
       <header className="pane__header">
@@ -1097,7 +1117,22 @@ export function Schematic() {
         ) : null}
       </div>
 
-      {error ? (
+      {unbuilt ? (
+        <div className="stale-note" role="status" data-testid="schematic-unbuilt">
+          <Icon name="build" decorative />
+          <span>{VIEW_BLOCKS.schematic.note}</span>
+          <button
+            type="button"
+            className="view-btn"
+            onClick={rebuild}
+            disabled={rebuilding}
+            data-testid="schematic-build"
+          >
+            <Icon name="build" decorative />
+            {rebuilding ? 'Building…' : 'Run build'}
+          </button>
+        </div>
+      ) : error ? (
         <div className="error-note" role="alert" data-testid="schematic-error">
           <Icon name="error" decorative />
           <span>schematic unavailable — {error}</span>
@@ -1313,7 +1348,7 @@ export function Schematic() {
               </svg>
             ) : null}
           </div>
-        ) : showMapped && !error ? (
+        ) : showMapped && !error && !unbuilt ? (
           <Spinner label="laying out the netlist" />
         ) : null}
       </div>

@@ -2,6 +2,8 @@ import { useApi } from '../bridge/context';
 import { useProject } from '../state/project';
 import { useRevisionedTask } from '../hooks/useRevisionedTask';
 import { useRunRequest } from '../shell/runRequests';
+import { useBuildState } from '../state/buildState';
+import { VIEW_BLOCKS } from '../shell/pipeline';
 import { Icon } from '../ui';
 import { ActionButton, EmptyState } from './kit';
 import type { AnalysisSummary, EstimateResult } from '../../shared/api';
@@ -44,6 +46,7 @@ export function AnalysisView() {
   const api = useApi();
   const analysis = useRevisionedTask<AnalysisSummary>(revision, (t) => api.analyse(t));
   const estimate = useRevisionedTask<EstimateResult>(revision, (t) => api.estimate(t));
+  const buildState = useBuildState(revision);
   useRunRequest('run.analyse', analysis.run);
   useRunRequest('run.estimate', estimate.run);
 
@@ -54,6 +57,9 @@ export function AnalysisView() {
 
   const summary = analysis.state.status === 'success' ? analysis.state.data : null;
   const verdict = estimate.state.status === 'success' ? estimate.state.data : null;
+  // The metrics half (`analyse`) reads the mapped netlist, so it cannot produce
+  // anything without a build. The verdict half (`estimate`) does not.
+  const unbuilt = buildState.state !== null && !buildState.state.hasMappedNetlist;
 
   return (
     <section className="pane" data-testid="analysis-view">
@@ -80,10 +86,17 @@ export function AnalysisView() {
       ) : null}
 
       {analysis.state.status === 'error' ? (
-        <div className="error-note" data-testid="analysis-error" role="alert">
-          <Icon name="error" decorative />
-          <span>{analysis.state.error?.message}</span>
-        </div>
+        unbuilt ? (
+          <div className="stale-note" data-testid="analysis-blocked" role="status">
+            <Icon name="build" decorative />
+            <span>{VIEW_BLOCKS.analysis.note}</span>
+          </div>
+        ) : (
+          <div className="error-note" data-testid="analysis-error" role="alert">
+            <Icon name="error" decorative />
+            <span>{analysis.state.error?.message}</span>
+          </div>
+        )
       ) : null}
 
       {verdict ? (
@@ -92,6 +105,9 @@ export function AnalysisView() {
             <Icon name={VERDICT_ICON[verdict.verdict]} size={13} decorative />
             viability: {verdict.verdict}
           </span>
+          <p className="verdict__source" data-testid="verdict-source">
+            from estimate — needs no build
+          </p>
           {verdict.reasons.length ? (
             <ul className="verdict__reasons">
               {verdict.reasons.map((r) => (

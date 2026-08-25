@@ -258,4 +258,46 @@ describe('buildState', () => {
     if (env.ok) return;
     expect(env.error.message).toContain('no project');
   });
+
+  it('measures staleness against the sources rather than guessing', async () => {
+    // The whole reason this field exists. A renderer can only ever record "I
+    // observed a build now", so a project opened with an already-stale build
+    // looks fresh until the user next types. The filesystem knows the answer.
+    session = makeSession();
+    await openProject(session);
+    writeArtefacts(outDir(), ['mapped.json']);
+
+    let env = await session.buildState();
+    expect(env.ok && env.data.sourcesNewerThanBuild, 'build newer than sources').toBe(false);
+
+    // Touch the spec forward, the way an edit would.
+    const later = new Date(Date.now() + 10_000);
+    fs.utimesSync(path.join(projectDir, 'design.yaml'), later, later);
+    env = await session.buildState();
+    expect(env.ok && env.data.sourcesNewerThanBuild, 'spec edited after the build').toBe(true);
+  });
+
+  it('counts the parts table as a source, not just the spec', async () => {
+    // A parts-table edit changes what a build would produce just as much as a
+    // spec edit does; ignoring it would report a stale build as current.
+    session = makeSession();
+    fs.writeFileSync(path.join(projectDir, 'parts.csv'), 'refdes\n');
+    await openProject(session);
+    writeArtefacts(outDir(), ['mapped.json']);
+    expect((await session.buildState()).ok).toBe(true);
+
+    const later = new Date(Date.now() + 10_000);
+    fs.utimesSync(path.join(projectDir, 'parts.csv'), later, later);
+    const env = await session.buildState();
+    expect(env.ok && env.data.sourcesNewerThanBuild, 'parts.csv edited after the build').toBe(true);
+  });
+
+  it('reports unknown rather than fresh when there is nothing to compare', async () => {
+    // Unknown must not be reported as either fresh or stale.
+    session = makeSession();
+    await openProject(session);
+    // No build at all: there is no artefact to compare sources against.
+    const env = await session.buildState();
+    expect(env.ok && env.data.sourcesNewerThanBuild).toBe(null);
+  });
 });

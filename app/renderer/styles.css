@@ -809,4 +809,132 @@ button:disabled { opacity: 0.5; cursor: default; }
   background: var(--gp-select-bg);
 }
 
+/* --- pipeline strip (shell) ------------------------------------------------
+ * A fork, not a line: Spec feeds Build (top) and Verify (bottom); Build feeds
+ * the three artefact-reading views. Grid areas name the nodes; `spec` spans
+ * both rows so the two branches visibly leave the same source.
+ */
+.shell__pipeline {
+  display: grid;
+  grid-template-columns: auto auto auto auto 1fr;
+  grid-template-areas:
+    'spec cBuild build cViews views'
+    'spec cVerify verify . .';
+  align-items: center;
+  gap: var(--gp-space-2) var(--gp-space-3);
+  padding: var(--gp-space-2) var(--gp-space-3);
+  background: var(--gp-surface);
+  border-bottom: 1px solid var(--gp-border);
+  flex: none;
+  overflow-x: auto;
+}
+
+.pipeline__stage {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gp-space-2);
+  min-height: 28px;
+  padding: var(--gp-space-1) var(--gp-space-3);
+  border: 1px solid var(--gp-border-strong);
+  border-radius: var(--gp-radius);
+  background: var(--gp-surface);
+  color: var(--gp-text);
+  font: inherit;
+  font-size: var(--gp-text-sm);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.pipeline__stage--done {
+  color: var(--gp-ok);
+  border-color: var(--gp-ok);
+  background: var(--gp-ok-bg);
+}
+
+.pipeline__stage--ready {
+  color: var(--gp-accent);
+  border-color: var(--gp-accent);
+}
+
+.pipeline__stage--running {
+  color: var(--gp-info);
+  border-color: var(--gp-info);
+  background: var(--gp-info-bg);
+}
+
+.pipeline__stage--stale {
+  color: var(--gp-warn);
+  border-color: var(--gp-warn);
+  background: var(--gp-warn-bg);
+}
+
+.pipeline__stage--blocked {
+  color: var(--gp-text-muted);
+  border-color: var(--gp-border);
+  border-style: dashed;
+}
+
+button.pipeline__stage {
+  cursor: pointer;
+}
+
+button.pipeline__stage:disabled {
+  cursor: default;
+}
+
+.pipeline__stage:focus-visible {
+  outline: 2px solid var(--gp-focus);
+  outline-offset: 1px;
+}
+
+.pipeline__stage-blocker {
+  color: var(--gp-text-faint);
+  font-weight: 500;
+  font-size: var(--gp-text-xs);
+}
+
+.pipeline__views {
+  color: var(--gp-text-muted);
+  font-size: var(--gp-text-xs);
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.pipeline__connector {
+  display: block;
+  overflow: visible;
+  flex: none;
+}
+
+.pipeline__connector-track {
+  stroke: var(--gp-border-strong);
+  stroke-width: 1.5;
+}
+
+/* The travelling-dot connector, reusing the `gp-schematic-flow` idiom from
+ * views.css so "signal moving" has one visual language app-wide. Only the
+ * connector into the actionable (`ready`) stage animates, and only one at a
+ * time — the whole strip in motion says nothing about where to look. */
+.pipeline__connector-flow {
+  stroke: var(--gp-accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 0 26;
+  animation: gp-schematic-flow 900ms linear infinite;
+}
+
+@keyframes gp-schematic-flow {
+  to {
+    stroke-dashoffset: -26;
+  }
+}
+
+/* The state is carried by `data-state`, colour and the text label — never by
+ * the animation alone — so it is still readable with motion off. */
+@media (prefers-reduced-motion: reduce) {
+  .pipeline__connector-flow {
+    animation: none;
+  }
+}
+
 

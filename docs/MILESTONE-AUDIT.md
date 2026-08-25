@@ -678,3 +678,28 @@ application whose entire purpose is drawing dependency graphs correctly.
 `mapped.json` is present — that artefact, not "the directory exists", is what the
 three dependent views read. Existence, not freshness: staleness is the revision's
 job (§16.1) and the views already carry it.
+
+### What was built
+
+A pipeline strip under the topbar, drawn as the fork above: one node per stage
+(`Spec`, `Build`, `Verify`) reporting `done`/`ready`/`running`/`blocked`/`stale`,
+with the connector into the actionable stage — and only that one — animating.
+Clicking a stage runs it through the command bus, so the strip and the palette
+are one way to run a build rather than two that behave differently. A blocked
+stage is not a button and names what it waits for.
+
+`renderer/shell/pipeline.ts` is the single declaration of what blocks what, on
+the `groups.ts` precedent: the strip and the three gated views read the same
+wording, so they can no longer each invent their own explanation.
+
+Verification's node is driven only by `state/verifySession.ts` — a session-scoped
+record — because `verify` leaves no trace on disk. Wiring it to `hasMappedNetlist`
+fails a test written specifically to catch that.
+
+One over-claim survived the first implementation and was fixed in review. The
+strip originally decided staleness from the revision at which it *observed* the
+artefacts, which cannot see a build that was already stale when the project
+opened. `buildState()` now measures it instead, comparing `mapped.json`'s mtime
+against both `design.yaml` and `parts.csv`. Reporting `done` for a build older
+than its sources is exactly the defect [GUI-5] is about, reappearing one level
+down.

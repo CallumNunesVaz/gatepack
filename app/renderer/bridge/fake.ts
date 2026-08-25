@@ -186,12 +186,17 @@ export class FakeGatepack implements GatepackApi {
    * the empty state the one a test has to opt out of, not the one it forgets.
    */
   buildArtefacts: string[] = [];
+  /** What `buildState` reports for staleness once there is a build to compare. */
+  sourcesNewerThanBuild = false;
 
   async buildState(): Promise<Envelope<BuildState>> {
     return ok('buildState', {
       outputDir: `${this.project.path}/.gatepack/out`,
       artefacts: [...this.buildArtefacts].sort(),
       hasMappedNetlist: this.buildArtefacts.includes('mapped.json'),
+      sourcesNewerThanBuild: this.buildArtefacts.includes('mapped.json')
+        ? this.sourcesNewerThanBuild
+        : null,
     });
   }
 

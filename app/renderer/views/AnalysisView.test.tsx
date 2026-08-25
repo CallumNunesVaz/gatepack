@@ -160,6 +160,9 @@ describe('AnalysisView — C14 dashboard', () => {
 
   it('surfaces a failing analyse as an error naming the tool', async () => {
     const fake = new FakeGatepack();
+    // A build exists (so this is a real `analyse` failure, not the unbuilt
+    // state); the analyse error is the tool itself.
+    fake.buildArtefacts = ['mapped.json'];
     fake.setError('analyse', {
       severity: 'error',
       code: 'GP9003',
@@ -172,5 +175,30 @@ describe('AnalysisView — C14 dashboard', () => {
 
     await waitFor(() => expect(screen.getByTestId('analysis-error')).toBeTruthy());
     expect(screen.getByTestId('analysis-error').textContent).toContain('yosys');
+  });
+
+  it('explains the two halves when unbuilt — estimate works, analyse needs a build', async () => {
+    const fake = new FakeGatepack();
+    fake.setOk('estimate', estimateResult('amber'));
+    fake.setError('analyse', {
+      severity: 'error',
+      code: 'GP9999',
+      message:
+        'no mapped netlist at /tmp/project/.gatepack/out/mapped.json: run `gatepack build` first',
+    });
+
+    renderAnalysis(fake);
+    fireEvent.click(screen.getByText('Run analysis'));
+
+    // The verdict half is real and labelled as estimate (needs no build).
+    await waitFor(() => expect(screen.getByTestId('verdict')).toBeTruthy());
+    expect(screen.getByTestId('verdict-source').textContent).toContain('needs no build');
+
+    // The metrics half names its blocker rather than rendering an unlabelled
+    // CLI error beside a verdict.
+    await waitFor(() => expect(screen.getByTestId('analysis-blocked')).toBeTruthy());
+    expect(screen.getByTestId('analysis-blocked').textContent).toContain('analyse');
+    expect(screen.queryByTestId('analysis-error')).toBeNull();
+    expect(screen.getByTestId('analysis-blocked').textContent).not.toContain('gatepack build');
   });
 });

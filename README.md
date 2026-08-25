@@ -191,6 +191,19 @@ you choose. Both refuse rather than doing something useless: reveal will not ope
 an empty directory when nothing has been built, and export will not overwrite a
 file you already had — it names the conflicts and writes nothing.
 
+A strip under the toolbar shows where the design has got to and what to run
+next. It is drawn as the fork the pipeline actually is — `Build` and `Verify`
+both hang off `Spec`, because `verify` runs its own synthesis and does not need
+a build first — and the connector into the stage that needs running is the only
+thing that animates. Clicking a stage runs it. A stage that cannot run yet is
+not a button and says what it is waiting for.
+
+`Verify` is never shown as done on the strength of a build. `gatepack verify`
+writes nothing to disk, so after a restart a verified design is
+indistinguishable from an unverified one, and the strip reports only what a run
+in the current session can evidence. `Build`'s freshness, by contrast, *is*
+measured: the mtime of `mapped.json` against `design.yaml` and `parts.csv`.
+
 So the answer to "can I do all of this in the GUI?" is now: yes, from creating a
 design to handing the outputs on. What the GUI still cannot do is tell you
 whether KiCad will accept the netlist — see the Status note above; that needs a

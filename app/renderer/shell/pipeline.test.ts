@@ -1,0 +1,160 @@
+/**
+ * The pipeline declaration and its pure state computation.
+ *
+ * Two things are pinned here and must be able to fail:
+ *
+ *   - the fork: `verify` is NOT gated on `build`. If someone draws the strip as
+ *     a straight four-box chain, the declaration (and the strip) must say so;
+ *   - `verify` shows `done` only from a run in this session, never from disk
+ *     state (`hasMappedNetlist`).
+ */
+
+import { describe, expect, it } from 'vitest';
+import {
+  computeStageStates,
+  PIPELINE_STAGES,
+  VIEW_BLOCKS,
+  type PipelineInputs,
+} from './pipeline';
+
+function inputs(over: Partial<PipelineInputs> = {}): PipelineInputs {
+  return {
+    projectOpen: true,
+    hasSpecErrors: false,
+    specErrorCount: 0,
+    hasMappedNetlist: false,
+    sourcesNewerThanBuild: null,
+    buildRevision: null,
+    verifyRevision: null,
+    revision: 1,
+    buildRunning: false,
+    verifyRunning: false,
+    ...over,
+  };
+}
+
+function stateOf(result: ReturnType<typeof computeStageStates>, id: string) {
+  return result.find((s) => s.stageId === id)!;
+}
+
+describe('the pipeline declaration is a fork', () => {
+  it('verify requires spec, not build', () => {
+    const verify = PIPELINE_STAGES.find((s) => s.id === 'verify')!;
+    const build = PIPELINE_STAGES.find((s) => s.id === 'build')!;
+    expect(build.requires).toEqual(['spec']);
+    // The whole point of the fork: verify is not gated on build.
+    expect(verify.requires).toEqual(['spec']);
+    expect(verify.requires).not.toContain('build');
+  });
+
+  it('build feeds the three artefact-reading views and nothing more', () => {
+    expect(VIEW_BLOCKS.schematic.blockedBy).toBe('build');
+    expect(VIEW_BLOCKS.packing.blockedBy).toBe('build');
+    expect(VIEW_BLOCKS.analysis.blockedBy).toBe('build');
+    expect(VIEW_BLOCKS.verify.blockedBy).toBeNull();
+    expect(VIEW_BLOCKS.truthtable.blockedBy).toBeNull();
+    expect(VIEW_BLOCKS.spec.blockedBy).toBeNull();
+  });
+});
+
+describe('computeStageStates', () => {
+  it('a fresh unbuilt project marks Build ready and Verify ready', () => {
+    const r = computeStageStates(inputs());
+    expect(stateOf(r, 'spec').state).toBe('done');
+    expect(stateOf(r, 'build').state).toBe('ready');
+    expect(stateOf(r, 'verify').state).toBe('ready');
+  });
+
+  it('verify is NOT done from disk state — mapped.json present, no session run', () => {
+    const r = computeStageStates(inputs({ hasMappedNetlist: true, buildRevision: 1 }));
+    expect(stateOf(r, 'build').state).toBe('done');
+    // mapped.json says nothing about verification: it must stay ready.
+    expect(stateOf(r, 'verify').state).toBe('ready');
+  });
+
+  it('verify is done only after a run this session for this revision', () => {
+    const r = computeStageStates(inputs({ verifyRevision: 1 }));
+    expect(stateOf(r, 'verify').state).toBe('done');
+  });
+
+  it('a session verify for an older revision is stale, not done', () => {
+    const r = computeStageStates(inputs({ verifyRevision: 0, revision: 1 }));
+    expect(stateOf(r, 'verify').state).toBe('stale');
+  });
+
+  it('a build observed at an older revision is stale', () => {
+    const r = computeStageStates(
+      inputs({ hasMappedNetlist: true, buildRevision: 0, revision: 1 }),
+    );
+    expect(stateOf(r, 'build').state).toBe('stale');
+  });
+
+  it('running wins over every other state', () => {
+    const r = computeStageStates(inputs({ buildRunning: true, hasMappedNetlist: true, buildRevision: 1 }));
+    expect(stateOf(r, 'build').state).toBe('running');
+    const v = computeStageStates(inputs({ verifyRunning: true, verifyRevision: 1 }));
+    expect(stateOf(v, 'verify').state).toBe('running');
+  });
+
+  it('a blocked stage names what it waits for', () => {
+    const r = computeStageStates(inputs({ hasSpecErrors: true, specErrorCount: 3 }));
+    expect(stateOf(r, 'spec').state).toBe('blocked');
+    expect(stateOf(r, 'spec').blocker).toBe('3 errors in the spec');
+    // Both branches inherit the spec's blocker.
+    expect(stateOf(r, 'build').state).toBe('blocked');
+    expect(stateOf(r, 'build').blocker).toBe('3 errors in the spec');
+    expect(stateOf(r, 'verify').state).toBe('blocked');
+  });
+
+  it('no project open blocks the spec (and therefore both branches)', () => {
+    const r = computeStageStates(inputs({ projectOpen: false }));
+    expect(stateOf(r, 'spec').state).toBe('blocked');
+    expect(stateOf(r, 'spec').blocker).toBe('no project open');
+    expect(stateOf(r, 'build').state).toBe('blocked');
+    expect(stateOf(r, 'verify').state).toBe('blocked');
+  });
+});
+
+describe('a build the filesystem says is out of date', () => {
+  it('is stale even when this session observed it as current', () => {
+    // The case `buildRevision` cannot see: open a project whose spec was edited
+    // after its last build. Nothing has changed *since we looked*, so the
+    // observed revision matches and the strip would have said `done`. The
+    // filesystem knows better, and a measurement outranks an observation.
+    const [, build] = computeStageStates(
+      inputs({
+        hasMappedNetlist: true,
+        buildRevision: 1,
+        revision: 1,
+        sourcesNewerThanBuild: true,
+      }),
+    );
+    expect(build.state).toBe('stale');
+  });
+
+  it('is done when the filesystem says the build is newer than its sources', () => {
+    const [, build] = computeStageStates(
+      inputs({
+        hasMappedNetlist: true,
+        buildRevision: 1,
+        revision: 1,
+        sourcesNewerThanBuild: false,
+      }),
+    );
+    expect(build.state).toBe('done');
+  });
+
+  it('falls back to the observed revision when the filesystem cannot say', () => {
+    // `null` is "unknown", and unknown must not be reported as either fresh or
+    // stale on its own — the session's own observation is still evidence.
+    const [, current] = computeStageStates(
+      inputs({ hasMappedNetlist: true, buildRevision: 1, revision: 1, sourcesNewerThanBuild: null }),
+    );
+    expect(current.state).toBe('done');
+    const [, edited] = computeStageStates(
+      inputs({ hasMappedNetlist: true, buildRevision: 1, revision: 2, sourcesNewerThanBuild: null }),
+    );
+    expect(edited.state).toBe('stale');
+  });
+});
+
