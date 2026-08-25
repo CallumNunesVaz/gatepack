@@ -625,3 +625,56 @@ the `inputs:` block a milestone earlier: *toggling input `b` deleted `# MUST sta
 synchronised — metastability` from input `a`*. The same defect, found twice, on
 two different blocks, because the first fix was applied to one field rather than
 to the pattern.
+
+## [GUI-5] Nothing in the application stated the order of the steps, 2026-08-25
+
+The pipeline has an order — a spec compiles, a build synthesises it, and the
+schematic, packing and analysis views read the build's artefacts. No part of the
+GUI said so. Each view therefore worked the order out for itself, and measured
+against a real project with `.gatepack/` deleted, three of the six got it wrong:
+
+| View | Unbuilt | |
+|---|---|---|
+| Spec editor | the spec | fine |
+| Truth table | fully populated — `compile` needs no build | fine |
+| Schematic | ``no mapped netlist at …: run `gatepack build` first`` | a CLI instruction, in a GUI, with no build button on screen |
+| Packing & BOM | "Run a build to see the mapped cells and BOM." + a **Run build** button | the only one that was right |
+| Analysis | "Run analysis to see metrics." | never mentions the build it requires |
+| Verification | "Run verification to see …" — and it *works* unbuilt | fine, but indistinguishable from the two above |
+
+Clicking **Run analysis** unbuilt put both of these on screen at once, unlabelled:
+
+```
+no mapped netlist at …/mapped.json: run `gatepack build` first
+VIABILITY: AMBER — package count is amber (value 26)
+```
+
+Both are true — `estimate` needs no build, `analyse` does — and nothing said
+which was which. A verdict rendered beside an error is this project's recurring
+defect in its smallest form: a status stronger than its evidence.
+
+Two facts came out of measuring what each stage leaves on disk, and both
+constrain any fix:
+
+* `compile` writes to `.gatepack/build/`, not `out/`.
+* **`verify` writes nothing at all.** After a restart a verified design is
+  indistinguishable from an unverified one. No badge may paint verification as
+  done from disk state — only from a run in the current session, for the current
+  revision.
+
+And the dependency shape is a fork, not a line. `verify` runs its own synthesis
+(`gatepack/verify/run.py`: "Runs the front-end (C1), Liberty + sim generation
+(C2), synthesis (C3, if Yosys is present)"), so it is not gated on `build`:
+
+```
+Spec ──▶ Build ──▶ Schematic · Packing & BOM · Analysis
+     └────────────▶ Verify
+```
+
+Drawing that as a straight four-box chain would be a lie about Verify, in an
+application whose entire purpose is drawing dependency graphs correctly.
+
+`buildState()` reports the `readdir` of `.gatepack/out` and specifically whether
+`mapped.json` is present — that artefact, not "the directory exists", is what the
+three dependent views read. Existence, not freshness: staleness is the revision's
+job (§16.1) and the views already carry it.

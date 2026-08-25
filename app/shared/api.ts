@@ -431,7 +431,7 @@ export interface GatepackApi {
    * the schematic, packing and analysis views read the build's artefacts — and
    * until this existed nothing in the application stated it. Each view
    * discovered the order for itself by failing, and measured against a real
-   * unbuilt project (`docs/GUI-AUDIT.md`, [GUI-5]) three of the six got it
+   * unbuilt project (`docs/MILESTONE-AUDIT.md`, [GUI-5]) three of the six got it
    * wrong: the schematic told a GUI user to "run `gatepack build` first" with
    * no build button anywhere on screen, analysis offered "Run analysis to see
    * metrics" without mentioning the build it requires, and verification —

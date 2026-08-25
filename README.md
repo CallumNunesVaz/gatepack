@@ -171,11 +171,19 @@ The template lives in the core (`gatepack project new`), not in the application,
 so the CLI and the GUI produce the same project and cannot drift. An existing
 `design.yaml` is never overwritten.
 
-In the schematic, the wheel zooms about the pointer, and clicking is forgiving:
-a wire is selectable within ±5 px of the line and a gate symbol anywhere inside
-it. Both were measured first — the wire was ±0.5 px and the middle of a gate
-symbol hit nothing at all, because SVG hit-tests only what it paints and the
-skin fills nothing. `docs/MILESTONE-AUDIT.md` [GUI-2] has the numbers.
+In the schematic, the wheel zooms about the pointer, dragging pans the sheet,
+and clicking is forgiving: a wire is selectable within ±5 px of the line and a
+gate symbol anywhere inside it. Both were measured first — the wire was ±0.5 px
+and the middle of a gate symbol hit nothing at all, because SVG hit-tests only
+what it paints and the skin fills nothing. `docs/MILESTONE-AUDIT.md` [GUI-2] has
+the numbers.
+
+Drag and click share the left button, so they are separated by distance rather
+than by a modifier: a press becomes a pan only once the pointer has moved 4 px,
+and the click that ends a pan is dropped instead of changing the selection.
+Middle-drag always pans, and the grab cursor appears only when the sheet is
+actually larger than the pane — offering to move something that cannot move is
+the same class of lie as a button that does nothing.
 
 **File > Reveal Outputs** opens `.gatepack/out` in the file manager, and
 **Export Outputs…** copies the BOM, the KiCad netlist and the report to a folder
