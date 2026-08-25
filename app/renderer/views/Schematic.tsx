@@ -825,6 +825,24 @@ export function Schematic() {
       const state = pan.current;
       const host = scrollRef.current;
       if (!state || !host) return;
+      // A mouseup delivered outside the window is not always delivered at all,
+      // and a pan that missed its release stays latched: the sheet then follows
+      // the pointer with no button held, and only another click frees it.
+      // `buttons` is the live state of the physical buttons, so it catches the
+      // release that the event did not.
+      // A mouseup delivered outside the window is not always delivered at all,
+      // and a pan that missed its release stays latched: the sheet then follows
+      // the pointer with no button held, and only another click frees it.
+      // `buttons` is the live state of the physical buttons, so it catches the
+      // release that the event did not.
+      if (event.buttons === 0) {
+        pan.current = null;
+        if (state.moved) {
+          panConsumedClick.current = true;
+          setPanning(false);
+        }
+        return;
+      }
       const dx = event.clientX - state.x;
       const dy = event.clientY - state.y;
       if (!state.moved) {

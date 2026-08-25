@@ -233,6 +233,65 @@ test.describe('schematic stability and panning', () => {
     expect(during.top - before.top).toBeLessThanOrEqual(dy);
   });
 
+  test('a pan that loses its mouseup does not stay latched to the pointer', async () => {
+    // A mouseup delivered outside the window is not always delivered at all.
+    // Without a guard the pan stays armed, and the sheet then follows the
+    // pointer with no button held until the next click frees it — the worst
+    // kind of defect to hit by accident, because nothing on screen explains it.
+    //
+    // Simulated the way it actually happens: the release never arrives as an
+    // event, and the next move reports `buttons: 0`.
+    const page = await openBuiltSchematic();
+    const canvas = (await page.locator('[data-testid="schematic-svg"]').boundingBox())!;
+    const scrollTop = () =>
+      page.evaluate(
+        () => (document.querySelector('[data-testid="schematic-svg"]') as HTMLElement).scrollTop,
+      );
+
+    const x = canvas.x + canvas.width / 2;
+    const y = canvas.y + canvas.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x, y - 120, { steps: 12 });
+    const panned = await scrollTop();
+    expect(panned, 'the drag panned before the release was lost').toBeGreaterThan(80);
+
+    // The release happens somewhere we never hear about.
+    await page.evaluate(
+      ([mx, my]) => {
+        window.dispatchEvent(
+          new MouseEvent('mousemove', { clientX: mx, clientY: my, buttons: 0, bubbles: true }),
+        );
+      },
+      [x, y - 130],
+    );
+    await page.waitForTimeout(100);
+    const afterRelease = await scrollTop();
+
+    // Now move a long way with no button held. Nothing may follow.
+    await page.evaluate(
+      ([mx, my]) => {
+        for (let i = 1; i <= 10; i += 1) {
+          window.dispatchEvent(
+            new MouseEvent('mousemove', {
+              clientX: mx,
+              clientY: my - i * 20,
+              buttons: 0,
+              bubbles: true,
+            }),
+          );
+        }
+      },
+      [x, y - 130],
+    );
+    await page.waitForTimeout(200);
+    expect(await scrollTop(), 'the sheet kept following the pointer after release').toBe(
+      afterRelease,
+    );
+    // And the mouse is free again: a click still selects.
+    await page.mouse.up();
+  });
+
   test('a drag does not select what it passes over, but a click still does', async () => {
     const page = await openBuiltSchematic();
     const points = await wirePoints(page);
