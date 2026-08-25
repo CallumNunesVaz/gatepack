@@ -63,7 +63,17 @@ test('the §5.2 posture holds inside the renderer', async () => {
   expect(posture.leakedOnBridge).toEqual([]);
   // The bridge exposes exactly the documented methods, nothing else.
   expect(posture.gatepackKeys).toEqual([
-    'analyse', 'build', 'cancel', 'checkLibrary', 'closeProject', 'compile',
+    'analyse', 'build',
+    // `buildState` (2026-08-25): the pipeline strip and the gated views ask
+    // which step is still owed (§GUI-5). Widening the bridge is a §5.2
+    // decision, so it is declared here rather than allowed to pass by a looser
+    // assertion. It is strictly narrowing in capability terms: it takes no
+    // argument, names no path, and returns the `readdir` of the main process's
+    // own `<project>/.gatepack/out` — a directory the renderer could already
+    // learn the contents of by calling `mappedNetlist`/`analyse` and reading
+    // the failure messages. It reads; it never writes and never opens anything.
+    'buildState',
+    'cancel', 'checkLibrary', 'closeProject', 'compile',
     'currentProject', 'doctor', 'estimate',
     // `exportOutputs`/`revealOutputs` (2026-08-25): File > Reveal/Export build
     // outputs (§GUI-1). Widening the bridge is a §5.2 decision, so it is
